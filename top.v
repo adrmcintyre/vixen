@@ -1,3 +1,4 @@
+`default_nettype none
 
 module top ();
     reg clk = 1'b0;

@@ -1,3 +1,5 @@
+`default_nettype none
+
 module ram8 #(
         parameter FILE=""
 ) (
