@@ -8,7 +8,7 @@ prog="${1:-programs/test.vx}"
 iverilog -Wall \
     -s "top" \
     -o "output" \
-    "top.v" || exit 1
+    *.v || exit 1
 
 vvp output -lxt2 || exit 1
 
