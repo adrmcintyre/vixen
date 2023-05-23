@@ -127,9 +127,6 @@ module vixen (
                 // TODO - totally wrong - must calc in ALU - v = sign(x)==sign(y) && sign(result) != sign(x)
                 if (alu_wr_v) flag_v <= alu_data[14];
 
-                //$display("  alu_wr_reg=%x alu_data=%x ld_rd=%x ld_wr=%x fsave=%x fload=%x br=%x : op=%x dst=%x num8=%x",
-                //     alu_wr_reg, alu_data, ld_st_rd, ld_st_wr, flags_save, flags_load, br_enable, op, dst, op_num8);
-
                 // write to register file
                 if (alu_wr_reg) begin
                     r[dst] <= alu_data;
@@ -161,7 +158,6 @@ module vixen (
                         r[14] <= pc;
                     end
                     r[15] <= br_addr;
-                    //$display("  branch to %x", br_addr);
                 end
                 else if (halt) begin
                     $finish;
@@ -274,19 +270,18 @@ module vixen (
                     6'b00_0110: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_src} + ~r_dst) + flag_c};    // rsc r_dst, r_src
                     6'b00_0111: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_src} + ~r_dst) + 1'b1};      // rsb r_dst, r_src
 
-                    // 0000-10..-....-....
-                    //6'b00_1000:                                                                   // unused (8 bits) ; IDEA teq r_dst, r_src
-                    //6'b00_1001:                                                                   // unused (8 bits) ; IDEA teq r_dst, #1<<n
-                    //6'b00_1010:                                                                   // unused (8 bits)
-                    //6'b00_1011:                                                                   // unused (8 bits)
+                    6'b00_1000: ;                                                                 // unused (8 bits) ; IDEA teq r_dst, r_src
+                    6'b00_1001: ;                                                                 // unused (8 bits) ; IDEA teq r_dst, #1<<n
+                    6'b00_1010: ;                                                                 // unused (8 bits)
+                    6'b00_1011: ;                                                                 // unused (8 bits)
 
                     6'b00_1100: {wr_reg_nz, res} = {1'b1, r_dst & r_src};                         // and r_dst, r_src
                     6'b00_1101: {wr_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};  // cmp r_dst, r_src
                     6'b00_1110: {wr_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + r_src)};          // cmn r_dst, r_src
 
-                    //6'b00_1111:                                                                   // unused (8 bits) ; IDEA mul r_dst, r_src
+                    6'b00_1111: ;                                                                 // unused (8 bits) ; IDEA mul r_dst, r_src
 
-                    6'b01_0000:                                                                     // ror r_dst, r_src
+                    6'b01_0000:                                                                   // ror r_dst, r_src
                         begin
                             if (r_src[7:0] == 0) begin
                                 {wr_reg_nz, res} = {1'b1, r_dst};
@@ -310,7 +305,7 @@ module vixen (
                             if (op_num4 == 0)                                                           
                                 {res, next_c} = {flag_c, r_dst};                                       // rrx r_dst        ; when num4 == 0 
                             else                                                                        
-                                {res, next_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];                  // ror r_dst, #num4 ; when num4 != 0 
+                                {res, next_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];                    // ror r_dst, #num4 ; when num4 != 0 
                         end
 
                     6'b01_1001: {wr_reg_nzc, next_c, res} = {1'b1, {1'b0,r_dst} << op_num4};           // lsl r_dst, #num4
@@ -374,25 +369,26 @@ module vixen (
                             4'b1101: br_enable = flag_z | (flag_n ^ flag_v);    // ble     ; signed <=
                             4'b1110: br_enable = 1'b1;                          // bal     ; always
                             4'b1111: begin
-                                // 1110-1111-....-....     ; unused 256 encodings
-                                // 1111-1111-0000-rrrr     mov r, flags
-                                // 1111-1111-0001-rrrr     mov flags, r
-                                // 1111-1111-....-....     ; unused 223 encodings
-                                // 1111-1111-1111-1111     hlt
                                 casex (op_special)
+                                    // 1110-1111-....-....     ; unused 256 encodings
+                                    9'b0_????: ;
+
+                                    // 1111-1111-0000-rrrr     mov r, flags
+                                    // 1111-1111-0001-rrrr     mov flags, r
                                     9'b1_0000: {flags_save, flags_target} = {1'b1, op_flags_target};
                                     9'b1_0001: {flags_load, flags_target} = {1'b1, op_flags_target};
+
+                                    // 1111-1111-1111-1111     hlt
                                     9'b1_1111: halt = 1'b1;
-                                    default: $display("default2");
+
+                                    // 1111-1111-....-....     ; unused 223 encodings
+                                    default: ;
                                 endcase
                             end
-                            default: $display("default3");
                         endcase
                     end
-                    default: $display("default4");
                 endcase
             end
-            default: $display("default5");
         endcase
     end
 endmodule
