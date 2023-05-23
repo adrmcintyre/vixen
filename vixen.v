@@ -121,15 +121,14 @@ module vixen (
                         r[0], r[1], r[2], r[3]);
 
                 // update flags
-                if (alu_wr_n) flag_n <= alu_data[15];
-                if (alu_wr_z) flag_z <= alu_data == 16'b0;
-                if (alu_wr_c) flag_c <= alu_c;
-                // TODO - totally wrong - must calc in ALU - v = sign(x)==sign(y) && sign(result) != sign(x)
-                if (alu_wr_v) flag_v <= alu_data[14];
+                if (alu_wr_nz) flag_n <= alu_n;
+                if (alu_wr_nz) flag_z <= alu_z;
+                if (alu_wr_c)  flag_c <= alu_c;
+                if (alu_wr_v)  flag_v <= alu_v;
 
-                // write to register file
+                // TODO - use enumeration and turn this into a case statement instead
                 if (alu_wr_reg) begin
-                    r[dst] <= alu_data;
+                    r[dst] <= alu_out;
                 end
                 else if (ld_st_rd) begin
                     reg_rd <= 1;
@@ -179,26 +178,29 @@ module vixen (
 
     
     // ALU
-    reg wr_reg_only;
-    reg wr_reg_nzcv;
-    reg wr_reg_nzc;
-    reg wr_reg_nz;
-    reg wr_nzcv;
-    reg wr_nz;
-    reg next_c;
-    reg [15:0] res;
+    reg alu_mov_op;
+    reg alu_add_op;
+    reg alu_sub_op;
+    reg alu_cmp_op;
+    reg alu_shift_op;
+    reg alu_logic_op;
+    reg alu_tst_op;
+    reg alu_c;
+    reg [15:0] alu_out;
+    reg alu_signs_ne;
 
     wire [15:0] r_dst = r[dst];
     wire [15:0] r_src = r[src];
 
-    wire alu_wr_reg = wr_reg_only | wr_reg_nzcv | wr_reg_nzc | wr_reg_nz;
-    wire alu_wr_n   = wr_nzcv     | wr_reg_nzcv | wr_reg_nzc | wr_reg_nz | wr_nz;
-    wire alu_wr_z   = wr_nzcv     | wr_reg_nzcv | wr_reg_nzc | wr_reg_nz | wr_nz;
-    wire alu_wr_c   = wr_nzcv     | wr_reg_nzcv | wr_reg_nzc;
-    wire alu_wr_v   = wr_nzcv     | wr_reg_nzcv;
+    wire alu_wr_reg = alu_add_op | alu_sub_op              | alu_shift_op | alu_logic_op | alu_mov_op ;
+    wire alu_wr_nz  = alu_add_op | alu_sub_op | alu_cmp_op | alu_shift_op | alu_logic_op | alu_tst_op ;
+    wire alu_wr_c   = alu_add_op | alu_sub_op | alu_cmp_op | alu_shift_op                             ;
+    wire alu_wr_v   = alu_add_op | alu_sub_op | alu_cmp_op                                            ;
 
-    wire [15:0] alu_data = res;
-    wire        alu_c    = next_c;
+    wire alu_n = alu_out[15];
+    wire alu_z = alu_out == 16'b0;
+    wire alu_v = alu_n ^ alu_signs_ne ^ alu_c ^ (alu_sub_op | alu_cmp_op);
+
     wire [3:0]  alu_reg  = dst;
 
     // Load / Store
@@ -223,14 +225,16 @@ module vixen (
     reg       halt;
 
     always @* begin
-        wr_reg_only = 1'b0;
-        wr_reg_nzcv = 1'b0;
-        wr_reg_nzc  = 1'b0;
-        wr_reg_nz   = 1'b0;
-        wr_nzcv     = 1'b0;
-        wr_nz       = 1'b0;
-        next_c      = 1'b0;
-        res         = 16'b0;
+        alu_mov_op   = 1'b0;
+        alu_add_op   = 1'b0;
+        alu_sub_op   = 1'b0;
+        alu_shift_op = 1'b0;
+        alu_logic_op = 1'b0;
+        alu_cmp_op   = 1'b0;
+        alu_tst_op   = 1'b0;
+        alu_c        = 1'b0;
+        alu_out      = 16'b0;
+        alu_signs_ne = 1'b0;
 
         ld_st_addr   = 16'b0;
         ld_st_wide   = 1'b0;
@@ -251,6 +255,8 @@ module vixen (
 
         case (op_major_cat)
             2'b00: begin
+                alu_signs_ne = r_dst[15] ^ r_src[15];
+
                 // ALU ops take one of these forms:
                 // 000o-oooo-ssss-rrrr ; op r_dst, r_src
                 // 000o-oooo-nnnn-rrrr ; op r_dst, #num4
@@ -258,66 +264,71 @@ module vixen (
                 // 0010-nnnn-nnnn-rrrr ; add r_dst, #num8
                 // 0011-nnnn-nnnn-rrrr ; sub r_dst, #num8
                 casez (op_arithlog)
-                    6'b00_0000: {wr_reg_only, res} = {1'b1, r_src};    // mov r_dst, r_src
-                    6'b00_0001: {wr_reg_only, res} = {1'b1, ~r_src};   // mvn r_dst, r_src
+                    6'b00_0000: {alu_mov_op, alu_out} = {1'b1, r_src};    // mov r_dst, r_src
+                    6'b00_0001: {alu_mov_op, alu_out} = {1'b1, ~r_src};   // mvn r_dst, r_src
 
-                    6'b00_0010: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + r_src) + flag_c};     // adc r_dst, r_src
-                    6'b00_0011: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + ~r_src) + flag_c};    // sbc r_dst, r_src
+                    6'b00_0010: {alu_add_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + r_src) + flag_c};     // adc r_dst, r_src
+                    6'b00_0011: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + ~r_src) + flag_c};    // sbc r_dst, r_src
 
-                    6'b00_0100: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + r_src)};              // add r_dst, r_src
-                    6'b00_0101: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};      // sub r_dst, r_src
+                    6'b00_0100: {alu_add_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + r_src)};              // add r_dst, r_src
+                    6'b00_0101: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};      // sub r_dst, r_src
 
-                    6'b00_0110: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_src} + ~r_dst) + flag_c};    // rsc r_dst, r_src
-                    6'b00_0111: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_src} + ~r_dst) + 1'b1};      // rsb r_dst, r_src
+                    6'b00_0110: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + ~r_dst) + flag_c};    // rsc r_dst, r_src
+                    6'b00_0111: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + ~r_dst) + 1'b1};      // rsb r_dst, r_src
 
                     6'b00_1000: ;                                                                 // unused (8 bits) ; IDEA teq r_dst, r_src
                     6'b00_1001: ;                                                                 // unused (8 bits) ; IDEA teq r_dst, #1<<n
                     6'b00_1010: ;                                                                 // unused (8 bits)
                     6'b00_1011: ;                                                                 // unused (8 bits)
 
-                    6'b00_1100: {wr_reg_nz, res} = {1'b1, r_dst & r_src};                         // and r_dst, r_src
-                    6'b00_1101: {wr_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};  // cmp r_dst, r_src
-                    6'b00_1110: {wr_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + r_src)};          // cmn r_dst, r_src
+                    6'b00_1100: {alu_logic_op, alu_out} = {1'b1, r_dst & r_src};                        // and r_dst, r_src
+                    6'b00_1101: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};  // cmp r_dst, r_src
+                    6'b00_1110: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + r_src)};          // cmn r_dst, r_src
 
                     6'b00_1111: ;                                                                 // unused (8 bits) ; IDEA mul r_dst, r_src
 
                     6'b01_0000:                                                                   // ror r_dst, r_src
                         begin
                             if (r_src[7:0] == 0) begin
-                                {wr_reg_nz, res} = {1'b1, r_dst};
+                                {alu_logic_op, alu_out} = {1'b1, r_dst};
                             end
                             else begin
-                                wr_reg_nzc = 1'b1;
-                                {res, next_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];
+                                alu_shift_op = 1'b1;
+                                {alu_out, alu_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];
                             end
                         end
-                    6'b01_0001: {wr_reg_nzc, next_c, res} = {1'b1, {1'b0,r_dst} << r_src};            // lsl r_dst, r_src
-                    6'b01_0010: {wr_reg_nzc, res, next_c} = {1'b1, {r_dst,1'b0} >> r_src};            // lsr r_dst, r_src
-                    6'b01_0011: {wr_reg_nzc, res, next_c} = {1'b1, $signed({r_dst,1'b0}) >>> r_src};  // asr r_dst, r_src
-                    6'b01_0100: {wr_reg_nz, res} = {1'b1, r_dst | r_src};                             // orr r_dst, r_src
-                    6'b01_0101: {wr_reg_nz, res} = {1'b1, r_dst ^ r_src};                             // eor r_dst, r_src
-                    6'b01_0110: {wr_reg_nz, res} = {1'b1, r_dst & ~r_src};                            // bic r_dst, r_src
-                    6'b01_0111: {wr_nz, res}     = {1'b1, r_dst & r_src};                             // tst r_dst, r_src
+                    6'b01_0001: {alu_shift_op, alu_c, alu_out} = {1'b1, {1'b0,r_dst} << r_src};           // lsl r_dst, r_src
+                    6'b01_0010: {alu_shift_op, alu_out, alu_c} = {1'b1, {r_dst,1'b0} >> r_src};           // lsr r_dst, r_src
+                    6'b01_0011: {alu_shift_op, alu_out, alu_c} = {1'b1, $signed({r_dst,1'b0}) >>> r_src}; // asr r_dst, r_src
+                    6'b01_0100: {alu_logic_op, alu_out} = {1'b1, r_dst | r_src};                          // orr r_dst, r_src
+                    6'b01_0101: {alu_logic_op, alu_out} = {1'b1, r_dst ^ r_src};                          // eor r_dst, r_src
+                    6'b01_0110: {alu_logic_op, alu_out} = {1'b1, r_dst & ~r_src};                         // bic r_dst, r_src
+                    6'b01_0111: {alu_tst_op, alu_out}     = {1'b1, r_dst & r_src};                        // tst r_dst, r_src
                     
                     6'b01_1000:
                         begin
-                            wr_reg_nzc = 1'b1;
+                            alu_shift_op = 1'b1;
                             if (op_num4 == 0)                                                           
-                                {res, next_c} = {flag_c, r_dst};                                       // rrx r_dst        ; when num4 == 0 
+                                {alu_out, alu_c} = {flag_c, r_dst};                                       // rrx r_dst        ; when num4 == 0 
                             else                                                                        
-                                {res, next_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];                    // ror r_dst, #num4 ; when num4 != 0 
+                                {alu_out, alu_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];                    // ror r_dst, #num4 ; when num4 != 0 
                         end
 
-                    6'b01_1001: {wr_reg_nzc, next_c, res} = {1'b1, {1'b0,r_dst} << op_num4};           // lsl r_dst, #num4
-                    6'b01_1010: {wr_reg_nzc, res, next_c} = {1'b1, {r_dst,1'b0} >> op_num4};           // lsr r_dst, #num4
-                    6'b01_1011: {wr_reg_nzc, res, next_c} = {1'b1, $signed({r_dst,1'b0}) >>> op_num4}; // asr r_dst, #num4
+                    6'b01_1001: {alu_shift_op, alu_c, alu_out} = {1'b1, {1'b0,r_dst} << op_num4};           // lsl r_dst, #num4
+                    6'b01_1010: {alu_shift_op, alu_out, alu_c} = {1'b1, {r_dst,1'b0} >> op_num4};           // lsr r_dst, #num4
+                    6'b01_1011: {alu_shift_op, alu_out, alu_c} = {1'b1, $signed({r_dst,1'b0}) >>> op_num4}; // asr r_dst, #num4
 
-                    6'b01_1100: {wr_reg_nz, res} = {1'b1, r_dst |  (1'b1 << op_num4)};                 // orr r_dst, #1<<num4
-                    6'b01_1101: {wr_reg_nz, res} = {1'b1, r_dst ^  (1'b1 << op_num4)};                 // eor r_dst, #1<<num4
-                    6'b01_1110: {wr_reg_nz, res} = {1'b1, r_dst & ~(1'b1 << op_num4)};                 // bic r_dst, #1<<num4
-                    6'b01_1111: {wr_nz, res}     = {1'b1, r_dst &  (1'b1 << op_num4)};                 // tst r_dst, #1<<num4
+                    6'b01_1100: {alu_logic_op, alu_out} = {1'b1, r_dst |  (1'b1 << op_num4)};             // orr r_dst, #1<<num4
+                    6'b01_1101: {alu_logic_op, alu_out} = {1'b1, r_dst ^  (1'b1 << op_num4)};             // eor r_dst, #1<<num4
+                    6'b01_1110: {alu_logic_op, alu_out} = {1'b1, r_dst & ~(1'b1 << op_num4)};             // bic r_dst, #1<<num4
+                    6'b01_1111: {alu_tst_op, alu_out}     = {1'b1, r_dst &  (1'b1 << op_num4)};           // tst r_dst, #1<<num4
 
-                    6'b1?_????: {wr_reg_nzcv, next_c, res} = {1'b1, r_dst+{{9{op_sign}}, op_num8}};    // add r_dst, #signed_num9
+                    6'b1?_????:                                                                           // add r_dst, #signed_num9
+                        begin
+                            alu_add_op = 1'b1;
+                            alu_signs_ne = r_dst[15] ^ op_sign;
+                            {alu_c, alu_out} = {r_dst+{{9{op_sign}}, op_num8}};
+                        end
                 endcase
             end
 
@@ -343,8 +354,8 @@ module vixen (
                 casez (op_mov8_br)
                     // 1100-nnnn-nnnn-rrrr  ; mov r, #num8
                     // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8
-                    2'b00: {wr_reg_only, res} = {1'b1, {8'b0, op_num8}};    // mov r, #num8    ; IDEA movhi r, #num8
-                    2'b01: {wr_reg_only, res} = {1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8 ; IDEA movlo r, #num8
+                    2'b00: {alu_mov_op, alu_out} = {1'b1, {8'b0, op_num8}};    // mov r, #num8    ; IDEA movhi r, #num8
+                    2'b01: {alu_mov_op, alu_out} = {1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8 ; IDEA movlo r, #num8
 
                     // 1110-cccc-nnnn-nnnn     b[cc] +2*signed(offset)
                     // 1111-cccc-nnnn-nnnn     bl[cond] +2*signed(offset)
