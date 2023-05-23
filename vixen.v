@@ -283,10 +283,7 @@ module vixen (
                     6'b00_1101: {wr_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};  // cmp r_dst, r_src
                     6'b00_1110: {wr_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + r_src)};          // cmn r_dst, r_src
 
-                    6'b00_1111:
-                        if (op_num4 == 4'b1111) begin                                               // rsb r_dst, #0
-                            {wr_reg_nzcv, next_c, res} = {1'b1, {1'b0,~r_dst} + 1'b1};
-                        end                                                                         // unused (240 encodings) ; IDEA mul r_dst, r_src
+                    //6'b00_1111:                                                                   // unused (8 bits) ; IDEA mul r_dst, r_src
 
                     6'b01_0000:                                                                     // ror r_dst, r_src
                         begin
@@ -379,13 +376,14 @@ module vixen (
                             4'b1101: br_enable = flag_z | (flag_n ^ flag_v);    // ble     ; signed <=
                             4'b1110: br_enable = 1'b1;                          // bal     ; always
                             4'b1111: begin
-                                // 1110-1111-0000-rrrr     mov r, flags
-                                // 1110-1111-0001-rrrr     mov flags, r
-                                // 1110-1111-????-....     ; unused 256 encodings where ? >= 0010
-                                // 1111-1111-....-....     ; unused 256 encodings
+                                // 1110-1111-....-....     ; unused 256 encodings
+                                // 1111-1111-0000-rrrr     mov r, flags
+                                // 1111-1111-0001-rrrr     mov flags, r
+                                // 1111-1111-....-....     ; unused 223 encodings
+                                // 1111-1111-1111-1111     hlt
                                 casex (op_special)
-                                    9'b0_0000: {flags_save, flags_target} = {1'b1, op_flags_target};
-                                    9'b0_0001: {flags_load, flags_target} = {1'b1, op_flags_target};
+                                    9'b1_0000: {flags_save, flags_target} = {1'b1, op_flags_target};
+                                    9'b1_0001: {flags_load, flags_target} = {1'b1, op_flags_target};
                                     9'b1_1111: halt = 1'b1;
                                     default: $display("default2");
                                 endcase
