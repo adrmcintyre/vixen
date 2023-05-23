@@ -62,7 +62,19 @@ module vixen (
         EXECUTE   = 3'd3,
         RETIRE    = 3'd4;
 
+    localparam
+        SS_NOP        = 3'd0,
+        SS_ALU        = 3'd1,
+        SS_LOAD       = 3'd2,
+        SS_STORE      = 3'd3,
+        SS_FLAGS_SAVE = 3'd4,
+        SS_FLAGS_LOAD = 3'd5,
+        SS_BRANCH     = 3'd6,
+        SS_HALT       = 3'd7;
+
+
     reg [2:0] state = RESET;
+    reg [2:0] substate;
     reg [15:0] next_pc;
     reg reg_rd;
     reg [3:0] reg_target;
@@ -120,47 +132,60 @@ module vixen (
                         flag_v ? "V" : ".",
                         r[0], r[1], r[2], r[3]);
 
-                // update flags
-                if (alu_wr_nz) flag_n <= alu_n;
-                if (alu_wr_nz) flag_z <= alu_z;
-                if (alu_wr_c)  flag_c <= alu_c;
-                if (alu_wr_v)  flag_v <= alu_v;
+                case (substate)
+                    SS_NOP: ;
 
-                // TODO - use enumeration and turn this into a case statement instead
-                if (alu_wr_reg) begin
-                    r[dst] <= alu_out;
-                end
-                else if (ld_st_rd) begin
-                    reg_rd <= 1;
-                    reg_target <= ld_st_target;
-
-                    mem_addr <= ld_st_addr;
-                    mem_wr <= 0;
-                    mem_wide <= ld_st_wide;
-                    mem_en <= 1;
-                end
-                else if (ld_st_wr) begin
-                    mem_din <= r[reg_target];
-                    mem_addr <= ld_st_addr;
-                    mem_wr <= 1;
-                    mem_wide <= ld_st_wide;
-                    mem_en <= 1;
-                end
-                else if (flags_save) begin
-                    r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
-                end
-                else if (flags_load) begin
-                    {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
-                end
-                else if (br_enable) begin
-                    if (br_link) begin
-                        r[14] <= pc;
+                    SS_ALU: begin
+                        if (alu_wr_reg) begin
+                            r[dst] <= alu_out;
+                        end
+                        if (alu_wr_nz) flag_n <= alu_n;
+                        if (alu_wr_nz) flag_z <= alu_z;
+                        if (alu_wr_c)  flag_c <= alu_c;
+                        if (alu_wr_v)  flag_v <= alu_v;
                     end
-                    r[15] <= br_addr;
-                end
-                else if (halt) begin
-                    $finish;
-                end
+
+                    SS_LOAD: begin
+                        reg_rd <= 1;
+                        reg_target <= ld_st_target;
+
+                        mem_addr <= ld_st_addr;
+                        mem_wr <= 0;
+                        mem_wide <= ld_st_wide;
+                        mem_en <= 1;
+                    end
+
+                    SS_STORE: begin
+                        mem_din <= r[reg_target];
+                        mem_addr <= ld_st_addr;
+                        mem_wr <= 1;
+                        mem_wide <= ld_st_wide;
+                        mem_en <= 1;
+                    end
+
+                    SS_FLAGS_SAVE: begin
+                        r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
+                    end
+
+                    SS_FLAGS_LOAD: begin
+                        {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
+                    end
+
+                    SS_BRANCH: begin
+                        if (br_enable) begin
+                            if (br_link) begin
+                                r[14] <= pc;
+                            end
+                            r[15] <= br_addr;
+                        end
+                    end
+
+                    SS_HALT: begin
+                        $finish;
+                    end
+
+                endcase
+
                 state <= RETIRE;
             end
 
@@ -207,6 +232,7 @@ module vixen (
     reg [15:0] ld_st_addr;
     reg [15:0] ld_st_data;
     reg [3:0]  ld_st_target;
+
     reg        ld_st_wr;
     reg        ld_st_rd;
     reg        ld_st_wide;
@@ -240,21 +266,18 @@ module vixen (
         ld_st_wide   = 1'b0;
         ld_st_data   = 16'b0;
         ld_st_target = 4'b0;
-        ld_st_rd     = 1'b0;
-        ld_st_wr     = 1'b0;
 
         br_enable = 1'b0;
         br_link   = 1'b0;
         br_addr   = 16'b0;
 
-        flags_load   = 1'b0;
-        flags_save   = 1'b0;
         flags_target = 4'b0;
 
-        halt         = 1'b0;
+        substate = SS_NOP;
 
         case (op_major_cat)
             2'b00: begin
+                substate = SS_ALU;
                 alu_signs_ne = r_dst[15] ^ r_src[15];
 
                 // ALU ops take one of these forms:
@@ -335,31 +358,32 @@ module vixen (
             // 010n-nnnn-bbbb-tttt      ldb target, [base,#num5] ; alias "ldb target, [base]" when n == 0
             // 011n-nnnn-bbbb-tttt      ldw target, [base,#num5] ; alias "ldw target, [base]" when n == 0
             2'b01: begin
+                substate = SS_LOAD;
                 ld_st_addr   = r_base + op_num5;
                 ld_st_wide   = op_ld_st_wide;
                 ld_st_target = op_ld_st_target;
-                ld_st_rd     = 1'b1;
             end
 
             // 100n-nnnn-bbbb-tttt      stb target, [base,#num5] ; alias "stb target, [base]" when n == 0
             // 101n-nnnn-bbbb-tttt      stw target, [base,#num5] ; alias "stw target, [base]" when n == 0
             2'b10: begin 
+                substate = SS_STORE;
                 ld_st_addr = r_base + op_num5;
                 ld_st_wide = op_ld_st_wide;
                 ld_st_data = r_target;
-                ld_st_wr   = 1'b1;
             end
 
             2'b11: begin
                 casez (op_mov8_br)
                     // 1100-nnnn-nnnn-rrrr  ; mov r, #num8
                     // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8
-                    2'b00: {alu_mov_op, alu_out} = {1'b1, {8'b0, op_num8}};    // mov r, #num8    ; IDEA movhi r, #num8
-                    2'b01: {alu_mov_op, alu_out} = {1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8 ; IDEA movlo r, #num8
+                    2'b00: {substate, alu_mov_op, alu_out} = {SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8    ; IDEA movhi r, #num8
+                    2'b01: {substate, alu_mov_op, alu_out} = {SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8 ; IDEA movlo r, #num8
 
                     // 1110-cccc-nnnn-nnnn     b[cc] +2*signed(offset)
                     // 1111-cccc-nnnn-nnnn     bl[cond] +2*signed(offset)
                     2'b1?: begin
+                        substate = SS_BRANCH;
                         br_link = op_br_link;
                         br_addr = pc + {{7{op_br_offset[7]}}, op_br_offset, 1'b0};
 
@@ -380,17 +404,18 @@ module vixen (
                             4'b1101: br_enable = flag_z | (flag_n ^ flag_v);    // ble     ; signed <=
                             4'b1110: br_enable = 1'b1;                          // bal     ; always
                             4'b1111: begin
+                                substate = SS_NOP;
                                 casex (op_special)
                                     // 1110-1111-....-....     ; unused 256 encodings
                                     9'b0_????: ;
 
                                     // 1111-1111-0000-rrrr     mov r, flags
                                     // 1111-1111-0001-rrrr     mov flags, r
-                                    9'b1_0000: {flags_save, flags_target} = {1'b1, op_flags_target};
-                                    9'b1_0001: {flags_load, flags_target} = {1'b1, op_flags_target};
+                                    9'b1_0000: {substate, flags_target} = {SS_FLAGS_SAVE, op_flags_target};
+                                    9'b1_0001: {substate, flags_target} = {SS_FLAGS_LOAD, op_flags_target};
 
                                     // 1111-1111-1111-1111     hlt
-                                    9'b1_1111: halt = 1'b1;
+                                    9'b1_1111: substate = SS_HALT;
 
                                     // 1111-1111-....-....     ; unused 223 encodings
                                     default: ;
