@@ -37,6 +37,7 @@ module vixen (
     wire [3:0] op_num4          = op[7:4];      // 4 bit literal
     wire [4:0] op_num5          = op[12:8];     // 5 bit literal
     wire [7:0] op_num8          = op[11:4];     // 8 bit literal
+    wire       op_sign          = op[12];       // sign bit for mov num8
 
     wire [1:0] op_major_cat     = op[15:14];    // op code major category
     wire [5:0] op_arithlog      = op[13:8];     // arithmetic/logical opcode subcat
@@ -321,10 +322,7 @@ module vixen (
                     6'b01_1110: {wr_reg_nz, res} = {1'b1, r_dst & ~(1'b1 << op_num4)};                 // bic r_dst, #1<<num4
                     6'b01_1111: {wr_nz, res}     = {1'b1, r_dst &  (1'b1 << op_num4)};                 // tst r_dst, #1<<num4
 
-                    6'b10_????: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + op_num8)};                 // add r_dst, #num8
-                    6'b11_????: {wr_reg_nzcv, next_c, res} = {1'b1, ({1'b0,r_dst} + ~{8'b0,op_num8}) + 1'b1};  // sub r_dst, #num8     ; IDEA adc r_dst, #num8<<8
-
-                    default: $display("default1");
+                    6'b1?_????: {wr_reg_nzcv, next_c, res} = {1'b1, r_dst+{{9{op_sign}}, op_num8}};    // add r_dst, #signed_num9
                 endcase
             end
 

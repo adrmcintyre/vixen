@@ -306,17 +306,16 @@ sub decode_op {
         }
         elsif ($template =~ s/^([-+]+)//) {
             $bits = length $1;
-            # TODO - account for negate flag correctly
-            # TODO - accept negative exprs
-            my $negate = substr($1,0,1) eq '-';
-            my $abs = ($num < 0) ? -$num : $num;
+            if (substr($1, 0, 1) eq '-') {
+                $num = -$num;
+            }
             my $min = -(1 << $bits-1);
             my $max = (1 << $bits-1) - 1;
             if ($num < $min || $num > $max) {
                 abort("number too wide for %d bits", $bits);
             }
             $word <<= $bits;
-            $word |= $num;
+            $word |= $num & ((1 << $bits)-1);
         }
         elsif ($template =~ s/^(b+)//) {
             $bits = length $1;
