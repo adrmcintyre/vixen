@@ -63,14 +63,14 @@ module vixen (
         RETIRE    = 3'd4;
 
     localparam
-        SS_NOP        = 3'd0,
-        SS_ALU        = 3'd1,
-        SS_LOAD       = 3'd2,
-        SS_STORE      = 3'd3,
-        SS_FLAGS_SAVE = 3'd4,
-        SS_FLAGS_LOAD = 3'd5,
-        SS_BRANCH     = 3'd6,
-        SS_HALT       = 3'd7;
+        SS_NOP      = 3'd0,
+        SS_ALU      = 3'd1,
+        SS_LOAD     = 3'd2,
+        SS_STORE    = 3'd3,
+        SS_RD_FLAGS = 3'd4,
+        SS_WR_FLAGS = 3'd5,
+        SS_BRANCH   = 3'd6,
+        SS_HALT     = 3'd7;
 
 
     reg [2:0] state = RESET;
@@ -123,19 +123,26 @@ module vixen (
             end
 
             EXECUTE: begin
-                $display("%x EXECUTE pc=%x op=%x [%s%s%s%s] r0=%x r1=%x r2=%x r3=%x",
-                        pc-16'd2, pc,
-                        op,
+                // TODO - replace EXECUTE with these substates???
+                // then we can optimise which following state we move to.
+                $display("%x %x EXECUTE pc=%x [%s%s%s%s] r0=%x r1=%x r2=%x r3=%x r4=%x r5=%x r6=%x r7=%x .. r14=%x",
+                        pc-16'd2, op,
+                        pc,
                         flag_n ? "N" : ".",
                         flag_z ? "Z" : ".",
                         flag_c ? "C" : ".",
                         flag_v ? "V" : ".",
-                        r[0], r[1], r[2], r[3]);
+                        r[0], r[1], r[2], r[3],
+                        r[4], r[5], r[6], r[7],
+                        r[14]);
 
                 case (substate)
-                    SS_NOP: ;
+                    SS_NOP: begin
+                        //$display("NOP");
+                    end
 
                     SS_ALU: begin
+                        //$display("ALU");
                         if (alu_wr_reg) begin
                             r[dst] <= alu_out;
                         end
@@ -146,6 +153,7 @@ module vixen (
                     end
 
                     SS_LOAD: begin
+                        //$display("LOAD");
                         reg_rd <= 1;
                         reg_target <= ld_st_target;
 
@@ -156,6 +164,7 @@ module vixen (
                     end
 
                     SS_STORE: begin
+                        //$display("STORE");
                         mem_din <= r[reg_target];
                         mem_addr <= ld_st_addr;
                         mem_wr <= 1;
@@ -163,15 +172,18 @@ module vixen (
                         mem_en <= 1;
                     end
 
-                    SS_FLAGS_SAVE: begin
+                    SS_RD_FLAGS: begin
+                        //$display("RD_FLAGS");
                         r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
                     end
 
-                    SS_FLAGS_LOAD: begin
+                    SS_WR_FLAGS: begin
+                        //$display("WR_FLAGS");
                         {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
                     end
 
                     SS_BRANCH: begin
+                        //$display("BRANCH");
                         if (br_enable) begin
                             if (br_link) begin
                                 r[14] <= pc;
@@ -181,6 +193,7 @@ module vixen (
                     end
 
                     SS_HALT: begin
+                        //$display("HALT");
                         $finish;
                     end
 
@@ -201,7 +214,7 @@ module vixen (
         endcase
     end
 
-    
+
     // ALU
     reg alu_mov_op;
     reg alu_add_op;
@@ -320,33 +333,33 @@ module vixen (
                                 {alu_out, alu_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];
                             end
                         end
-                    6'b01_0001: {alu_shift_op, alu_c, alu_out} = {1'b1, {1'b0,r_dst} << r_src};           // lsl r_dst, r_src
-                    6'b01_0010: {alu_shift_op, alu_out, alu_c} = {1'b1, {r_dst,1'b0} >> r_src};           // lsr r_dst, r_src
-                    6'b01_0011: {alu_shift_op, alu_out, alu_c} = {1'b1, $signed({r_dst,1'b0}) >>> r_src}; // asr r_dst, r_src
-                    6'b01_0100: {alu_logic_op, alu_out} = {1'b1, r_dst | r_src};                          // orr r_dst, r_src
-                    6'b01_0101: {alu_logic_op, alu_out} = {1'b1, r_dst ^ r_src};                          // eor r_dst, r_src
-                    6'b01_0110: {alu_logic_op, alu_out} = {1'b1, r_dst & ~r_src};                         // bic r_dst, r_src
-                    6'b01_0111: {alu_tst_op, alu_out}     = {1'b1, r_dst & r_src};                        // tst r_dst, r_src
-                    
+                    6'b01_0001: {alu_shift_op, alu_c, alu_out} = {1'b1, {1'b0,r_dst} << r_src};             // lsl r_dst, r_src
+                    6'b01_0010: {alu_shift_op, alu_out, alu_c} = {1'b1, {r_dst,1'b0} >> r_src};             // lsr r_dst, r_src
+                    6'b01_0011: {alu_shift_op, alu_out, alu_c} = {1'b1, $signed({r_dst,1'b0}) >>> r_src};   // asr r_dst, r_src
+                    6'b01_0100: {alu_logic_op, alu_out} = {1'b1, r_dst | r_src};                            // orr r_dst, r_src
+                    6'b01_0101: {alu_logic_op, alu_out} = {1'b1, r_dst ^ r_src};                            // eor r_dst, r_src
+                    6'b01_0110: {alu_logic_op, alu_out} = {1'b1, r_dst & ~r_src};                           // bic r_dst, r_src
+                    6'b01_0111: {alu_tst_op,   alu_out} = {1'b1, r_dst & r_src};                            // tst r_dst, r_src
+
                     6'b01_1000:
                         begin
                             alu_shift_op = 1'b1;
-                            if (op_num4 == 0)                                                           
-                                {alu_out, alu_c} = {flag_c, r_dst};                                       // rrx r_dst        ; when num4 == 0 
-                            else                                                                        
-                                {alu_out, alu_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];                    // ror r_dst, #num4 ; when num4 != 0 
+                            if (op_num4 == 0)
+                                {alu_out, alu_c} = {flag_c, r_dst};                                         // rrx r_dst        ; when num4 == 0
+                            else
+                                {alu_out, alu_c} = {r_dst, r_dst, 1'b0} >> r_src[3:0];                      // ror r_dst, #num4 ; when num4 != 0
                         end
 
                     6'b01_1001: {alu_shift_op, alu_c, alu_out} = {1'b1, {1'b0,r_dst} << op_num4};           // lsl r_dst, #num4
                     6'b01_1010: {alu_shift_op, alu_out, alu_c} = {1'b1, {r_dst,1'b0} >> op_num4};           // lsr r_dst, #num4
                     6'b01_1011: {alu_shift_op, alu_out, alu_c} = {1'b1, $signed({r_dst,1'b0}) >>> op_num4}; // asr r_dst, #num4
 
-                    6'b01_1100: {alu_logic_op, alu_out} = {1'b1, r_dst |  (1'b1 << op_num4)};             // orr r_dst, #1<<num4
-                    6'b01_1101: {alu_logic_op, alu_out} = {1'b1, r_dst ^  (1'b1 << op_num4)};             // eor r_dst, #1<<num4
-                    6'b01_1110: {alu_logic_op, alu_out} = {1'b1, r_dst & ~(1'b1 << op_num4)};             // bic r_dst, #1<<num4
-                    6'b01_1111: {alu_tst_op, alu_out}     = {1'b1, r_dst &  (1'b1 << op_num4)};           // tst r_dst, #1<<num4
+                    6'b01_1100: {alu_logic_op, alu_out} = {1'b1, r_dst |  (1'b1 << op_num4)};               // orr r_dst, #1<<num4
+                    6'b01_1101: {alu_logic_op, alu_out} = {1'b1, r_dst ^  (1'b1 << op_num4)};               // eor r_dst, #1<<num4
+                    6'b01_1110: {alu_logic_op, alu_out} = {1'b1, r_dst & ~(1'b1 << op_num4)};               // bic r_dst, #1<<num4
+                    6'b01_1111: {alu_tst_op,   alu_out} = {1'b1, r_dst &  (1'b1 << op_num4)};               // tst r_dst, #1<<num4
 
-                    6'b1?_????:                                                                           // add r_dst, #signed_num9
+                    6'b1?_????:                                                                             // add r_dst, #signed_num9
                         begin
                             alu_add_op = 1'b1;
                             alu_signs_ne = r_dst[15] ^ op_sign;
@@ -366,7 +379,7 @@ module vixen (
 
             // 100n-nnnn-bbbb-tttt      stb target, [base,#num5] ; alias "stb target, [base]" when n == 0
             // 101n-nnnn-bbbb-tttt      stw target, [base,#num5] ; alias "stw target, [base]" when n == 0
-            2'b10: begin 
+            2'b10: begin
                 substate = SS_STORE;
                 ld_st_addr = r_base + op_num5;
                 ld_st_wide = op_ld_st_wide;
@@ -409,15 +422,18 @@ module vixen (
                                     // 1110-1111-....-....     ; unused 256 encodings
                                     9'b0_????: ;
 
-                                    // 1111-1111-0000-rrrr     mov r, flags
-                                    // 1111-1111-0001-rrrr     mov flags, r
-                                    9'b1_0000: {substate, flags_target} = {SS_FLAGS_SAVE, op_flags_target};
-                                    9'b1_0001: {substate, flags_target} = {SS_FLAGS_LOAD, op_flags_target};
+                                    // 1111-1111-0000-rrrr     rdf r
+                                    // 1111-1111-0001-rrrr     wrf r
+                                    9'b1_0000: {substate, flags_target} = {SS_RD_FLAGS, op_flags_target};
+                                    9'b1_0001: {substate, flags_target} = {SS_WR_FLAGS, op_flags_target};
 
-                                    // 1111-1111-1111-1111     hlt
+                                    // TODO move to FFFE and FFFF instead of FFE? and FFF?
+                                    // 1111-1111-1110-????     nop
+                                    // 1111-1111-1111-????     hlt
+                                    9'b1_1110: substate = SS_NOP;
                                     9'b1_1111: substate = SS_HALT;
 
-                                    // 1111-1111-....-....     ; unused 223 encodings
+                                    // 1111-1111-....-....     ; unused 222 encodings
                                     default: ;
                                 endcase
                             end

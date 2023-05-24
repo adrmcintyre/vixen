@@ -7,10 +7,10 @@ prog="${1:-programs/test.vx}"
 
 iverilog -Wall \
     -s "top" \
-    -o "output" \
+    -o "simulation.vvp" \
     *.v || exit 1
 
-vvp output -lxt2 || exit 1
+vvp simulation.vvp -lxt2 || exit 1
 
 #gtkwave test.lxt >& /dev/null &
 #gtkwave view.gtkw >& /dev/null &
