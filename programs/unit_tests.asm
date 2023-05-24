@@ -3,14 +3,22 @@
     mov r0, 0   ; keep r0 as zero
 
     ; writing flags
-    mov r1, 0xf000  ; NZCV
+    mov r1, 0x8000  ; N...
     wrf r1
     blpl .fail   ; N should be set
+    mov r1, 0x4000  ; .Z..
+    wrf r1
     blne .fail   ; Z should be set
+    mov r1, 0x2000  ; ..C.
+    wrf r1
     blcc .fail   ; C should be set
+    mov r1, 0x1000  ; ...V
+    wrf r1
     blvc .fail   ; V should be set
 
     ; reading flags
+    mov r1, 0xf000
+    wrf r1
     rdf r2
     cmp r1, r2
     blne .fail
