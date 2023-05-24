@@ -2,6 +2,37 @@
 use strict;
 use warnings;
 
+my @files = ();
+
+sub usage {
+    print "Usage: $0 [FILE ...]\n";
+    print "Assemble files, outputting to mem0.hex and mem1.hex\n";
+    print "\n";
+    print "OPTIONS\n";
+    print "  -h, --help  display this message\n";
+    print "  -- FILE(s)  take all remaining arguments as files\n";
+    exit 0
+}
+
+while(my $arg = shift) {
+    if ($arg =~ m/^--$/) {
+        last;
+    }
+    elsif ($arg =~ m/^(-h|--help)$/) {
+        usage();
+    }
+    elsif ($arg =~ m/^-/) {
+        die "unknown option: $arg";
+    }
+    else {
+        push @files, $arg;
+    }
+}
+
+@ARGV = (@files, @ARGV);
+
+our @image = (0xff) x 65536;
+
 # Syntax:
 #     org expr
 #     def label, expr
@@ -128,16 +159,18 @@ while(<>) {
     s/^\s+//;
     s/;.*//;
     s/\s+$//;
-    push @lines, $_;
+    push @lines, [$ARGV, $., $_];
+}
+continue {
+    # magic to reset line counter for each file scanned
+    close ARGV if eof;
 }
 
 our %labels = ();
 foreach our $pass (1, 2) {
     our $org = 0x0000;
-    our $lineno = 0;
     foreach my $raw_line (@lines) {
-        our $line = $raw_line;
-        $lineno++;
+        our ($file, $lineno, $line) = @$raw_line;
         if ($line =~ s{^\.([a-z_]\w*)\s*}{}xi) {
             my $label = $1;
             if ($pass == 1) {
@@ -180,6 +213,20 @@ foreach our $pass (1, 2) {
         }
     }
 }
+
+print ";; \n";
+print ";; Writing image to mem0.hex, mem1.hex\n";
+print ";; \n";
+open MEM0, ">", "mem0.hex" or die "mem0.hex: $!";
+open MEM1, ">", "mem1.hex" or die "mem1.hex: $!";
+for my $i (0..32767) {
+    my $sep = (($i & 15) == 15) ? "\n" : " ";
+    MEM0->printf("%02x%s", $image[$i*2], $sep);
+    MEM1->printf("%02x%s", $image[$i*2+1], $sep);
+}
+close MEM0;
+close MEM1;
+exit 0;
 
 sub decode_op {
     my $op = shift;
@@ -370,6 +417,7 @@ sub emit_byte {
     my $byte = shift;
     if ($::pass == 2) {
         printf("%04x %02x ; %s\n", $::org, $byte & 0xff, $::line);
+        $::image[$::org] = $byte & 0xff;
     }
     $::org += 1;
 }
@@ -378,6 +426,8 @@ sub emit_word {
     my $word = shift;
     if ($::pass == 2) {
         printf("%04x %04x ; %s\n", $::org, $word & 0xffff, $::line);
+        $::image[$::org]   = $word >> 8;
+        $::image[$::org+1] = $word & 0xff;
     }
     $::org += 2;
 }
@@ -422,6 +472,6 @@ sub value {
 sub abort {
     my $fmt = shift;
     my @args = @_;
-    printf("line %d: %s -- %s\n", $::lineno, $::line, sprintf($fmt, @args));
+    printf("%s:%d: %s -- %s\n", $::file, $::lineno, $::line, sprintf($fmt, @args));
     exit 1;
 }
