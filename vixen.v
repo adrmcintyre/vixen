@@ -290,23 +290,23 @@ module vixen (
                     6'b00_0000: {alu_mov_op, alu_out} = {1'b1, r_src};    // mov r_dst, r_src
                     6'b00_0001: {alu_mov_op, alu_out} = {1'b1, ~r_src};   // mvn r_dst, r_src
 
-                    6'b00_0010: {alu_add_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + r_src) + flag_c};     // adc r_dst, r_src
-                    6'b00_0011: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + ~r_src) + flag_c};    // sbc r_dst, r_src
+                    6'b00_0010: {alu_add_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,r_src}) + flag_c};      // adc r_dst, r_src
+                    6'b00_0011: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + flag_c};     // sbc r_dst, r_src
 
-                    6'b00_0100: {alu_add_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + r_src)};              // add r_dst, r_src
-                    6'b00_0101: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};      // sub r_dst, r_src
+                    6'b00_0100: {alu_add_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // add r_dst, r_src
+                    6'b00_0101: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // sub r_dst, r_src
 
-                    6'b00_0110: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + ~r_dst) + flag_c};    // rsc r_dst, r_src
-                    6'b00_0111: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + ~r_dst) + 1'b1};      // rsb r_dst, r_src
+                    6'b00_0110: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + flag_c};     // rsc r_dst, r_src
+                    6'b00_0111: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + 1'b1};       // rsb r_dst, r_src
 
                     6'b00_1000: ;                                                                 // unused (8 bits) ; IDEA teq r_dst, r_src
                     6'b00_1001: ;                                                                 // unused (8 bits) ; IDEA teq r_dst, #1<<n
                     6'b00_1010: ;                                                                 // unused (8 bits)
                     6'b00_1011: ;                                                                 // unused (8 bits)
 
-                    6'b00_1100: {alu_logic_op, alu_out} = {1'b1, r_dst & r_src};                        // and r_dst, r_src
-                    6'b00_1101: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + ~r_src) + 1'b1};  // cmp r_dst, r_src
-                    6'b00_1110: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + r_src)};          // cmn r_dst, r_src
+                    6'b00_1100: {alu_logic_op, alu_out} = {1'b1, r_dst & r_src};                                    // and r_dst, r_src
+                    6'b00_1101: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // cmp r_dst, r_src
+                    6'b00_1110: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // cmn r_dst, r_src
 
                     6'b00_1111: ;                                                                 // unused (8 bits) ; IDEA mul r_dst, r_src
 
@@ -350,7 +350,7 @@ module vixen (
                         begin
                             alu_add_op = 1'b1;
                             alu_signs_ne = r_dst[15] ^ op_sign;
-                            {alu_c, alu_out} = {r_dst+{{9{op_sign}}, op_num8}};
+                            {alu_c, alu_out} = {1'b0,r_dst} + {{9{op_sign}},op_num8};
                         end
                 endcase
             end
