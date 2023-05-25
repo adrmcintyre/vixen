@@ -2,17 +2,21 @@
 use strict;
 use warnings;
 
-my @files = ();
+my $default_outfile = "mem.bin";
 
 sub usage {
     print "Usage: $0 [FILE ...]\n";
-    print "Assemble files, outputting to mem0.hex and mem1.hex\n";
+    print "Assemble files, and write a memory image to $default_outfile\n";
     print "\n";
     print "OPTIONS\n";
     print "  -h, --help  display this message\n";
+    print "  -o FILE     write image to FILE\n";
     print "  -- FILE(s)  take all remaining arguments as files\n";
     exit 0
 }
+
+my @files = ();
+my $outfile = $default_outfile;
 
 while(my $arg = shift) {
     if ($arg =~ m/^--$/) {
@@ -20,6 +24,9 @@ while(my $arg = shift) {
     }
     elsif ($arg =~ m/^(-h|--help)$/) {
         usage();
+    }
+    elsif ($arg =~ m/^-o$/ && $#ARGV >= 0) {
+        $outfile = shift;
     }
     elsif ($arg =~ m/^-/) {
         die "unknown option: $arg";
@@ -29,7 +36,8 @@ while(my $arg = shift) {
     }
 }
 
-@ARGV = (@files, @ARGV);
+push @files, @ARGV;
+die "no input files" if scalar @files == 0; 
 
 our @image = (0xff) x 65536;
 
@@ -154,17 +162,29 @@ our %ops = (
 
 my @lines = ();
 
-while(<>) {
-    chomp;
-    s/^\s+//;
-    s/;.*//;
-    s/\s+$//;
-    push @lines, [$ARGV, $., $_];
+while(my $file = shift @files) {
+    open my $fh, "<", $file or die "$file: $!";
+    while (<$fh>) {
+        chomp;
+        s/^\s+//;
+        s/;.*//;
+        s/\s+$//;
+        push @lines, [$file, $., $_];
+    }
+    $fh->close;
 }
-continue {
-    # magic to reset line counter for each file scanned
-    close ARGV if eof;
-}
+
+# while(<>) {
+#     chomp;
+#     s/^\s+//;
+#     s/;.*//;
+#     s/\s+$//;
+#     push @lines, [$ARGV, $., $_];
+# }
+# continue {
+#     # magic to reset line counter for each file scanned
+#     close ARGV if eof;
+# }
 
 our %labels = ();
 foreach our $pass (1, 2) {
@@ -215,17 +235,13 @@ foreach our $pass (1, 2) {
 }
 
 print ";; \n";
-print ";; Writing image to mem0.hex, mem1.hex\n";
+print ";; Writing image to $outfile\n";
 print ";; \n";
-open MEM0, ">", "mem0.hex" or die "mem0.hex: $!";
-open MEM1, ">", "mem1.hex" or die "mem1.hex: $!";
-for my $i (0..32767) {
-    my $sep = (($i & 15) == 15) ? "\n" : " ";
-    MEM0->printf("%02x%s", $image[$i*2], $sep);
-    MEM1->printf("%02x%s", $image[$i*2+1], $sep);
+open my $fh, ">:raw", $outfile or die "$outfile: $!";
+foreach my $byte (@image) {
+    $fh->print(chr($byte));
 }
-close MEM0;
-close MEM1;
+$fh->close;
 exit 0;
 
 sub decode_op {
