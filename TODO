@@ -1,34 +1,22 @@
 Need to rework how branches work, as the max branch target
 is far too small, and doing a direct jump is painful, e.g.
 
-    blcs .target
-    .continue
+        blcs .far
+.cont   ...
+        ...
+.far    ...
 
-would need to become:
+needs to become something like:
 
-    bcc .continue
-    mov r14, r15
-    add r14, 6      ; compute address of .continue
-    ldw pc, [pc]    ; load pc from next word
-    dw .target      ; the absolute target
-    .continue
-
-unfortunately the above code trashes the flags. To avoid that
-we need to save and restore them, which in turn trashes a register:
-
-    bcc .continue
-    rdf r12
-    mov r14, r15
-    add r14, 8      ; compute address of .continue
-    wrf r12
-    ldw pc, [pc]    ; load pc from next word
-    dw .target      ; the absolute target
-    .continue
+        blcs .stub
+        bra .cont
+.stub   ldw pc, [pc]
+        dw .far
+.cont   ...
+        ...
+.far    ...
 
 How about doing away with all bCC instructions and replacing with skipCC.
-
 This frees up 4 bits in the old bCC instruction space, getting us 12 bits of
-branch target, which is +-4096 bytes, since jumps are aligned.
-
-Still doesn't fix the problems with having to synthesise bl for > +-4096 jumps.
+branch target instead of 8, which is +-4096 bytes, since jumps are aligned.
 
