@@ -1,6 +1,6 @@
 #!/bin/bash
 
-prog="${1:-programs/test.vx}"
+prog="${1:-programs/halt.asm}"
 
 ./asm.pl "$prog" || exit 1
 
