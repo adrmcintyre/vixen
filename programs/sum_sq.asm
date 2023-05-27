@@ -17,11 +17,12 @@
 
 .mul    mov r2, 0
 .loop   tst r0, bit 0
-        beq .skip
+        prne
         add r2, r1
 .skip   lsl r1, 1
         lsr r0, 1
-        bne .loop
+        prne
+        bra .loop
         mov r15, r14
 
 
