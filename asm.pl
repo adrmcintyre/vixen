@@ -15,7 +15,7 @@ sub usage {
     exit 0
 }
 
-my @files = ();
+my $files = [];
 my $outfile = $default_outfile;
 
 while(my $arg = shift) {
@@ -32,14 +32,14 @@ while(my $arg = shift) {
         die "unknown option: $arg";
     }
     else {
-        push @files, $arg;
+        push @$files, $arg;
     }
 }
 
-push @files, @ARGV;
-die "no input files" if scalar @files == 0;
+push @$files, @ARGV;
+die "no input files" if scalar @$files == 0;
 
-our @image = (0xff) x 65536;
+our $image = [(0xff) x 65536];
 
 # Syntax:
 #     org expr
@@ -48,6 +48,25 @@ our @image = (0xff) x 65536;
 #     dw expr
 #     .label
 #     ; comment
+
+# Expressions in order of precedence:
+#   e := (e)
+#   e := -e
+#   e :- ~e
+#   e := e1 * e2  ; e := e1 / e2 ; e := e1 % e2
+#   e := e1 + e2  ; e := e1 - e2
+#   e := e1 << e2 ; e := e1 >> e2
+#   e := e1 ^ e2
+#   e := e1 & e2
+#   e := e2 | e2
+#
+#   hi(e1) lo(e1)           funcs
+#   [0-9]+                  decimal
+#   0x[0-9a-f]+             hex
+#   0b[01]+                 binary
+#   .[A-Za-z][A-Za-z0-9_]*  label
+#
+#   numeric constants may contain _ as digit separators
 
 # modes:
 #   0 = none
@@ -67,8 +86,7 @@ our @image = (0xff) x 65536;
 #   oooo : insert offset as signed word count
 #   mmmm : insert num or num>>8, with top bit indicating which
 
-
-our %ops = (
+our $ops = {
     'mov:2'  => '0000:0000:ssss:rrrr',
     'mvn:2'  => '0000:0001:ssss:rrrr',
     'adc:2'  => '0000:0010:ssss:rrrr',
@@ -98,10 +116,10 @@ our %ops = (
     'lsl:#'  => '0001:1001:nnnn:rrrr',
     'lsr:#'  => '0001:1010:nnnn:rrrr',
     'asr:#'  => '0001:1011:nnnn:rrrr',
-    'orr:#'  => '0001:1100:bbbb:rrrr', 'orr:b'  => '0001:1100:nnnn:rrrr',
-    'eor:#'  => '0001:1101:bbbb:rrrr', 'eor:b'  => '0001:1101:nnnn:rrrr',
-    'bic:#'  => '0001:1110:bbbb:rrrr', 'bic:b'  => '0001:1110:nnnn:rrrr',
-    'tst:#'  => '0001:1111:bbbb:rrrr', 'tst:b'  => '0001:1111:nnnn:rrrr',
+    'orr:#'  => '0001:1100:bbbb:rrrr',
+    'eor:#'  => '0001:1101:bbbb:rrrr',
+    'bic:#'  => '0001:1110:bbbb:rrrr',
+    'tst:#'  => '0001:1111:bbbb:rrrr',
 
     'add:#'  => '001+:++++:++++:rrrr',  # TODO - should reject r15
     'sub:#'  => '001-:----:----:rrrr',  # TODO - should reject r15
@@ -140,46 +158,63 @@ our %ops = (
     'br:.'   => '1110:oooo:oooo:oooo',
     'bra:.'  => '1110:oooo:oooo:oooo',
     'bl:.'   => '1111:oooo:oooo:oooo',
-);
+};
 
-my @lines = ();
+# [arity, map[op -> sub]]
+our $eval_ops = [
+    [ 2, { "|"  => sub {$_[0] |  $_[1]} }],
+    [ 2, { "^"  => sub {$_[0] ^  $_[1]} }],
+    [ 2, { "&"  => sub {$_[0] &  $_[1]} }],
+    [ 2, { "<<" => sub {$_[0] << $_[1]},
+           ">>" => sub {$_[0] >> $_[1]} }],
+    [ 1, { "bit"=> sub {1 << $_[0]},
+           "hi" => sub {$_[0] & 0xff00},
+           "lo" => sub {$_[0] & 0x00ff} }],
+    [ 2, { "+"  => sub {$_[0] +  $_[1]},
+           "-"  => sub {$_[0] -  $_[1]} }],
+    [ 2, { "*"  => sub {$_[0] *  $_[1]},
+           "/"  => sub {$_[0] /  $_[1]},
+           "%"  => sub {$_[0] %  $_[1]} }],
+    [ 1, { "~"  => sub {~$_[0]},
+           "-"  => sub {-$_[0]} }],
+];
 
-while(my $file = shift @files) {
+# func -> arity -> sub
+our $funcs = {
+    # "func_name" => { 1 => sub { some_func_of($_[0]) } },
+    # ...
+};
+
+# At each step of evaluation, values are &ed with this mask.
+our $value_mask = 0xffff_ffff;
+
+my $lines = [];
+
+while(my $file = shift @$files) {
     open my $fh, "<", $file or die "$file: $!";
     while (<$fh>) {
         chomp;
         s/^\s+//;
         s/;.*//;
         s/\s+$//;
-        push @lines, [$file, $., $_];
+        push @$lines, [$file, $., $_];
     }
     $fh->close;
 }
 
-# while(<>) {
-#     chomp;
-#     s/^\s+//;
-#     s/;.*//;
-#     s/\s+$//;
-#     push @lines, [$ARGV, $., $_];
-# }
-# continue {
-#     # magic to reset line counter for each file scanned
-#     close ARGV if eof;
-# }
+our $labels = {};
 
-our %labels = ();
 foreach our $pass (1, 2) {
     our $org = 0x0000;
-    foreach my $raw_line (@lines) {
+    foreach my $raw_line (@$lines) {
         our ($file, $lineno, $line) = @$raw_line;
         if ($line =~ s{^\.([a-z_]\w*)\s*}{}xi) {
             my $label = $1;
             if ($pass == 1) {
-                if (exists $labels{$label}) {
+                if (exists $labels->{$label}) {
                     abort("symbol exists: %s", $label);
                 }
-                $labels{$label} = $org;
+                $labels->{$label} = $org;
             }
             else {
                 print ".$label\n";
@@ -192,11 +227,11 @@ foreach our $pass (1, 2) {
             my $label = $1;
             my $expr = $2;
             if ($pass == 1) {
-                if (exists $labels{$label}) {
+                if (exists $labels->{$label}) {
                     abort("symbol exists: %s", $label);
                 }
             }
-            $labels{$label} = value($expr);
+            $labels->{$label} = value($expr);
         }
         elsif ($line =~ m{^org\s+(.*?)\s*$}xi) {
             $org = value($1);
@@ -220,7 +255,7 @@ print ";; \n";
 print ";; Writing image to $outfile\n";
 print ";; \n";
 open my $fh, ">:raw", $outfile or die "$outfile: $!";
-foreach my $byte (@image) {
+foreach my $byte (@$image) {
     $fh->print(chr($byte));
 }
 $fh->close;
@@ -245,11 +280,6 @@ sub decode_op {
                 $mode = '2';
                 $desc = 'reg1, reg2';
                 $reg2 = $1;
-            }
-            elsif ($args =~ s{^(?:bit|b)\s*(.*?)\s*$}{}xi) {
-                $mode = 'b';
-                $desc = 'reg, bit imm';
-                $num = value($1);
             }
             elsif ($args =~ s{^\[\s*r([0-9]+)\s*\]\s*$}{}xi) {
                 $mode = '[';
@@ -287,11 +317,11 @@ sub decode_op {
 
     my $op_mode = "$op:$mode";
 
-    if (!defined $::ops{$op_mode}) {
+    if (!defined $::ops->{$op_mode}) {
         abort("no such instruction format");
     }
 
-    my $template = $::ops{$op_mode};
+    my $template = $::ops->{$op_mode};
     $template =~ s/://g;
 
     my $word = 0;
@@ -415,7 +445,7 @@ sub emit_byte {
     my $byte = shift;
     if ($::pass == 2) {
         printf("%04x %02x ; %s\n", $::org, $byte & 0xff, $::line);
-        $::image[$::org] = $byte & 0xff;
+        $::image->[$::org] = $byte & 0xff;
     }
     $::org += 1;
 }
@@ -424,8 +454,8 @@ sub emit_word {
     my $word = shift;
     if ($::pass == 2) {
         printf("%04x %04x ; %s\n", $::org, $word & 0xffff, $::line);
-        $::image[$::org]   = $word >> 8;
-        $::image[$::org+1] = $word & 0xff;
+        $::image->[$::org]   = $word >> 8;
+        $::image->[$::org+1] = $word & 0xff;
     }
     $::org += 2;
 }
@@ -439,32 +469,160 @@ sub emit_op {
 }
 
 sub value {
-    my $expr = shift;
-    if ($expr =~ m{^ -(.*)$}xi) {
-        return -value($1);
+    my $e = shift;
+    my ($v, $rest) = op_value($e, 0);
+    if ($rest ne '') {
+        abort("unexpected trailing '$rest'");
+    }
+    return $v;
+}
+
+sub op_value {
+    my ($e, $level) = @_;
+
+    if (!defined $::eval_ops->[$level]) {
+        return bracket_value($e);
     }
 
-    if (my ($hex) = ($expr =~ m{^ 0x([[:xdigit:]]+) $}xi)) {
-        return hex $hex;
-    }
-    elsif (my ($bin) = ($expr =~ m{^ 0b([01]+) $}xi)) {
-        return oct "0b$bin";
-    }
-    elsif (my ($dec) = ($expr =~ m{^ ([[:digit:]]+) $}xi)) {
-        return 0+$dec;
-    }
-    elsif (my ($label) = ($expr =~ m{^ \.([a-z_]\w*) $}xi)) {
-        if (!defined $::labels{$label}) {
-            if ($::pass == 1) {
-                return 0;
+    my $entry = $::eval_ops->[$level];
+    my $arity = $entry->[0];
+
+    if ($arity == 1) {
+        my $infos = $entry->[1];
+        my @sub_stack = ();
+        UNARY_LOOP:
+        while(1) {
+            foreach my $op (keys %$infos) {
+                my $sub = $infos->{$op};
+                if($e =~ m{^ \Q$op\E \s*(.*) }x) {
+                    $e = $1;
+                    push @sub_stack, $sub;
+                    next UNARY_LOOP;
+                }
             }
-            abort("undefined symbol: %s", $label);
+            last;
         }
-        return $::labels{$label};
+
+        my ($v, $rest) = op_value($e, $level+1);
+        while(my $sub = pop @sub_stack) {
+            $v = $sub->($v) & $::value_mask;
+        }
+        return ($v, $rest);
+    }
+    elsif ($arity == 2) {
+        my ($v, $rest) = op_value($e, $level+1);
+
+        my $infos = $entry->[1];
+        BINARY_LOOP:
+        while (1) {
+            foreach my $op (keys %$infos) {
+                my $sub = $infos->{$op};
+                if ($rest =~ m{^ \Q$op\E \s*(.*) }x) {
+                    (my $v2, $rest) = op_value($1, $level+1);
+                    $v = $sub->($v, $v2) & $::value_mask;
+                    next BINARY_LOOP;
+                }
+            }
+            return ($v, $rest);
+        }
     }
     else {
-        abort("cannot evaluate: %s", $expr);
+        die "unknown arity: $arity";
     }
+}
+
+sub bracket_value {
+    my $e = shift;
+    if ($e =~ m{^ \( \s*(.*) }x) {
+        my ($v, $rest) = op_value($1, 0);
+        if ($rest =~ m{^ \) \s*(.*) }x) {
+            return ($v, $1);
+        }
+        abort("unbalanced parentheses");
+    }
+    my ($v, $rest) = func_value($e);
+    return ($v, $rest);
+}
+
+sub func_value {
+    my $e = shift;
+    if ($e =~ m{^ (\w+)\( \s*(.*) }x) {
+        my $func = $1;
+        my $rest = $2;
+        if (!defined $::funcs->{$func}) {
+            abort("unknown func: %s", $func);
+        }
+        my $info = $funcs->{$func};
+        my $v;
+        my @args = ();
+        if ($rest =~ m{^ \) \s*(.*) }x) {
+            $rest = $1;
+        }
+        else {
+            while(1) {
+                ($v, $rest) = op_value($rest, 0);
+                push @args, $v;
+                if ($rest =~ m{^ , \s*(.*) }x) {
+                    $rest = $1;
+                }
+                elsif ($rest =~ m{^ \) \s*(.*) }x) {
+                    $rest = $1;
+                    last;
+                }
+                else {
+                    abort("unbalanced parentheses");
+                }
+            }
+        }
+
+        my $arity = scalar @args;
+        if (!defined $info->{$arity}) {
+            abort("func '%s' does not take %d arguments", $func, $arity);
+        }
+        my $sub = $info->{$arity};
+        $v = $sub->(@args) & $::value_mask;
+        return ($v, $rest);
+    }
+    my ($v, $rest) = terminal_value($e);
+    return ($v, $rest);
+}
+
+#   [0-9]+(_[0-9]+)*
+#   0x[0-9a-f]+(_[0-9a-f]+)*
+#   0b[01]+(_[01]+)*
+sub terminal_value {
+    my $e = shift;
+    my ($v, $rest);
+    if ($e =~ m{^ 0x( [0-9a-f]+ (?:[0-9a-f_]+)* ) \s*(.*)}xi) {
+        (my $digits, $rest) = ($1, $2);
+        $digits =~ s/_//;
+        $v = hex($digits);
+    }
+    elsif ($e =~ m{^ 0b( [01]+ (?:[01_]+)* ) \s*(.*)}xi) {
+        (my $digits, $rest) = ($1, $2);
+        $digits =~ s/_//;
+        $v = oct("0b$digits");
+    }
+    elsif ($e =~ m{^ ( [0-9]+ (?:[0-9_]+)* ) \s*(.*)}xi) {
+        (my $digits, $rest) = ($1, $2);
+        $digits =~ s/_//;
+        $v = 0+$digits;
+    }
+    elsif ($e =~ m{^ \.([a-z_]\w*) \s*(.*)}xi) {
+        if (defined $::labels->{$1}) {
+            ($v, $rest) = ($::labels->{$1}, $2);
+        }
+        elsif ($::pass == 1) {
+            ($v, $rest) = (0, $2);
+        }
+        else {
+            abort("undefined symbol: %s", $1);
+        }
+    }
+    else {
+        abort("cannot evaluate: %s", $e);
+    }
+    return ($v & $::value_mask, $rest);
 }
 
 sub abort {

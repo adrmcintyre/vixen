@@ -1,0 +1,22 @@
+asm.pl:
+    * At each step of evaluation, values are &ed with value_mask.
+    Figure out if this is the best strategy.  Ideally we'd probably
+    have arbitrary precision signed binary.
+
+    * Implement textual macros
+        * Where could they appear?
+        * Easiest: anywhere an instruction can.
+        * Pure textual substitution (with args)
+        * Could just fall back on cpp preprocessor.
+        * Example:
+            macro add3(x, y, z)
+                mov x, y
+                add x, z
+            endmacro
+            ...
+
+            add3 r1, r2, r3
+
+    * Implement register aliases, e.g.:
+        alias pc r15
+        alias link r14

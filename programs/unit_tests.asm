@@ -1,9 +1,9 @@
 ; unit tests
 
-    def N 0x8000
-    def Z 0x4000
-    def C 0x2000
-    def V 0x1000
+    def N bit 15
+    def Z bit 14
+    def C bit 13
+    def V bit 12
 
     ; writing flags
     mov r1, .N
@@ -13,7 +13,7 @@
     mov r1, .Z
     wrf r1
     prne
-    bl.fail
+    bl .fail
     mov r1, .C
     wrf r1
     prcc
@@ -24,7 +24,7 @@
     bl .fail
 
     ; reading flags
-    mov r1, 0xf000
+    mov r1, .N|.Z|.C|.V
     wrf r1
     rdf r2
     cmp r1, r2
@@ -123,7 +123,7 @@
     mov r1, 0
     add r1, 0
     rdf r2
-    mov r3, 0x4000
+    mov r3, .Z
     cmp r2, r3
     prne
     bl .fail
@@ -132,7 +132,7 @@
     mov r1, 0x7f00
     add r1, 0x80
     rdf r2
-    mov r3, 0x0000
+    mov r3, 0
     cmp r2, r3
     prne
     bl .fail
@@ -142,7 +142,7 @@
     add r1, 0x80
     add r1, 0x80
     rdf r2
-    mov r3, 0x9000
+    mov r3, .N|.V
     cmp r2, r3
     prne
     bl .fail
@@ -152,7 +152,7 @@
     mvn r1, r0
     add r0, r1
     rdf r2
-    mov r3, 0x8000
+    mov r3, .N
     cmp r2, r3
     prne
     bl .fail
@@ -163,7 +163,7 @@
     nop
     sub r0, r1
     rdf r2
-    mov r3, 0x8000
+    mov r3, .N
     cmp r2, r3
     prne
     bl .fail
