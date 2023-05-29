@@ -3,7 +3,7 @@
 module vixen (
         input clk
 );
-    integer display_state = 0;
+    integer display_state    = 0;
     integer display_substate = 0;
 
     // MEMORY SUBSYSTEM
@@ -62,7 +62,7 @@ module vixen (
         FETCH     = 3'd1,
         FETCH_END = 3'd2,
         EXECUTE   = 3'd3,
-        RETIRE    = 3'd4;
+        MEMOP     = 3'd4;
 
     localparam
         SS_NOP      = 4'd0,
@@ -142,6 +142,8 @@ module vixen (
                         r[4], r[5], r[6], r[7],
                         r[14]);
 
+                state <= FETCH;
+
                 case (substate)
                     SS_NOP: begin
                         if (display_substate) $display("NOP");
@@ -167,15 +169,19 @@ module vixen (
                         mem_wr <= 0;
                         mem_wide <= ld_st_wide;
                         mem_en <= 1;
+
+                        state <= MEMOP;
                     end
 
                     SS_STORE: begin
-                        if (display_substate) $display("STORE");
-                        mem_din <= r[reg_target];
+                        if (display_substate) $display("ST%s r%d = %02x => %04x", ld_st_wide ? "W" : "B", reg_target, r[reg_target], ld_st_addr);
+                        mem_din <= r_target;
                         mem_addr <= ld_st_addr;
                         mem_wr <= 1;
                         mem_wide <= ld_st_wide;
                         mem_en <= 1;
+
+                        state <= MEMOP;
                     end
 
                     SS_RD_FLAGS: begin
@@ -207,12 +213,10 @@ module vixen (
                     end
 
                 endcase
-
-                state <= RETIRE;
             end
 
-            RETIRE: begin
-                if (display_substate) $display("RETIRE");
+            MEMOP: begin
+                if (display_substate) $display("MEMOP");
                 mem_en <= 0;
                 if (reg_rd) begin
                     r[reg_target] <= mem_dout;

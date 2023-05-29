@@ -179,6 +179,17 @@
     bl .fail
 
 
+    mov r0, 0xab00
+    add r0, 0x00cd
+    mov r1, 0x8000
+    stw r0, [r1]
+    ldw r2, [r1]
+    cmp r0, r2
+    prne
+    bl .fail
+
+
+
 ;; r14 will be 0 on success
 .succ       
     mov r14, 0
