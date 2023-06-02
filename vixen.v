@@ -3,8 +3,7 @@
 module vixen (
         input clk
 );
-    integer display_state    = 0;
-    integer display_substate = 0;
+    integer display_state = 0;
 
     // MEMORY SUBSYSTEM
     reg         mem_en;
@@ -31,7 +30,7 @@ module vixen (
     reg flag_c;
     reg flag_v;
 
-    reg [15:0] op;          // last instruction fetched
+    wire [15:0] op = mem_dout;          // last instruction fetched
 
     // instruction decoding
     wire [3:0] dst              = op[3:0];      // alu dst reg
@@ -60,9 +59,8 @@ module vixen (
     localparam
         RESET     = 3'd0,
         FETCH     = 3'd1,
-        FETCH_END = 3'd2,
-        EXECUTE   = 3'd3,
-        MEMOP     = 3'd4;
+        EXECUTE   = 3'd2,
+        LOAD      = 3'd3;
 
     localparam
         SS_NOP      = 4'd0,
@@ -73,7 +71,8 @@ module vixen (
         SS_WR_FLAGS = 4'd5,
         SS_BRANCH   = 4'd6,
         SS_PRED     = 4'd7,
-        SS_HALT     = 4'd8;
+        SS_HALT     = 4'd8,
+        SS_TRAP     = 4'd9;
 
     reg [2:0] state = RESET;
     reg [3:0] substate;
@@ -81,6 +80,20 @@ module vixen (
     reg reg_rd;
     reg predicated;
     reg [3:0] reg_target;
+
+    task TRACE(input [7*8-1:0] label);
+        $display("%x %x EXECUTE %-s pc=%x [%s%s%s%s] r0=%x r1=%x r2=%x r3=%x r4=%x r5=%x r6=%x r7=%x .. r14=%x",
+                pc-16'd2, op,
+                label,
+                pc,
+                flag_n ? "N" : ".",
+                flag_z ? "Z" : ".",
+                flag_c ? "C" : ".",
+                flag_v ? "V" : ".",
+                r[0], r[1], r[2], r[3],
+                r[4], r[5], r[6], r[7],
+                r[14]);
+    endtask
 
     always @(posedge clk) begin
         case (state)
@@ -95,7 +108,7 @@ module vixen (
                     r[i] <= 16'h0000;
                 end
                 next_pc <= 16'h0000;
-                op <= 0;
+                //op <= 0;
                 predicated <= 1;
 
                 reg_rd <= 0;
@@ -115,42 +128,22 @@ module vixen (
                 mem_wr   <= 0;
                 mem_wide <= 1;
                 mem_en   <= 1;
-                r[15] <= pc;
-                state <= FETCH_END;
-            end
 
-            FETCH_END: begin
-                if (display_state) $display("FETCH_END");
-                op <= mem_dout;
-                mem_en <= 0;
-                r[15] <= pc + 2;
+                r[15] <= pc+2;
                 predicated <= 1;
                 state <= predicated ? EXECUTE : FETCH;
             end
 
             EXECUTE: begin
-                // TODO - replace EXECUTE with these substates???
-                // then we can optimise which following state we move to.
-                $display("%x %x EXECUTE pc=%x [%s%s%s%s] r0=%x r1=%x r2=%x r3=%x r4=%x r5=%x r6=%x r7=%x .. r14=%x",
-                        pc-16'd2, op,
-                        pc,
-                        flag_n ? "N" : ".",
-                        flag_z ? "Z" : ".",
-                        flag_c ? "C" : ".",
-                        flag_v ? "V" : ".",
-                        r[0], r[1], r[2], r[3],
-                        r[4], r[5], r[6], r[7],
-                        r[14]);
-
                 state <= FETCH;
 
                 case (substate)
                     SS_NOP: begin
-                        if (display_substate) $display("NOP");
+                        TRACE("NOP");
                     end
 
                     SS_ALU: begin
-                        if (display_substate) $display("ALU");
+                        TRACE("ALU");
                         if (alu_wr_reg) begin
                             r[dst] <= alu_out;
                         end
@@ -161,7 +154,7 @@ module vixen (
                     end
 
                     SS_LOAD: begin
-                        if (display_substate) $display("LOAD");
+                        TRACE("LOAD");
                         reg_rd <= 1;
                         reg_target <= ld_st_target;
 
@@ -170,32 +163,32 @@ module vixen (
                         mem_wide <= ld_st_wide;
                         mem_en <= 1;
 
-                        state <= MEMOP;
+                        state <= LOAD;
                     end
 
                     SS_STORE: begin
-                        if (display_substate) $display("ST%s r%d = %02x => %04x", ld_st_wide ? "W" : "B", reg_target, r[reg_target], ld_st_addr);
+                        TRACE("STORE");
                         mem_din <= r_target;
                         mem_addr <= ld_st_addr;
                         mem_wr <= 1;
                         mem_wide <= ld_st_wide;
                         mem_en <= 1;
 
-                        state <= MEMOP;
+                        state <= FETCH;
                     end
 
                     SS_RD_FLAGS: begin
-                        if (display_substate) $display("RD_FLAGS");
+                        TRACE("RDFLAGS");
                         r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
                     end
 
                     SS_WR_FLAGS: begin
-                        if (display_substate) $display("WR_FLAGS");
+                        TRACE("WRFLAGS");
                         {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
                     end
 
                     SS_BRANCH: begin
-                        if (display_substate) $display("BRANCH");
+                        TRACE("BRANCH");
                         if (br_link) begin
                             r[14] <= pc;
                         end
@@ -203,25 +196,28 @@ module vixen (
                     end
 
                     SS_PRED: begin
-                        if (display_substate) $display("PRED");
+                        TRACE("PRED");
                         predicated <= pred_true;
                     end
 
                     SS_HALT: begin
-                        if (display_substate) $display("HALT");
+                        TRACE("HALT");
+                        $finish;
+                    end
+
+                    SS_TRAP: begin
+                        TRACE("TRAP");
                         $finish;
                     end
 
                 endcase
             end
 
-            MEMOP: begin
-                if (display_substate) $display("MEMOP");
+            LOAD: begin
+                TRACE("LOAD2");
                 mem_en <= 0;
-                if (reg_rd) begin
-                    r[reg_target] <= mem_dout;
-                    reg_rd <= 0;
-                end
+                r[reg_target] <= mem_dout;
+                reg_rd <= 0;
                 state <= FETCH;
             end
         endcase
@@ -301,7 +297,7 @@ module vixen (
 
         flags_target = 4'b0;
 
-        substate = SS_NOP;
+        substate = SS_TRAP;
 
         case (op_major_cat)
             2'b00: begin
@@ -329,16 +325,16 @@ module vixen (
                     6'b00_0110: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + flag_c};     // rsc r_dst, r_src
                     6'b00_0111: {alu_sub_op, alu_c, alu_out} = {1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + 1'b1};       // rsb r_dst, r_src
 
-                    6'b00_1000: substate = SS_NOP;                                                                  // unused (8 bits) ; IDEA teq r_dst, r_src
-                    6'b00_1001: substate = SS_NOP;                                                                  // unused (8 bits) ; IDEA teq r_dst, #1<<n
-                    6'b00_1010: substate = SS_NOP;                                                                  // unused (8 bits)
-                    6'b00_1011: substate = SS_NOP;                                                                  // unused (8 bits)
+                    6'b00_1000: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA teq r_dst, r_src
+                    6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA teq r_dst, #1<<n
+                    6'b00_1010: substate = SS_TRAP;                                                                 // unused (8 bits)
+                    6'b00_1011: substate = SS_TRAP;                                                                 // unused (8 bits)
 
                     6'b00_1100: {alu_logic_op, alu_out} = {1'b1, r_dst & r_src};                                    // and r_dst, r_src
                     6'b00_1101: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // cmp r_dst, r_src
                     6'b00_1110: {alu_cmp_op, alu_c, alu_out} = {1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // cmn r_dst, r_src
 
-                    6'b00_1111: substate = SS_NOP;                                                                  // unused (8 bits) ; IDEA mul r_dst, r_src
+                    6'b00_1111: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA mul r_dst, r_src
 
                     6'b01_0000:                                                                             // ror r_dst, r_src
                         begin
@@ -417,7 +413,7 @@ module vixen (
                                 16'b0011_0000_????_1111: {substate, flags_target} = {SS_RD_FLAGS, op_flags_target}; // rdf r
                                 16'b0011_0001_????_1111: {substate, flags_target} = {SS_WR_FLAGS, op_flags_target}; // wrf r
                                 default: begin
-                                    substate = SS_NOP;
+                                    substate = SS_TRAP;
                                 end
                             endcase
                         end
