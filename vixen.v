@@ -3,7 +3,7 @@
 module vixen (
         input clk
 );
-    integer display_state = 0;
+    wire display_state = 1'b0;
 
     // MEMORY SUBSYSTEM
     reg         mem_en;
@@ -57,10 +57,10 @@ module vixen (
 
     // CPU state
     localparam
-        RESET     = 3'd0,
-        FETCH     = 3'd1,
-        EXECUTE   = 3'd2,
-        LOAD      = 3'd3;
+        RESET     = 2'd0,
+        FETCH     = 2'd1,
+        EXECUTE   = 2'd2,
+        LOAD      = 2'd3;
 
     localparam
         SS_NOP      = 4'd0,
@@ -74,7 +74,7 @@ module vixen (
         SS_HALT     = 4'd8,
         SS_TRAP     = 4'd9;
 
-    reg [2:0] state = RESET;
+    reg [1:0] state = RESET;
     reg [3:0] substate;
     reg [4*8-1:0] text;
     reg [15:0] next_pc;
@@ -210,6 +210,8 @@ module vixen (
                         $finish;
                     end
 
+                    default: $stop;
+
                 endcase
             end
 
@@ -298,7 +300,7 @@ module vixen (
         flags_target = 4'b0;
 
         substate = SS_TRAP;
-        text = "---";
+        text = "----";
 
         case (op_major_cat)
             2'b00: begin
@@ -314,55 +316,57 @@ module vixen (
 
                 // 00??-????-????-????
                 casez (op_arithlog)
-                    6'b00_0000: {text, alu_mov_op, alu_out} = {"MOV", 1'b1, r_src};    // mov r_dst, r_src
-                    6'b00_0001: {text, alu_mov_op, alu_out} = {"MVN", 1'b1, ~r_src};   // mvn r_dst, r_src
+                    6'b00_0000: {text, alu_mov_op, alu_out} = {"MOV ", 1'b1, r_src};    // mov r_dst, r_src
+                    6'b00_0001: {text, alu_mov_op, alu_out} = {"MVN ", 1'b1, ~r_src};   // mvn r_dst, r_src
 
-                    6'b00_0010: {text, alu_add_op, alu_c, alu_out} = {"ADC", 1'b1, ({1'b0,r_dst} + {1'b0,r_src}) + flag_c};      // adc r_dst, r_src
-                    6'b00_0011: {text, alu_sub_op, alu_c, alu_out} = {"SBC", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + flag_c};     // sbc r_dst, r_src
+                    6'b00_0010: {text, alu_add_op, alu_c, alu_out} = {"ADC ", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})  + {16'b0,flag_c}};   // adc r_dst, r_src
+                    6'b00_0011: {text, alu_sub_op, alu_c, alu_out} = {"SBC ", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + {16'b0,flag_c}};   // sbc r_dst, r_src
 
-                    6'b00_0100: {text, alu_add_op, alu_c, alu_out} = {"ADD", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // add r_dst, r_src
-                    6'b00_0101: {text, alu_sub_op, alu_c, alu_out} = {"SUB", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // sub r_dst, r_src
+                    6'b00_0100: {text, alu_add_op, alu_c, alu_out} = {"ADD ", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})};                     // add r_dst, r_src
+                    6'b00_0101: {text, alu_sub_op, alu_c, alu_out} = {"SUB ", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + {16'b0,1'b1}};     // sub r_dst, r_src
 
-                    6'b00_0110: {text, alu_sub_op, alu_c, alu_out} = {"RSC", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + flag_c};     // rsc r_dst, r_src
-                    6'b00_0111: {text, alu_sub_op, alu_c, alu_out} = {"RSB", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + 1'b1};       // rsb r_dst, r_src
+                    6'b00_0110: {text, alu_sub_op, alu_c, alu_out} = {"RSC ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,flag_c}};   // rsc r_dst, r_src
+                    6'b00_0111: {text, alu_sub_op, alu_c, alu_out} = {"RSB ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,1'b1}};     // rsb r_dst, r_src
 
                     6'b00_1000: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA teq r_dst, r_src
                     6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA teq r_dst, #1<<n
                     6'b00_1010: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1011: substate = SS_TRAP;                                                                 // unused (8 bits)
 
-                    6'b00_1100: {text, alu_logic_op, alu_out}      = {"AND", 1'b1, r_dst & r_src};                               // and r_dst, r_src
-                    6'b00_1101: {text, alu_cmp_op, alu_c, alu_out} = {"CMP", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // cmp r_dst, r_src
-                    6'b00_1110: {text, alu_cmp_op, alu_c, alu_out} = {"CMN", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // cmn r_dst, r_src
+                    6'b00_1100: {text, alu_logic_op, alu_out}      = {"AND ", 1'b1, r_dst & r_src};                               // and r_dst, r_src
+                    6'b00_1101: {text, alu_cmp_op, alu_c, alu_out} = {"CMP ", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // cmp r_dst, r_src
+                    6'b00_1110: {text, alu_cmp_op, alu_c, alu_out} = {"CMN ", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // cmn r_dst, r_src
 
-                    6'b00_1111: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA mul r_dst, r_src
+                    6'b00_1111: substate = SS_TRAP;                                                         // unused (8 bits) ; IDEA mul r_dst, r_src
 
                     6'b01_0000:                                                                             // ror r_dst, r_src
                         begin
-                            if (r_src[7:0] == 0) begin
-                                {text, alu_logic_op, alu_out} = {"ROR", 1'b1, r_dst};
+                            if (r_src[3:0] == 0) begin
+                                {text, alu_logic_op, alu_out} = {"ROR ", 1'b1, r_dst};
                             end
                             else begin
                                 alu_shift_op = 1'b1;
-                                {text, alu_out, alu_c} = {"ROR", r_dst, r_dst, 1'b0} >> r_src[3:0];
+                                text = "ROR ";
+                                {alu_out, alu_c} = {r_dst[14:0],2'b00} << (15-r_src[3:0]) | {r_dst,1'b0} >> r_src[3:0];
                             end
                         end
-                    6'b01_0001: {text, alu_shift_op, alu_c, alu_out} = {"LSL", 1'b1, {1'b0,r_dst} << r_src};             // lsl r_dst, r_src
-                    6'b01_0010: {text, alu_shift_op, alu_out, alu_c} = {"LSR", 1'b1, {r_dst,1'b0} >> r_src};             // lsr r_dst, r_src
-                    6'b01_0011: {text, alu_shift_op, alu_out, alu_c} = {"ASR", 1'b1, $signed({r_dst,1'b0}) >>> r_src};   // asr r_dst, r_src
-                    6'b01_0100: {text, alu_logic_op, alu_out} = {"ORR", 1'b1, r_dst | r_src};                            // orr r_dst, r_src
-                    6'b01_0101: {text, alu_logic_op, alu_out} = {"EOR", 1'b1, r_dst ^ r_src};                            // eor r_dst, r_src
-                    6'b01_0110: {text, alu_logic_op, alu_out} = {"BIC", 1'b1, r_dst & ~r_src};                           // bic r_dst, r_src
-                    6'b01_0111: {text, alu_tst_op,   alu_out} = {"TST", 1'b1, r_dst & r_src};                            // tst r_dst, r_src
+                    6'b01_0001: {text, alu_shift_op, alu_c, alu_out} = {"LSL ", 1'b1, {1'b0,r_dst} << r_src};             // lsl r_dst, r_src
+                    6'b01_0010: {text, alu_shift_op, alu_out, alu_c} = {"LSR ", 1'b1, {r_dst,1'b0} >> r_src};             // lsr r_dst, r_src
+                    6'b01_0011: {text, alu_shift_op, alu_out, alu_c} = {"ASR ", 1'b1, $signed({r_dst,1'b0}) >>> r_src};   // asr r_dst, r_src
+                    6'b01_0100: {text, alu_logic_op, alu_out} = {"ORR ", 1'b1, r_dst | r_src};                            // orr r_dst, r_src
+                    6'b01_0101: {text, alu_logic_op, alu_out} = {"EOR ", 1'b1, r_dst ^ r_src};                            // eor r_dst, r_src
+                    6'b01_0110: {text, alu_logic_op, alu_out} = {"BIC ", 1'b1, r_dst & ~r_src};                           // bic r_dst, r_src
+                    6'b01_0111: {text, alu_tst_op,   alu_out} = {"TST ", 1'b1, r_dst & r_src};                            // tst r_dst, r_src
 
                     6'b01_1000:
                         begin
                             alu_shift_op = 1'b1;
                             if (op_num4 == 0) begin
-                                {text, alu_out, alu_c} = {"RRX", flag_c, r_dst};                                         // rrx r_dst        ; when num4 == 0
+                                {text, alu_out, alu_c} = {"RRX ", flag_c, r_dst};                                         // rrx r_dst        ; when num4 == 0
                             end
                             else begin
-                                {text, alu_out, alu_c} = {"ROR#", r_dst, r_dst, 1'b0} >> r_src[3:0];                      // ror r_dst, #num4 ; when num4 != 0
+                                text = "ROR#";
+                                {alu_out, alu_c} = {r_dst[14:0],2'b00} << (15-op_num4) | {r_dst,1'b0} >> op_num4;         // ror r_dst, #num4 ; when num4 != 0
                             end
                         end
 
@@ -370,10 +374,10 @@ module vixen (
                     6'b01_1010: {text, alu_shift_op, alu_out, alu_c} = {"LSR#", 1'b1, {r_dst,1'b0} >> op_num4};           // lsr r_dst, #num4
                     6'b01_1011: {text, alu_shift_op, alu_out, alu_c} = {"ASR#", 1'b1, $signed({r_dst,1'b0}) >>> op_num4}; // asr r_dst, #num4
 
-                    6'b01_1100: {text, alu_logic_op, alu_out} = {"ORR#", 1'b1, r_dst |  (1'b1 << op_num4)};               // orr r_dst, #1<<num4
-                    6'b01_1101: {text, alu_logic_op, alu_out} = {"EOR#", 1'b1, r_dst ^  (1'b1 << op_num4)};               // eor r_dst, #1<<num4
-                    6'b01_1110: {text, alu_logic_op, alu_out} = {"BIC#", 1'b1, r_dst & ~(1'b1 << op_num4)};               // bic r_dst, #1<<num4
-                    6'b01_1111: {text, alu_tst_op,   alu_out} = {"TST#", 1'b1, r_dst &  (1'b1 << op_num4)};               // tst r_dst, #1<<num4
+                    6'b01_1100: {text, alu_logic_op, alu_out} = {"ORR#", 1'b1, r_dst |  (16'b1 << op_num4)};              // orr r_dst, #1<<num4
+                    6'b01_1101: {text, alu_logic_op, alu_out} = {"EOR#", 1'b1, r_dst ^  (16'b1 << op_num4)};              // eor r_dst, #1<<num4
+                    6'b01_1110: {text, alu_logic_op, alu_out} = {"BIC#", 1'b1, r_dst & ~(16'b1 << op_num4)};              // bic r_dst, #1<<num4
+                    6'b01_1111: {text, alu_tst_op,   alu_out} = {"TST#", 1'b1, r_dst &  (16'b1 << op_num4)};              // tst r_dst, #1<<num4
 
                     // 001n-nnnn-nnnn-rrrr
                     6'b1?_????: begin
@@ -404,16 +408,16 @@ module vixen (
                                 4'b1100: {text, pred_true} = {"PRGT", ~flag_z & ~(flag_n ^ flag_v)};  // prgt      ; signed >
                                 4'b1101: {text, pred_true} = {"PRLE", flag_z | (flag_n ^ flag_v)};    // prle      ; signed <=
                                 // 0011-1111-1110-1111
-                                4'b1110: {text, substate} = {"NOP", SS_NOP};
+                                4'b1110: {text, substate} = {"NOP ", SS_NOP};
                                 // 0011-1111-1111-1111
-                                4'b1111: {text, substate} = {"HLT", SS_HALT};
+                                4'b1111: {text, substate} = {"HLT ", SS_HALT};
                             endcase
                         end
                         else begin
                             //001x-xxxx-yyyy-1111 : x-xxxx != 1_1111    (494 encodings unused)
                             casez (op)
-                                16'b0011_0000_????_1111: {text, substate, flags_target} = {"RDF", SS_RD_FLAGS, op_flags_target}; // rdf r
-                                16'b0011_0001_????_1111: {text, substate, flags_target} = {"WRF", SS_WR_FLAGS, op_flags_target}; // wrf r
+                                16'b0011_0000_????_1111: {text, substate, flags_target} = {"RDF ", SS_RD_FLAGS, op_flags_target}; // rdf r
+                                16'b0011_0001_????_1111: {text, substate, flags_target} = {"WRF ", SS_WR_FLAGS, op_flags_target}; // wrf r
                                 default: begin
                                     substate = SS_TRAP;
                                 end
@@ -427,9 +431,9 @@ module vixen (
             // 010n-nnnn-bbbb-tttt      ldb target, [base,#num5] ; alias "ldb target, [base]" when n == 0
             // 011n-nnnn-bbbb-tttt      ldw target, [base,#num5] ; alias "ldw target, [base]" when n == 0
             2'b01: begin
-                text =op_ld_st_wide ? "LDW" : "LDB";
+                text =op_ld_st_wide ? "LDW " : "LDB ";
                 substate = SS_LOAD;
-                ld_st_addr   = r_base + op_num5;
+                ld_st_addr   = r_base + {11'b0,op_num5};
                 ld_st_wide   = op_ld_st_wide;
                 ld_st_target = op_ld_st_target;
             end
@@ -438,9 +442,9 @@ module vixen (
             // 100n-nnnn-bbbb-tttt      stb target, [base,#num5] ; alias "stb target, [base]" when n == 0
             // 101n-nnnn-bbbb-tttt      stw target, [base,#num5] ; alias "stw target, [base]" when n == 0
             2'b10: begin
-                text =op_ld_st_wide ? "STW" : "STB";
+                text =op_ld_st_wide ? "STW " : "STB ";
                 substate = SS_STORE;
-                ld_st_addr = r_base + op_num5;
+                ld_st_addr = r_base + {11'b0,op_num5};
                 ld_st_wide = op_ld_st_wide;
                 ld_st_data = r_target;
             end
@@ -455,7 +459,7 @@ module vixen (
 
                     // 1110-oooo-oooo-oooo
                     2'b10: begin
-                        text = "B";
+                        text = "B   ";
                         substate = SS_BRANCH;
                         br_link = 0;
                         br_addr = pc + {{3{op_br_offset[11]}}, op_br_offset, 1'b0};
@@ -463,7 +467,7 @@ module vixen (
 
                     // 1111-oooo-oooo-oooo
                     2'b11: begin
-                        text = "BL";
+                        text = "BL  ";
                         substate = SS_BRANCH;
                         br_link = 1;
                         br_addr = pc + {{3{op_br_offset[11]}}, op_br_offset, 1'b0};
