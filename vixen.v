@@ -1,7 +1,8 @@
 `default_nettype none
 
 module vixen (
-        input clk
+        input clk,
+        output [7:0] leds
 );
     wire display_state = 1'b0;
 
@@ -12,6 +13,8 @@ module vixen (
     reg  [15:0] mem_addr;
     reg  [15:0] mem_din;
     wire [15:0] mem_dout;
+
+    assign leds = r[0][7:0];
 
     memory mem(
             .clk(clk),
@@ -57,10 +60,12 @@ module vixen (
 
     // CPU state
     localparam
-        RESET     = 2'd0,
-        FETCH     = 2'd1,
-        EXECUTE   = 2'd2,
-        LOAD      = 2'd3;
+        RESET     = 3'd0,
+        FETCH     = 3'd1,
+        FETCH2    = 3'd2,
+        EXECUTE   = 3'd3,
+        LOAD      = 3'd4,
+        LOAD2     = 3'd5;
 
     localparam
         SS_NOP      = 4'd0,
@@ -74,7 +79,7 @@ module vixen (
         SS_HALT     = 4'd8,
         SS_TRAP     = 4'd9;
 
-    reg [1:0] state = RESET;
+    reg [2:0] state = RESET;
     reg [3:0] substate;
     reg [4*8-1:0] text;
     reg [15:0] next_pc;
@@ -82,33 +87,22 @@ module vixen (
     reg predicated;
     reg [3:0] reg_target;
 
-    task TRACE(input [7*8-1:0] label);
-        $display("%x %x EXECUTE %-s [%s%s%s%s] r0=%x r1=%x r2=%x r3=%x r4=%x r5=%x r6=%x r7=%x .. r14=%x pc=%x",
-                pc-16'd2, op,
-                text,
-                flag_n ? "N" : ".",
-                flag_z ? "Z" : ".",
-                flag_c ? "C" : ".",
-                flag_v ? "V" : ".",
-                r[0], r[1], r[2], r[3],
-                r[4], r[5], r[6], r[7],
-                r[14], pc);
-    endtask
+    integer i;
 
     always @(posedge clk) begin
         case (state)
             RESET: begin
-                if (display_state) $display("RESET");
+                //if (display_state) $display("RESET");
 
                 flag_n <= 1'b0;
                 flag_z <= 1'b0;
                 flag_c <= 1'b0;
                 flag_v <= 1'b0;
-                for(integer i=0; i<=15; i=i+1) begin
+
+                for(i=0; i<=15; i=i+1) begin
                     r[i] <= 16'h0000;
                 end
                 next_pc <= 16'h0000;
-                //op <= 0;
                 predicated <= 1;
 
                 reg_rd <= 0;
@@ -123,15 +117,20 @@ module vixen (
             end
 
             FETCH: begin
-                if (display_state) $display("FETCH pc=%x", next_pc);
+                //if (display_state) $display("FETCH pc=%x", next_pc);
                 mem_addr <= pc;
                 mem_wr   <= 0;
                 mem_wide <= 1;
                 mem_en   <= 1;
 
-                r[15] <= pc+2;
+                state <= FETCH2;
+            end
+
+            FETCH2: begin
+                mem_en <= 0;
                 predicated <= 1;
                 state <= predicated ? EXECUTE : FETCH;
+                r[15] <= pc+2;
             end
 
             EXECUTE: begin
@@ -139,11 +138,9 @@ module vixen (
 
                 case (substate)
                     SS_NOP: begin
-                        TRACE("NOP");
                     end
 
                     SS_ALU: begin
-                        TRACE("ALU");
                         if (alu_wr_reg) begin
                             r[dst] <= alu_out;
                         end
@@ -154,7 +151,6 @@ module vixen (
                     end
 
                     SS_LOAD: begin
-                        TRACE("LOAD");
                         reg_rd <= 1;
                         reg_target <= ld_st_target;
 
@@ -167,7 +163,6 @@ module vixen (
                     end
 
                     SS_STORE: begin
-                        TRACE("STORE");
                         mem_din <= r_target;
                         mem_addr <= ld_st_addr;
                         mem_wr <= 1;
@@ -178,17 +173,14 @@ module vixen (
                     end
 
                     SS_RD_FLAGS: begin
-                        TRACE("RDFLAGS");
                         r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
                     end
 
                     SS_WR_FLAGS: begin
-                        TRACE("WRFLAGS");
                         {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
                     end
 
                     SS_BRANCH: begin
-                        TRACE("BRANCH");
                         if (br_link) begin
                             r[14] <= pc;
                         end
@@ -196,31 +188,37 @@ module vixen (
                     end
 
                     SS_PRED: begin
-                        TRACE("PRED");
                         predicated <= pred_true;
                     end
 
                     SS_HALT: begin
-                        TRACE("HALT");
-                        $finish;
+                        //$finish;
                     end
 
                     SS_TRAP: begin
-                        TRACE("TRAP");
-                        $finish;
+                        //$finish;
                     end
 
-                    default: $stop;
+                    default: begin
+                        //$stop;
+                    end
 
                 endcase
             end
 
             LOAD: begin
-                TRACE("LOAD2");
                 mem_en <= 0;
-                r[reg_target] <= mem_dout;
                 reg_rd <= 0;
+                state <= LOAD2;
+            end
+
+            LOAD2: begin
+                r[reg_target] <= mem_dout;
                 state <= FETCH;
+            end
+
+            default: begin
+                //$stop;
             end
         endcase
     end

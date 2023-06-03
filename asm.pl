@@ -2,15 +2,15 @@
 use strict;
 use warnings;
 
-my $default_outfile = "mem.bin";
+my $default_outfile = "out/mem.bin";
 
 sub usage {
     print "Usage: $0 [FILE ...]\n";
-    print "Assemble files, and write a memory image to $default_outfile\n";
+    print "Assemble files, and write a memory image to $default_outfile.0, $default_outfile.1\n";
     print "\n";
     print "OPTIONS\n";
     print "  -h, --help  display this message\n";
-    print "  -o FILE     write image to FILE\n";
+    print "  -o FILE     write image to FILE.0 and FILE.1\n";
     print "  -- FILE(s)  take all remaining arguments as files\n";
     exit 0
 }
@@ -252,13 +252,18 @@ foreach our $pass (1, 2) {
 }
 
 print ";; \n";
-print ";; Writing image to $outfile\n";
+print ";; Writing image to $outfile.0, $outfile.1\n";
 print ";; \n";
-open my $fh, ">:raw", $outfile or die "$outfile: $!";
-foreach my $byte (@$image) {
-    $fh->print(chr($byte));
+open my $fh0, ">:raw", "$outfile.0" or die "$outfile.0: $!";
+open my $fh1, ">:raw", "$outfile.1" or die "$outfile.1: $!";
+foreach my $i (0..32767) {
+    my $hi = $image->[$i*2];
+    my $lo = $image->[$i*2+1];
+    $fh0->printf("%02x\n", $hi);
+    $fh1->printf("%02x\n", $lo);
 }
-$fh->close;
+$fh1->close;
+$fh0->close;
 exit 0;
 
 sub decode_op {

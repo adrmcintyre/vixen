@@ -23,8 +23,8 @@ module memory (
 
     wire [7:0] dout0;
     wire [7:0] dout1;
-    ram8 #(.FILE("mem.bin"), .LSB(0)) mem0(.clk(clk), .en(en), .wr(wr0), .addr(addr0), .din(din0), .dout(dout0));
-    ram8 #(.FILE("mem.bin"), .LSB(1)) mem1(.clk(clk), .en(en), .wr(wr1), .addr(addr1), .din(din1), .dout(dout1));
+    ram8 #(.FILE("out/mem.bin.0")) mem0(.clk(clk), .en(en), .wr(wr0), .addr(addr0), .din(din0), .dout(dout0));
+    ram8 #(.FILE("out/mem.bin.1")) mem1(.clk(clk), .en(en), .wr(wr1), .addr(addr1), .din(din1), .dout(dout1));
 
     assign dout = aligned ? {dout0, dout1} : {dout1, dout0};
 endmodule

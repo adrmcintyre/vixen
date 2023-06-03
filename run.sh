@@ -6,10 +6,10 @@ prog="${1:-programs/halt.asm}"
 
 iverilog -Wall \
     -s "top" \
-    -o "simulation.vvp" \
-    *.v || exit 1
+    -o "out/simulation.vvp" \
+    -y. harness.v || exit 1
 
-vvp simulation.vvp -lxt2 || exit 1
+vvp out/simulation.vvp -lxt2 || exit 1
 
 #gtkwave test.lxt >& /dev/null &
 #gtkwave view.gtkw >& /dev/null &

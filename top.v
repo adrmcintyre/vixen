@@ -1,13 +1,15 @@
 `default_nettype none
 
-module top ();
-    reg clk = 1'b0;
-    always #5 clk <= ~clk;
+module top (
+        input  clk_25mhz,
+        output [7:0] led
+//      ,
+//      output [3:0] gpdi_dp, gpdi_dn,
+//      input  [6:0] btn,
+//      output       wifi_gpio0
+);
+//  assign wifi_gpio0 = 1'b1;
 
-    vixen vixen(.clk(clk));
+    vixen v(.clk(clk_25mhz), .leds(led));
 
-    integer cycles = 0;
-    always @(posedge clk) begin
-        cycles <= cycles + 1;
-    end
 endmodule
