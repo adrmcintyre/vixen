@@ -3,8 +3,8 @@ YOSYS = yosys
 NEXTPNR = nextpnr-ecp5
 ECPPACK = ecppack
 VERILATOR = verilator
-SOURCES := $(wildcard *.v)
-SOURCES := $(filter-out harness.v, $(SOURCES))
+ALL_SOURCES = $(wildcard *.v video/*.v)
+SOURCES = $(filter-out harness.v, $(ALL_SOURCES))
 
 .PHONY: all
 all: out/output.bit
@@ -17,7 +17,10 @@ out/output.ys: $(SOURCES)
 out/mem.bin.0 out/mem.bin.1: $(PROGRAM)
 	./asm.pl $(PROGRAM)
 
-out/output.json: out/output.ys out/mem.bin.0 out/mem.bin.1
+out/font.bin: font.asc
+	./make-font.pl $< >$@
+
+out/output.json: out/output.ys out/mem.bin.0 out/mem.bin.1 out/font.bin
 	$(YOSYS) -q out/output.ys
 
 out/output.config: out/output.json
@@ -40,5 +43,5 @@ clean:
 
 .PHONY: test
 test:
-	./test.sh
+	./test.sh | tee out/test.log
 

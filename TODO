@@ -1,8 +1,9 @@
-asm.pl:
-    * At each step of evaluation, values are &ed with value_mask.
-    Figure out if this is the best strategy.  Ideally we'd probably
-    have arbitrary precision signed binary.
+clock:
+    Right now we're running everything off the ECP5's external 25MHz clock.
+    Should try using the PLL to generate a faster internal clock, just as
+    we're already doing for the video.
 
+asm.pl:
     * Implement textual macros
         * Where could they appear?
         * Easiest: anywhere an instruction can.
@@ -17,6 +18,3 @@ asm.pl:
 
             add3 r1, r2, r3
 
-    * Implement register aliases, e.g.:
-        alias pc r15
-        alias link r14

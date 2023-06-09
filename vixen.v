@@ -1,29 +1,15 @@
 `default_nettype none
 
 module vixen (
-        input clk,
-        output [7:0] leds
+        input      clk,
+        output reg mem_en,
+        output reg mem_wr,
+        output reg mem_wide,
+        output reg [15:0] mem_addr,
+        output reg [15:0] mem_din,
+        input      [15:0] mem_dout
 );
     wire display_state = 1'b0;
-
-    // MEMORY SUBSYSTEM
-    reg         mem_en;
-    reg         mem_wr;
-    reg         mem_wide;
-    reg  [15:0] mem_addr;
-    reg  [15:0] mem_din;
-    wire [15:0] mem_dout;
-
-    assign leds = r[0][7:0];
-
-    memory mem(
-            .clk(clk),
-            .en(mem_en),
-            .wr(mem_wr),
-            .wide(mem_wide),
-            .addr(mem_addr),
-            .din(mem_din),
-            .dout(mem_dout));
 
     // register file
     reg  [15:0] r[0:15];
@@ -34,6 +20,7 @@ module vixen (
     reg flag_v;
 
     wire [15:0] op = mem_dout;          // last instruction fetched
+    wire [15:0] ld_value = mem_wide ? mem_dout : {8'b0, mem_dout[15:8]};
 
     // instruction decoding
     wire [3:0] dst              = op[3:0];      // alu dst reg
@@ -83,7 +70,6 @@ module vixen (
     reg [3:0] substate;
     reg [4*8-1:0] text;
     reg [15:0] next_pc;
-    reg reg_rd;
     reg predicated;
     reg [3:0] reg_target;
 
@@ -104,8 +90,6 @@ module vixen (
                 end
                 next_pc <= 16'h0000;
                 predicated <= 1;
-
-                reg_rd <= 0;
 
                 mem_en   <= 0;
                 mem_addr <= pc;
@@ -129,29 +113,42 @@ module vixen (
             FETCH2: begin
                 mem_en <= 0;
                 predicated <= 1;
-                state <= predicated ? EXECUTE : FETCH;
                 r[15] <= pc+2;
+                state <= predicated ? EXECUTE : FETCH;
             end
 
             EXECUTE: begin
-                state <= FETCH;
-
                 case (substate)
                     SS_NOP: begin
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 1;
+
+                        state <= FETCH2;
                     end
 
                     SS_ALU: begin
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 1;
+
                         if (alu_wr_reg) begin
                             r[dst] <= alu_out;
+                            if (dst == 15) begin
+                                mem_addr <= alu_out;
+                            end
                         end
                         if (alu_wr_nz) flag_n <= alu_n;
                         if (alu_wr_nz) flag_z <= alu_z;
                         if (alu_wr_c)  flag_c <= alu_c;
                         if (alu_wr_v)  flag_v <= alu_v;
+
+                        state <= FETCH2;
                     end
 
                     SS_LOAD: begin
-                        reg_rd <= 1;
                         reg_target <= ld_st_target;
 
                         mem_addr <= ld_st_addr;
@@ -174,10 +171,22 @@ module vixen (
 
                     SS_RD_FLAGS: begin
                         r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 1;
+
+                        state <= FETCH2;
                     end
 
                     SS_WR_FLAGS: begin
                         {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 1;
+
+                        state <= FETCH2;
                     end
 
                     SS_BRANCH: begin
@@ -185,22 +194,47 @@ module vixen (
                             r[14] <= pc;
                         end
                         r[15] <= br_addr;
+                        mem_addr <= br_addr;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 1;
+
+                        state <= FETCH2;
                     end
 
                     SS_PRED: begin
                         predicated <= pred_true;
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 1;
+
+                        state <= FETCH2;
                     end
 
                     SS_HALT: begin
-                        //$finish;
+                        // enter a loop, no memory access
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 0;
+
+                        state <= EXECUTE;
                     end
 
                     SS_TRAP: begin
-                        //$finish;
+                        // unknown instruction - treat like SS_HALT for now
+                        mem_addr <= pc;
+                        mem_wr   <= 0;
+                        mem_wide <= 1;
+                        mem_en   <= 0;
+
+                        state <= EXECUTE;
                     end
 
                     default: begin
-                        //$stop;
+                        // should be unreachable state
+                        state <= RESET;
                     end
 
                 endcase
@@ -208,17 +242,26 @@ module vixen (
 
             LOAD: begin
                 mem_en <= 0;
-                reg_rd <= 0;
                 state <= LOAD2;
             end
 
             LOAD2: begin
-                r[reg_target] <= mem_dout;
-                state <= FETCH;
+                mem_addr <= pc;
+                mem_wr   <= 0;
+                mem_wide <= 1;
+                mem_en   <= 1;
+
+                r[reg_target] <= ld_value;
+                if (reg_target == 15) begin
+                    mem_addr <= ld_value;
+                end
+
+                state <= FETCH2;
             end
 
             default: begin
-                //$stop;
+                // should be unreachable state
+                state <= RESET;
             end
         endcase
     end

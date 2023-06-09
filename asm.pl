@@ -46,6 +46,9 @@ our $image = [(0xff) x 65536];
 #     def label, expr
 #     db expr
 #     dw expr
+#     ds "string"
+#     align
+#     alias rN name
 #     .label
 #     ; comment
 
@@ -194,15 +197,16 @@ while(my $file = shift @$files) {
     open my $fh, "<", $file or die "$file: $!";
     while (<$fh>) {
         chomp;
-        s/^\s+//;
-        s/;.*//;
-        s/\s+$//;
+        s/^\s+//;       # remove leading space
+        s/;.*//;        # remove comment - TODO will break in the presence of quoted ;
+        s/\s+$//;       # remove trailing spaces
         push @$lines, [$file, $., $_];
     }
     $fh->close;
 }
 
 our $labels = {};
+our $registers = { map {("r$_" => $_)} (0..15) };
 
 foreach our $pass (1, 2) {
     our $org = 0x0000;
@@ -233,14 +237,23 @@ foreach our $pass (1, 2) {
             }
             $labels->{$label} = value($expr);
         }
-        elsif ($line =~ m{^org\s+(.*?)\s*$}xi) {
+        elsif ($line =~ m{^org\s+(.*?)$}xi) {
             $org = value($1);
         }
-        elsif ($line =~ m{^db\s+(.*?)\s*$}xi) {
+        elsif ($line =~ m{^db\s+(.*?)$}xi) {
             emit_byte(value($1));
         }
-        elsif ($line =~ m{^dw\s+(.*?)\s*$}xi) {
+        elsif ($line =~ m{^dw\s+(.*?)$}xi) {
             emit_word(value($1));
+        }
+        elsif ($line =~ m{^ds\s+(.*?)$}xi) {
+            emit_string($1);
+        }
+        elsif ($line =~ m{^align$}xi) {
+            align();
+        }
+        elsif ($line =~ m{^alias\s+r([0-9]+)\s+([a-z_]\w*)$}xi) {
+            alias($1, $2);
         }
         elsif ($line =~ m{^(\w+)\s*(.*?)\s*$}xi) {
             decode_op($1, $2);
@@ -276,26 +289,26 @@ sub decode_op {
     my $reg2 = "?";
     my $num = "?";
 
-    if ($args =~ s{^r([0-9]+)\s*}{}xi) {
+    if ($args =~ s{^([a-z_]\w*)\s*}{}xi && is_reg($1)) {
         $mode = '1';
         $desc = 'reg';
-        $reg1 = $1;
+        $reg1 = get_reg($1);
         if ($args =~ s{^,\s*}{}xi) {
-            if ($args =~ s{^r([0-9]+)\s*$}{}xi) {
+            if ($args =~ s{^([a-z_]\w*)\s*$}{}xi && is_reg($1)) {
                 $mode = '2';
                 $desc = 'reg1, reg2';
-                $reg2 = $1;
+                $reg2 = get_reg($1);
             }
-            elsif ($args =~ s{^\[\s*r([0-9]+)\s*\]\s*$}{}xi) {
+            elsif ($args =~ s{^\[\s*([a-z_]\w*)\s*\]\s*$}{}xi && is_reg($1)) {
                 $mode = '[';
                 $desc = 'reg1, [reg2]';
-                $reg2 = $1;
+                $reg2 = get_reg($1);
                 $num = 0;
             }
-            elsif ($args =~ s{^\[\s*r([0-9]+)\s*,\s*(.*?)\s*\]\s*$}{}xi) {
+            elsif ($args =~ s{^\[\s*([a-z_]\w*)\s*,\s*(.*?)\s*\]\s*$}{}xi && is_reg($1)) {
                 $mode = '[';
                 $desc = 'reg1, [reg2, imm]';
-                $reg2 = $1;
+                $reg2 = get_reg($1);
                 $num = value($2);
             }
             elsif ($args =~ s{^(.*?)\s*$}{}xi) {
@@ -433,6 +446,16 @@ sub decode_op {
     emit_op($word);
 }
 
+sub is_reg {
+    my $word = shift;
+    return defined $::registers->{$word};
+}
+
+sub get_reg {
+    my $word = shift;
+    return $::registers->{$word};
+}
+
 sub bitpos {
     my $n = shift;
     my $bp = 0;
@@ -463,6 +486,41 @@ sub emit_word {
         $::image->[$::org+1] = $word & 0xff;
     }
     $::org += 2;
+}
+
+sub emit_string {
+    my $arg = shift;
+    if ($arg =~ m{"(.*)"}) {
+        my @chars = split //, $1;
+        if ($::pass == 2) {
+            for my $i (0..$#chars) {
+                my $byte = ord($chars[$i]) & 0xff;
+                if ($i == 0) {
+                    printf("%04x %02x ; %s\n", $::org, $byte, $::line);
+                } else {
+                    printf("%04x %02x\n", $::org, $byte);
+                }
+                $::image->[$::org] = $byte;
+                $::org += 1;
+            }
+        }
+        else {
+            $::org += scalar @chars;
+        }
+    }
+    else {
+        abort("expected quoted string");
+    }
+}
+
+sub align {
+    emit_byte(0x00) if $::org & 1;
+}
+
+sub alias {
+    my $reg = shift;
+    my $name = shift;
+    $::registers->{$name} = $reg;
 }
 
 sub emit_op {
