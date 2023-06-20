@@ -7,10 +7,10 @@ module vixen (
         output reg mem_wide,
         output reg [15:0] mem_addr,
         output reg [15:0] mem_din,
-        input      [15:0] mem_dout
-);
-    wire display_state = 1'b0;
+        input      [15:0] mem_dout,
 
+        output [7:0] led
+);
     // register file
     reg  [15:0] r[0:15];
     wire [15:0] pc = {r[15][15:1], 1'b0};
@@ -67,7 +67,7 @@ module vixen (
         SS_TRAP     = 4'd9;
 
     reg [2:0] state = RESET;
-    reg [3:0] substate;
+    reg [3:0] substate = SS_NOP;
     reg [4*8-1:0] text;
     reg [15:0] next_pc;
     reg predicated;
@@ -75,11 +75,14 @@ module vixen (
 
     integer i;
 
+//  reg [14:0] cycle = 0;
+    assign led = {substate==SS_HALT,state,substate};
+
     always @(posedge clk) begin
+  //    cycle <= cycle + 1;
+  //    if (cycle == 0)
         case (state)
             RESET: begin
-                //if (display_state) $display("RESET");
-
                 flag_n <= 1'b0;
                 flag_z <= 1'b0;
                 flag_c <= 1'b0;
@@ -101,7 +104,6 @@ module vixen (
             end
 
             FETCH: begin
-                //if (display_state) $display("FETCH pc=%x", next_pc);
                 mem_addr <= pc;
                 mem_wr   <= 0;
                 mem_wide <= 1;
@@ -214,7 +216,7 @@ module vixen (
 
                     SS_HALT: begin
                         // enter a loop, no memory access
-                        mem_addr <= pc;
+                        mem_addr <= pc-2;
                         mem_wr   <= 0;
                         mem_wide <= 1;
                         mem_en   <= 0;

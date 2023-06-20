@@ -1,4 +1,4 @@
-PROGRAM = programs/halt.asm
+PROGRAM = programs/hello_world.asm
 YOSYS = yosys
 NEXTPNR = nextpnr-ecp5
 ECPPACK = ecppack
@@ -13,6 +13,7 @@ out/output.ys: $(SOURCES)
 	./ysgen.sh $(SOURCES) > $@
 	echo "hierarchy -top top" >> $@
 	echo "synth_ecp5 -json out/output.json" >> $@
+	echo "write_verilog -norename out/output.v" >> $@
 
 out/mem.bin.0 out/mem.bin.1: $(PROGRAM)
 	./asm.pl $(PROGRAM)
@@ -20,8 +21,8 @@ out/mem.bin.0 out/mem.bin.1: $(PROGRAM)
 out/font.bin: font.asc
 	./make-font.pl $< >$@
 
-out/output.json: out/output.ys out/mem.bin.0 out/mem.bin.1 out/font.bin
-	$(YOSYS) -q out/output.ys
+out/output.json: out/output.ys out/font.bin out/mem.bin.0 out/mem.bin.1
+	$(YOSYS) -v2 out/output.ys
 
 out/output.config: out/output.json
 	$(NEXTPNR) --package CABGA381 --12k --json $< --lpf ulx3s.lpf --textcfg $@
@@ -42,6 +43,6 @@ clean:
 	rm -f out/*
 
 .PHONY: test
-test:
+test: $(ALL_SOURCES) out/font.bin
 	./test.sh | tee out/test.log
 

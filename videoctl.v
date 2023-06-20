@@ -2,17 +2,31 @@
 
 module videoctl
 (
-	input         clk,
-	input         clk_locked,   //TODO
-	input  [9:0]  screen_x,
-	input  [9:0]  screen_y,
-    output [23:0] color,
-    output [15:0] vaddr,
+    // clock
+	input clk_pixel,
+    input clk_locked,
+    // vga output
+    output reg vga_vsync,
+    output reg vga_hsync,
+    output reg vga_blank,
+    output     [23:0] color,
+    // memory access
+    output reg [15:0] addr,
     output        en,
     input  [7:0]  din
 );
-    localparam VGA_WIDTH = 640;
-    localparam VGA_HEIGHT = 480;
+
+    localparam h_visible = 10'd640;     // VGA width
+    localparam h_front = 10'd16;
+    localparam h_sync = 10'd96;
+    localparam h_back = 10'd44;
+    localparam h_total = h_visible + h_front + h_sync + h_back;
+
+    localparam v_visible = 10'd480;     // VGA height
+    localparam v_front = 10'd10;
+    localparam v_sync = 10'd2;
+    localparam v_back = 10'd31;
+
     localparam COLS = 64;
     localparam ROWS = 40;
     localparam CHAR_WIDTH = 8;
@@ -21,13 +35,13 @@ module videoctl
     // place video character buffer at top of RAM
     localparam BASE_ADDR = -(COLS * ROWS);
 
-    localparam [9:0] MARGIN_LEFT = (VGA_WIDTH - COLS * CHAR_WIDTH) / 2;
-    localparam [9:0] MARGIN_TOP = (VGA_HEIGHT - ROWS * CHAR_HEIGHT) / 2;
+    localparam [9:0] MARGIN_LEFT = (h_visible - COLS * CHAR_WIDTH) / 2;
+    localparam [9:0] MARGIN_TOP = (v_visible - ROWS * CHAR_HEIGHT) / 2;
 
     localparam [9:0] VIEWPORT_LEFT = MARGIN_LEFT;
     localparam [9:0] VIEWPORT_TOP = MARGIN_TOP;
-    localparam [9:0] VIEWPORT_RIGHT = VGA_WIDTH - VIEWPORT_LEFT;;
-    localparam [9:0] VIEWPORT_BOTTOM = VGA_HEIGHT - VIEWPORT_TOP;
+    localparam [9:0] VIEWPORT_RIGHT = h_visible - VIEWPORT_LEFT;;
+    localparam [9:0] VIEWPORT_BOTTOM = v_visible - VIEWPORT_TOP;
 
     localparam [23:0] RGB_CANARY = 24'hffffaa;
     localparam [23:0] RGB_BLACK  = 24'h000000;
@@ -44,57 +58,100 @@ module videoctl
         if (FONT_FILE != "") $readmemb(FONT_FILE, font_rom);
     end
 
-    reg hvalid = 0;
-    reg vvalid = 0;
-    reg [15:0] addr;
+    localparam v_total = v_visible + v_front + v_sync + v_back;
+    wire h_active, v_active, visible;
+
+    reg [9:0] h_pos = 0;
+    reg [9:0] v_pos = 0;
+
+    always @(posedge clk_pixel) 
+    begin
+        if (clk_locked == 0) begin
+            h_pos <= 10'b0;
+            v_pos <= 10'b0;
+        end
+        else begin
+            //Pixel counters
+            if (h_pos == h_total - 1) begin
+                h_pos <= 0;
+                if (v_pos == v_total - 1) begin
+                    v_pos <= 0;
+                end
+                else begin
+                    v_pos <= v_pos + 1;
+                end
+            end
+            else begin
+                h_pos <= h_pos + 1;
+            end
+                vga_blank <= !visible;
+                vga_hsync <= !((h_pos >= (h_visible + h_front)) && (h_pos < (h_visible + h_front + h_sync)));
+                vga_vsync <= !((v_pos >= (v_visible + v_front)) && (v_pos < (v_visible + v_front + v_sync)));
+        end
+    end
+
+    assign h_active = (h_pos < h_visible);
+    assign v_active = (v_pos < v_visible);
+    assign visible = h_active && v_active;
+
     reg [15:0] addr_left;
     reg [2:0] char_x = 0;
     reg [2:0] char_y = 0;
 
-    wire on_frame_start = !vvalid && screen_x == VIEWPORT_LEFT  && screen_y == VIEWPORT_TOP;
-    wire on_frame_left  = !hvalid && screen_x == VIEWPORT_LEFT;
-    wire on_frame_right = hvalid  && screen_x == VIEWPORT_RIGHT;
-    wire on_frame_end   = vvalid  && screen_x == VIEWPORT_RIGHT && screen_y == VIEWPORT_BOTTOM-1;
+    reg v_valid = 0;
+    reg h_valid = 0;
 
-    always @(posedge clk) begin
-        begin
-            vvalid <= on_frame_start | vvalid & ~on_frame_end;
-            hvalid <= on_frame_left  | hvalid & ~on_frame_right;
+    always @(posedge clk_pixel) begin
+        if (v_pos == VIEWPORT_TOP) begin
+            v_valid <= 1;
+        end
+        else if (v_pos == VIEWPORT_BOTTOM) begin
+            v_valid <= 0;
         end
     end
 
-    always @(posedge clk) begin
-        if (on_frame_start) begin
-            addr <= BASE_ADDR;
-            addr_left <= BASE_ADDR;
-            char_x <= 0;
-            char_y <= 0;
+    always @(posedge clk_pixel) begin
+        if (h_pos == VIEWPORT_LEFT-1) begin
+            h_valid <= 1;
         end
-        else if (on_frame_left) begin
-            if ({1'b0,char_y} == CHAR_HEIGHT-1) begin
+        else if (h_pos == VIEWPORT_RIGHT-1) begin
+            h_valid <= 0;
+        end
+    end
+
+    always @(posedge clk_pixel) begin
+        if (h_pos == VIEWPORT_LEFT-1) begin
+            if (v_pos == VIEWPORT_TOP) begin
+                addr <= BASE_ADDR;
+                addr_left <= BASE_ADDR;
+                char_x <= 0;
+                char_y <= 0;
+            end
+            else if ({1'b0,char_y} == CHAR_HEIGHT-1) begin
                 char_y <= 0;
                 addr_left <= addr;
             end
             else begin
-                char_y <= char_y + 1;
                 addr <= addr_left;
+                char_y <= char_y + 1;
             end
         end
-        else if (hvalid && vvalid) begin
+        else if (h_valid && v_valid) begin
             if ({1'b0,char_x} == CHAR_WIDTH-1) begin
-                addr <= addr + 1;
+                char_x <= 0;
+                addr <= addr+1;
             end
             else begin
-                char_x <= char_x + 1;
+                char_x <= char_x+1;
             end
         end
     end
 
     wire [7:0] char_index = din;
 
-    reg [7:0] pixels;
+    reg [7:0] pixels = 8'h00;
 
-    always @(posedge clk) begin
+    always @(posedge clk_pixel) begin
         if (char_x == 0) begin
             pixels <= font_rom[{char_index,char_y}];
         end
@@ -103,9 +160,8 @@ module videoctl
         end
     end
 
-    assign en = hvalid && vvalid && {1'b0,char_x} == CHAR_WIDTH-1;
-    assign vaddr = addr;
-    assign color = (hvalid && vvalid) ? BORDER : pixels[CHAR_WIDTH-1] ? FOREGROUND : BACKGROUND;
+    assign en = h_valid && v_valid && {1'b0,char_x} == CHAR_WIDTH-1;
+    assign color = (h_valid && v_valid) ? (pixels[CHAR_WIDTH-1] ? FOREGROUND : BACKGROUND) : BORDER;
 
 endmodule
 

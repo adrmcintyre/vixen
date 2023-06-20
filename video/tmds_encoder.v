@@ -76,6 +76,8 @@ reg [8:0] data_word_inv;
 wire [3:0] data_word_disparity;
 reg [3:0] dc_bias;
 
+/* verilator lint_off WIDTH */
+
   // Work our the two different encodings for the byte
   assign xored[0] = data[0];
   assign xored[1] = data[1] ^ xored[0];
@@ -156,5 +158,6 @@ reg [3:0] dc_bias;
     end
   end
 
+/* verilator lint_on WIDTH */
 
 endmodule

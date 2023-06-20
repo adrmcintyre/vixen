@@ -5,26 +5,26 @@ module top (
         output [3:0] gpdi_dp,
         output [3:0] gpdi_dn,
         input  [6:0] btn,
+        output [7:0] led,
         output       wifi_gpio0
 );
     assign wifi_gpio0 = 1'b1;
 
-    wire clk = clk_25mhz;       // this is the ECP5's external clock - maybe we can use the PLL to run 
-    wire video_clk = clk_25mhz; // we may want to run video_clk at a different rate
+    wire clk = clk_25mhz;
 
     wire [15:0] mem_dout;
     wire [7:0] mem_dout2;
     memory mem(
-            .clk(clk),
-            .en(cpu_mem_en),
-            .wr(cpu_mem_wr),
-            .wide(cpu_mem_wide),
-            .addr(cpu_mem_addr),
-            .din(cpu_mem_din),
-            .dout(mem_dout),
-            .clk2(video_clk),
-            .en2(video_en),
-            .addr2(video_addr),
+            .clk1(clk),
+            .en1(cpu_mem_en),
+            .wr1(cpu_mem_wr),
+            .wide1(cpu_mem_wide),
+            .addr1(cpu_mem_addr),
+            .din1(cpu_mem_din),
+            .dout1(mem_dout),
+            .clk2(clk_pixel),
+            .en2(vga_en),
+            .addr2(vga_addr),
             .dout2(mem_dout2));
 
     wire cpu_mem_en, cpu_mem_wr, cpu_mem_wide;
@@ -37,34 +37,43 @@ module top (
             .mem_wide(cpu_mem_wide),
             .mem_addr(cpu_mem_addr),
             .mem_din(cpu_mem_din),
-            .mem_dout(mem_dout));
+            .mem_dout(mem_dout),
+            .led(led)
+            );
 
-    wire [9:0] hdmi_x;
-    wire [9:0] hdmi_y;
-    wire hdmi_locked;
-    hdmi_video hdmi(
-            .clk_25mhz(video_clk),
-            .vga_vsync(),
-            .vga_hsync(),
-            .vga_blank(),
-            .x(hdmi_x),
-            .y(hdmi_y),
-            .color(video_color),
-            .gpdi_dp(gpdi_dp),
-            .gpdi_dn(gpdi_dn),
-            .clk_locked(hdmi_locked));
-
-    wire video_en;
-    wire [15:0] video_addr;
-    wire [23:0] video_color;
+    wire vga_vsync;
+    wire vga_hsync;
+    wire vga_blank;
+    wire [23:0] vga_color;
+    wire [15:0] vga_addr;
+    wire vga_en;
     videoctl video(
-        .clk(video_clk),
-        .clk_locked(hdmi_locked),
-        .screen_x(hdmi_x),
-        .screen_y(hdmi_y),
-        .vaddr(video_addr),
-        .en(video_en),
-        .din(mem_dout2),
-        .color(video_color));
+        .clk_pixel(clk_pixel),
+        .clk_locked(clk_locked),
+        .vga_vsync(vga_vsync),
+        .vga_hsync(vga_hsync),
+        .vga_blank(vga_blank),
+        .color(vga_color),
+        .addr(vga_addr),
+        .en(vga_en),
+        .din(mem_dout2));
+
+`ifdef IVERILOG
+    wire clk_locked = 1'b1;
+    wire clk_pixel = clk_25mhz;
+`else
+    wire clk_pixel;
+    wire clk_locked;
+    hdmi_video hdmi(
+            .clk_25mhz(clk_25mhz),
+            .clk_pixel(clk_pixel),
+            .clk_locked(clk_locked),
+            .vga_vsync(vga_vsync),
+            .vga_hsync(vga_hsync),
+            .vga_blank(vga_blank),
+            .color(vga_color),
+            .gpdi_dp(gpdi_dp),
+            .gpdi_dn(gpdi_dn));
+`endif
 
 endmodule

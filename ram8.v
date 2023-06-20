@@ -3,45 +3,39 @@
 module ram8 #(
         parameter FILE = ""
 ) (
-        input clk,
-        input en,
-        input wr,
-        input [14:0] addr,
-        input [7:0]  din,
-        output reg [7:0] dout,
+        input clk1,
+        input en1,
+        input wr1,
+        input [14:0] addr1,
+        input [7:0]  din1,
+        output [7:0] dout1,
         input clk2,
         input en2,
         input [14:0] addr2,
         output [7:0] dout2
 );
-    reg [7:0] mem[0:32767];
+    (* no_rw_check *) reg [8:0] mem[0:32767];
 
     initial begin
         if (FILE != "") $readmemh(FILE, mem);
     end
 
-    always @(posedge clk) begin
-        if (en) begin
-            if (wr) begin
-                mem[addr] <= din;
-                dout <= din;
-            end else begin
-                dout <= mem[addr];
-            end
+    // Registered data out
+    reg [7:0] dout1_reg;
+    reg [7:0] dout2_reg;
+
+    always @(posedge clk1) begin
+        dout1_reg <= mem[addr1][7:0];
+        if (wr1) begin
+            mem[addr1] <= {1'b0,din1};
         end
     end
 
-    // TODO - dual ported sysMEM is *not* inferred
-    //        instead we end up doubling up and
-    //        running out of resources. Grr.
-    //        Two options:
-    //          * explicitly instantiate (can we do that?)
-    //          * some kind of arbitration
-//  always @(posedge clk) begin
-//      if (en2) begin
-//         dout2 <= mem[addr2];
-//      end
-//  end
-        // synchronous read port... (fingers crossed)
-        assign dout2 = en2 ? mem[addr2] : 8'b0;
+    always @(posedge clk2) begin
+        dout2_reg <= mem[addr2][7:0];
+    end
+
+    assign dout1 = dout1_reg;
+    assign dout2 = dout2_reg;
+
 endmodule

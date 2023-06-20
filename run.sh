@@ -1,13 +1,20 @@
 #!/bin/bash
 
-program="${1:-programs/halt.asm}"
+FONT="out/font.bin"
+if [ ! -e "$FONT" ]; then
+    echo >&2 "$FONT does not exist - perhaps you need to run make"
+    exit 1
+fi
 
-./asm.pl "$program" || exit 1
+PROGRAM="${1:-programs/halt.asm}"
+
+./asm.pl "$PROGRAM" || exit 1
 
 iverilog -Wall \
-    -s "top" \
+    -D IVERILOG \
+    -s "harness" \
     -o "./out/simulation.vvp" \
-    -y. "./harness.v" || exit 1
+    -y. -y./video "./harness.v" || exit 1
 
 vvp "./out/simulation.vvp" -lxt2 || exit 1
 

@@ -19,7 +19,7 @@ module fake_differential
     reg [1:0] R_tmds_p[3:0], R_tmds_n[3:0];
     generate
       genvar i;
-      for(i = 0; i < 4; i++)
+      for(i = 0; i < 4; i=i+1)
       begin : TMDS_pn_registers
         always @(posedge clk_shift) R_tmds_p[i] <=  tmds[i];
         always @(posedge clk_shift) R_tmds_n[i] <= ~tmds[i];
@@ -29,7 +29,7 @@ module fake_differential
     // output SDR/DDR to fake differential
     generate
       genvar j;
-        for(j = 0; j < 4; j++)
+        for(j = 0; j < 4; j=j+1)
         begin : DDR_output_mode
           ODDRX1F
           ddr_p_instance

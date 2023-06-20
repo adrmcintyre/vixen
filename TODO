@@ -1,3 +1,6 @@
+video:
+    fix any off-by-one errors in the video output
+
 clock:
     Right now we're running everything off the ECP5's external 25MHz clock.
     Should try using the PLL to generate a faster internal clock, just as

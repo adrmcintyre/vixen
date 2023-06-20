@@ -49,4 +49,21 @@ alias r3 tmp2
     db 0
     db 0
     align
-    
+ 
+org .VIDEO+0*64
+ds "Hello, world!"
+org .VIDEO+1*64
+ds "--Hello, brave new world!"
+org .VIDEO+3*64
+ds "------Greetings, UNIVERSE"
+org .VIDEO+6*64
+ds "------------Beep BOOP intergalactic beings #@%!"
+org .VIDEO+7*64
+ds "-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*"
+
+org 0x10000-4*6
+ds "HELLO-"
+ds "world!"
+ds "123456"
+ds "#@$%^&"
+
