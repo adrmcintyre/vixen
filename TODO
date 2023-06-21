@@ -1,5 +1,5 @@
 video:
-    fix any off-by-one errors in the video output
+    figure out how to make enable signal work for us
 
 clock:
     Right now we're running everything off the ECP5's external 25MHz clock.

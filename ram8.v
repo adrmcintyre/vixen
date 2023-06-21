@@ -25,14 +25,18 @@ module ram8 #(
     reg [7:0] dout2_reg;
 
     always @(posedge clk1) begin
-        dout1_reg <= mem[addr1][7:0];
-        if (wr1) begin
-            mem[addr1] <= {1'b0,din1};
+        if (en1) begin
+            dout1_reg <= mem[addr1][7:0];
+            if (wr1) begin
+                mem[addr1] <= {1'b0,din1};
+            end
         end
     end
 
     always @(posedge clk2) begin
-        dout2_reg <= mem[addr2][7:0];
+        if (en2) begin
+            dout2_reg <= mem[addr2][7:0];
+        end
     end
 
     assign dout1 = dout1_reg;

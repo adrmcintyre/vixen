@@ -22,7 +22,7 @@ alias r15 pc
     mov sp, video
 
 .main
-    mov ch, 0xa4
+    mov ch, 0xc0
     bl .clear
     bl .draw_table
     bl .draw_ascii
@@ -263,5 +263,11 @@ alias r15 pc
     db 0x8f, 7, 53, 39, 1, 0
     db 0xa1, 1, 4,  37, 1, 0
     db 0xa1, 1, 59, 37, 1, 0
+
+    ; corners
+    db 0xa4, 1, 0,  0,  1, 0
+    db 0xa5, 1, 63, 0,  1, 0
+    db 0xa6, 1, 0,  39, 1, 0
+    db 0xa7, 1, 63, 39, 1, 0
 
     db 0x00

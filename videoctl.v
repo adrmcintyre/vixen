@@ -34,6 +34,7 @@ module videoctl
 
     // place video character buffer at top of RAM
     localparam BASE_ADDR = -(COLS * ROWS);
+    localparam TOP_ADDR = 16'hffff;
 
     localparam [9:0] MARGIN_LEFT = (h_visible - COLS * CHAR_WIDTH) / 2;
     localparam [9:0] MARGIN_TOP = (v_visible - ROWS * CHAR_HEIGHT) / 2;
@@ -53,7 +54,7 @@ module videoctl
 
     localparam FONT_FILE = "out/font.bin";
 
-    reg [7:0] font_rom[0:256*8-1];
+    reg [CHAR_WIDTH-1:0] font_rom[0:256*CHAR_HEIGHT-1];
     initial begin
         if (FONT_FILE != "") $readmemb(FONT_FILE, font_rom);
     end
@@ -84,9 +85,9 @@ module videoctl
             else begin
                 h_pos <= h_pos + 1;
             end
-                vga_blank <= !visible;
-                vga_hsync <= !((h_pos >= (h_visible + h_front)) && (h_pos < (h_visible + h_front + h_sync)));
-                vga_vsync <= !((v_pos >= (v_visible + v_front)) && (v_pos < (v_visible + v_front + v_sync)));
+            vga_blank <= !visible;
+            vga_hsync <= !((h_pos >= (h_visible + h_front)) && (h_pos < (h_visible + h_front + h_sync)));
+            vga_vsync <= !((v_pos >= (v_visible + v_front)) && (v_pos < (v_visible + v_front + v_sync)));
         end
     end
 
@@ -100,8 +101,18 @@ module videoctl
 
     reg v_valid = 0;
     reg h_valid = 0;
+    reg h_pre_valid = 0;
 
     always @(posedge clk_pixel) begin
+        h_valid <= h_pre_valid;
+
+        if (h_pos == VIEWPORT_LEFT-1) begin
+            h_pre_valid <= 1;
+        end
+        else if (h_pos == VIEWPORT_RIGHT-1) begin
+            h_pre_valid <= 0;
+        end
+
         if (v_pos == VIEWPORT_TOP) begin
             v_valid <= 1;
         end
@@ -111,19 +122,10 @@ module videoctl
     end
 
     always @(posedge clk_pixel) begin
-        if (h_pos == VIEWPORT_LEFT-1) begin
-            h_valid <= 1;
-        end
-        else if (h_pos == VIEWPORT_RIGHT-1) begin
-            h_valid <= 0;
-        end
-    end
-
-    always @(posedge clk_pixel) begin
-        if (h_pos == VIEWPORT_LEFT-1) begin
+        if (h_pos == VIEWPORT_LEFT-2) begin
             if (v_pos == VIEWPORT_TOP) begin
-                addr <= BASE_ADDR;
-                addr_left <= BASE_ADDR;
+                addr <= BASE_ADDR+1;
+                addr_left <= BASE_ADDR+1;
                 char_x <= 0;
                 char_y <= 0;
             end
@@ -136,10 +138,10 @@ module videoctl
                 char_y <= char_y + 1;
             end
         end
-        else if (h_valid && v_valid) begin
+        else if (h_pre_valid && v_valid) begin
             if ({1'b0,char_x} == CHAR_WIDTH-1) begin
                 char_x <= 0;
-                addr <= addr+1;
+                addr <= (addr == TOP_ADDR) ? BASE_ADDR : (addr+1);
             end
             else begin
                 char_x <= char_x+1;
@@ -147,20 +149,19 @@ module videoctl
         end
     end
 
-    wire [7:0] char_index = din;
-
-    reg [7:0] pixels = 8'h00;
+    wire [7:0] char = din;
+    reg [CHAR_WIDTH-1:0] pixels = {CHAR_WIDTH{1'b0}};
 
     always @(posedge clk_pixel) begin
         if (char_x == 0) begin
-            pixels <= font_rom[{char_index,char_y}];
+            pixels <= font_rom[{char,char_y}];
         end
         else begin
             pixels <= pixels << 1;
         end
     end
 
-    assign en = h_valid && v_valid && {1'b0,char_x} == CHAR_WIDTH-1;
+    assign en = 1'b0 | h_pre_valid && v_valid && {1'b0,char_x} == CHAR_WIDTH-1;
     assign color = (h_valid && v_valid) ? (pixels[CHAR_WIDTH-1] ? FOREGROUND : BACKGROUND) : BORDER;
 
 endmodule
