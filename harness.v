@@ -134,8 +134,8 @@ module harness ();
                     fd_frame = $fopen("out/frame.bmp", "w");
 
                     width = uat.video.h_visible;
-                    height = uat.video.v_visible;
-                    pixels = width * height;
+                    height = -uat.video.v_visible;
+                    pixels = uat.video.h_visible * uat.video.v_visible;
                     filesize = 54 + 3 * pixels;
 
                     // file header
