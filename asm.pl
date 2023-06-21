@@ -44,8 +44,8 @@ our $image = [(0xff) x 65536];
 # Syntax:
 #     org expr
 #     def label, expr
-#     db expr
-#     dw expr
+#     db expr, ...
+#     dw expr, ...
 #     ds "string"
 #     align
 #     alias rN name
@@ -241,10 +241,12 @@ foreach our $pass (1, 2) {
             $org = value($1);
         }
         elsif ($line =~ m{^db\s+(.*?)$}xi) {
-            emit_byte(value($1));
+            emit_byte($_) foreach value_list($1);
         }
         elsif ($line =~ m{^dw\s+(.*?)$}xi) {
-            emit_word(value($1));
+            foreach my $value (value_list($1)) {
+                emit_word($value);
+            }
         }
         elsif ($line =~ m{^ds\s+(.*?)$}xi) {
             emit_string($1);
@@ -531,6 +533,24 @@ sub emit_op {
     emit_word($op);
 }
 
+sub value_list {
+    my $e = shift;
+    my @values = ();
+    while(1) {
+        my ($v, $rest) = op_value($e, 0);
+        push @values, $v;
+        if ($rest =~ m{^ , \s*(.*)}x) {
+            $e = $1;
+            next;
+        }
+        if ($rest eq '') {
+            last;
+        }
+        abort("unexpected trailing '$rest'");
+    }
+    return @values;
+}
+
 sub value {
     my $e = shift;
     my ($v, $rest) = op_value($e, 0);
@@ -670,6 +690,10 @@ sub terminal_value {
         (my $digits, $rest) = ($1, $2);
         $digits =~ s/_//;
         $v = 0+$digits;
+    }
+    elsif ($e =~ m{^ '([^']*)' \s*(.*)}xi) {
+        (my $char, $rest) = ($1, $2);
+        $v = ord $char;
     }
     elsif ($e =~ m{^ \.([a-z_]\w*) \s*(.*)}xi) {
         if (defined $::labels->{$1}) {
