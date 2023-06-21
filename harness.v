@@ -4,7 +4,7 @@ module harness ();
     localparam TRACE_CPU = 1;           // trace CPU state
     localparam TRACE_MAX_REG = 15;      // max register to include (pc=r15 is always shown)
     localparam DUMP_VRAM_ON_HALT = 1;   // dump contents of video RAM on halt
-    localparam DUMP_FRAME_ON_HALT = 0;  // dump video frame on halt
+    localparam DUMP_FRAME_ON_HALT = 1;  // dump video frame on halt
     localparam DUMP_FRAME_SYNCS = 0;    // include hsync+vsync in frame dump
 
     reg clk = 1'b0;
@@ -89,8 +89,19 @@ module harness ();
                     reg [7:0] ch1, ch2;
                     ch1 = uat.mem.bank0.mem[addr>>1][7:0];
                     ch2 = uat.mem.bank1.mem[addr>>1][7:0];
-                    $write("%c %c ", (ch1>=8'h20 && ch1<=8'h7f) ? ch1 : ".",
-                                     (ch2>=8'h20 && ch2<=8'h7f) ? ch2 : ".");
+
+                    if (ch1>=8'h20 && ch1<=8'h7e) begin
+                        $write("%c  ", ch1);
+                    end else begin
+                        $write("%x ", ch1);
+                    end
+
+                    if (ch2>=8'h20 && ch2<=8'h7e) begin
+                        $write("%c  ", ch2);
+                    end else begin
+                        $write("%x ", ch2);
+                    end
+
                     addr=addr+2;
                 end
                 $write("\n");
@@ -104,6 +115,7 @@ module harness ();
     reg hsync = 1;
     integer vsync_count = 0;
     reg dumped_frame = 0;
+    integer fd_frame;
 
     always @(posedge uat.clk_pixel) begin
         if (halted &&
@@ -112,25 +124,62 @@ module harness ();
         )
         begin
             if (~uat.vga_vsync && vsync) begin
-                if (vsync_count < 1) begin
+                if (vsync_count < 1) begin: dump_frame_header
+                    integer width;    
+                    integer height;   
+                    integer pixels;   
+                    integer filesize; 
+
                     vsync_count = vsync_count+1;
-                    $write("\nFRAME %0d\n", vsync_count);
+                    fd_frame = $fopen("out/frame.bmp", "w");
+
+                    width = uat.video.h_visible;
+                    height = uat.video.v_visible;
+                    pixels = width * height;
+                    filesize = 54 + 3 * pixels;
+
+                    // file header
+                    $fwrite(fd_frame, "BM");            // magic
+                    $fwrite(fd_frame, "%c%c%c%c", filesize[0+:8], filesize[8+:8], filesize[16+:8], filesize[24+:8]);
+                    $fwrite(fd_frame, "%c%c", 0, 0);            // reserved1
+                    $fwrite(fd_frame, "%c%c", 0, 0);            // reserved2
+                    $fwrite(fd_frame, "%c%c%c%c", 54,0,0,0);    // pixel data offset
+
+                    //BITMAPINFO header
+                    $fwrite(fd_frame, "%c%c%c%c", 40,0,0,0);    // this header size
+                    $fwrite(fd_frame, "%c%c%c%c", width[0+:8], width[8+:8], width[16+:8], width[23+:8]);
+                    $fwrite(fd_frame, "%c%c%c%c", height[0+:8], height[8+:8], height[16+:8], height[23+:8]);
+                    $fwrite(fd_frame, "%c%c", 1, 0);            // color planes (1)
+                    $fwrite(fd_frame, "%c%c", 24, 0);           // bpp
+                    $fwrite(fd_frame, "%c%c%c%c", 0,0,0,0);     // compression method
+                    $fwrite(fd_frame, "%c%c%c%c", 0,0,0,0);     // raw bitmap size (0 is ok)
+                    $fwrite(fd_frame, "%c%c%c%c", 0,0,0,0);     // horizontal resolution pix/m
+                    $fwrite(fd_frame, "%c%c%c%c", 0,0,0,0);     // vertical resolution pix/m
+                    $fwrite(fd_frame, "%c%c%c%c", 0,0,0,0);     // number of colours in palette (0 default)
+                    $fwrite(fd_frame, "%c%c%c%c", 0,0,0,0);     // number of important colors (or 0)
+
+                    //pixel data: R,G,B - pad rows to multiple of 4 bytes
+                    $display("DUMPING FRAME %0d\n", vsync_count);
                 end
                 else begin
+                    $display("DUMPED FRAME");
+                    $fclose(fd_frame);
                     dumped_frame <= 1;
                 end
             end
             if (vsync_count > 0) begin
                 if (~uat.vga_hsync && hsync) begin
-                    $write("\n");
+                    //$write("\n");
+                    ;
                 end
                 if (uat.vga_blank) begin
-                    if (DUMP_FRAME_SYNCS) begin
-                        $write("%c", ~uat.vga_hsync ? (~uat.vga_vsync ? "+" : "-") : (~uat.vga_vsync ? "|" : "."));
-                    end
+                    ;
+                    //if (DUMP_FRAME_SYNCS) begin
+                    //    $write("%c", ~uat.vga_hsync ? (~uat.vga_vsync ? "+" : "-") : (~uat.vga_vsync ? "|" : "."));
+                    //end
                 end
                 else begin
-                    $write("%x", uat.vga_color[3:0]);
+                    $fwrite(fd_frame, "%c%c%c", uat.vga_color[0+:8], uat.vga_color[8+:8], uat.vga_color[16+:8]);
                 end
             end
 
