@@ -6,6 +6,7 @@ my $tags = {
     "ascii" => 1,
     "usmil" => 0,
     "hex"   => 1,
+    "test"  => 1,
 };
 
 my $data = [(0x55,0xaa) x (256*4)]; # cross-hatch pattern for undefined chars
