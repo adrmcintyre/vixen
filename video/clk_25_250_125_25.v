@@ -9,6 +9,7 @@ module clk_25_250_125_25(input clki,
 wire clkfb;
 wire clkos;
 wire clkop;
+/* verilator lint_off PINMISSING */
 (* ICP_CURRENT="12" *) (* LPF_RESISTOR="8" *) (* MFG_ENABLE_FILTEROPAMP="1" *) (* MFG_GMCREF_SEL="2" *)
 EHXPLLL #(
         .PLLRST_ENA("DISABLED"),
@@ -48,5 +49,6 @@ EHXPLLL #(
         .ENCLKOP(1'b0),
         .LOCK(locked)
 	);
+/* verilator lint_on PINMISSING */
 assign clko = clkop;
 endmodule

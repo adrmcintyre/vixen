@@ -13,7 +13,7 @@ module top (
     wire clk = clk_25mhz;
 
     wire [15:0] mem_dout;
-    wire [7:0] mem_dout2;
+    wire [7:0] video_data;
     memory mem(
             .clk1(clk),
             .en1(cpu_mem_en),
@@ -23,9 +23,9 @@ module top (
             .din1(cpu_mem_din),
             .dout1(mem_dout),
             .clk2(clk_pixel),
-            .en2(vga_en),
-            .addr2(vga_addr),
-            .dout2(mem_dout2));
+            .en2(video_rd),
+            .addr2(video_addr),
+            .dout2(video_data));
 
     wire cpu_mem_en, cpu_mem_wr, cpu_mem_wide;
     wire [15:0] cpu_mem_addr;
@@ -44,19 +44,19 @@ module top (
     wire vga_vsync;
     wire vga_hsync;
     wire vga_blank;
-    wire [23:0] vga_color;
-    wire [15:0] vga_addr;
-    wire vga_en;
+    wire [23:0] video_rgb;
+    wire [15:0] video_addr;
+    wire video_rd;
     videoctl video(
         .clk_pixel(clk_pixel),
-        .clk_locked(clk_locked),
-        .vga_vsync(vga_vsync),
-        .vga_hsync(vga_hsync),
-        .vga_blank(vga_blank),
-        .color(vga_color),
-        .addr(vga_addr),
-        .en(vga_en),
-        .din(mem_dout2));
+        .nreset(clk_locked),
+        .vsync(vga_vsync),
+        .hsync(vga_hsync),
+        .blank(vga_blank),
+        .rgb(video_rgb),
+        .addr(video_addr),
+        .rd(video_rd),
+        .din(video_data));
 
 `ifdef IVERILOG
     wire clk_locked = 1'b1;
@@ -71,7 +71,7 @@ module top (
             .vga_vsync(vga_vsync),
             .vga_hsync(vga_hsync),
             .vga_blank(vga_blank),
-            .color(vga_color),
+            .color(video_rgb),
             .gpdi_dp(gpdi_dp),
             .gpdi_dn(gpdi_dn));
 `endif

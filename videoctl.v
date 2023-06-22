@@ -4,15 +4,15 @@ module videoctl
 (
     // clock
 	input clk_pixel,
-    input clk_locked,
+    input nreset,
     // vga output
-    output reg vga_vsync,
-    output reg vga_hsync,
-    output reg vga_blank,
-    output     [23:0] color,
+    output reg vsync,
+    output reg hsync,
+    output reg blank,
+    output     [23:0] rgb,
     // memory access
     output reg [15:0] addr,
-    output        en,
+    output        rd,
     input  [7:0]  din
 );
 
@@ -34,7 +34,7 @@ module videoctl
 
     // place video character buffer at top of RAM
     localparam BASE_ADDR = -(COLS * ROWS);
-    localparam TOP_ADDR = 16'hffff;
+    localparam LAST_ADDR = 16'hffff;
 
     localparam [9:0] MARGIN_LEFT = (h_visible - COLS * CHAR_WIDTH) / 2;
     localparam [9:0] MARGIN_TOP = (v_visible - ROWS * CHAR_HEIGHT) / 2;
@@ -67,7 +67,7 @@ module videoctl
 
     always @(posedge clk_pixel) 
     begin
-        if (clk_locked == 0) begin
+        if (~nreset) begin
             h_pos <= 10'b0;
             v_pos <= 10'b0;
         end
@@ -85,9 +85,9 @@ module videoctl
             else begin
                 h_pos <= h_pos + 1;
             end
-            vga_blank <= !visible;
-            vga_hsync <= !((h_pos >= (h_visible + h_front)) && (h_pos < (h_visible + h_front + h_sync)));
-            vga_vsync <= !((v_pos >= (v_visible + v_front)) && (v_pos < (v_visible + v_front + v_sync)));
+            blank <= !visible;
+            hsync <= !((h_pos >= (h_visible + h_front)) && (h_pos < (h_visible + h_front + h_sync)));
+            vsync <= !((v_pos >= (v_visible + v_front)) && (v_pos < (v_visible + v_front + v_sync)));
         end
     end
 
@@ -141,7 +141,7 @@ module videoctl
         else if (h_pre_valid && v_valid) begin
             if ({1'b0,char_x} == CHAR_WIDTH-1) begin
                 char_x <= 0;
-                addr <= (addr == TOP_ADDR) ? BASE_ADDR : (addr+1);
+                addr <= (addr == LAST_ADDR) ? BASE_ADDR : (addr+1);
             end
             else begin
                 char_x <= char_x+1;
@@ -161,8 +161,8 @@ module videoctl
         end
     end
 
-    assign en = 1'b0 | h_pre_valid && v_valid && {1'b0,char_x} == CHAR_WIDTH-1;
-    assign color = (h_valid && v_valid) ? (pixels[CHAR_WIDTH-1] ? FOREGROUND : BACKGROUND) : BORDER;
+    assign rd = h_pre_valid && v_valid && {1'b0,char_x} == CHAR_WIDTH-1;
+    assign rgb = (h_valid && v_valid) ? (pixels[CHAR_WIDTH-1] ? FOREGROUND : BACKGROUND) : BORDER;
 
 endmodule
 

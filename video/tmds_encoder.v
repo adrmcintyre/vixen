@@ -57,107 +57,83 @@
 // no timescale needed
 
 module tmds_encoder(
-input wire clk,
-input wire [7:0] data,
-input wire [1:0] c,
-input wire blank,
-input wire resetn,
-output reg [9:0] encoded
-);
+        input wire clk,
+        input wire [7:0] data,
+        input wire [1:0] c,
+        input wire blank,
+        input wire resetn,
+        output reg [9:0] encoded
+    );
 
+    function [3:0] popcount(input [7:0] bits);
+        integer i;
+        popcount = 4'b0;
+        for(i=0; i<8; i=i+1) begin
+            popcount = popcount + {3'b0, bits[i]};
+        end
+    endfunction
 
-
-
-wire [8:0] xored;
-wire [8:0] xnored;
-wire [3:0] ones;
-reg [8:0] data_word;
-reg [8:0] data_word_inv;
-wire [3:0] data_word_disparity;
-reg [3:0] dc_bias;
-
-/* verilator lint_off WIDTH */
-
-  // Work our the two different encodings for the byte
-  assign xored[0] = data[0];
-  assign xored[1] = data[1] ^ xored[0];
-  assign xored[2] = data[2] ^ xored[1];
-  assign xored[3] = data[3] ^ xored[2];
-  assign xored[4] = data[4] ^ xored[3];
-  assign xored[5] = data[5] ^ xored[4];
-  assign xored[6] = data[6] ^ xored[5];
-  assign xored[7] = data[7] ^ xored[6];
-  assign xored[8] = 1'b1;
-  assign xnored[0] = data[0];
-  assign xnored[1] =  ~(data[1] ^ xnored[0]);
-  assign xnored[2] =  ~(data[2] ^ xnored[1]);
-  assign xnored[3] =  ~(data[3] ^ xnored[2]);
-  assign xnored[4] =  ~(data[4] ^ xnored[3]);
-  assign xnored[5] =  ~(data[5] ^ xnored[4]);
-  assign xnored[6] =  ~(data[6] ^ xnored[5]);
-  assign xnored[7] =  ~(data[7] ^ xnored[6]);
-  assign xnored[8] = 1'b0;
-  // Count how many ones are set in data
-  assign ones = 4'b0000 + data[0] + data[1] + data[2] + data[3] + data[4] + data[5] + data[6] + data[7];
-  // Decide which encoding to use
-  always @(ones, data[0], xnored, xored) begin
-    if(ones > 4 || (ones == 4 && data[0] == 1'b0)) begin
-      data_word <= xnored;
-      data_word_inv <=  ~(xnored);
+    // Work out the two different encodings for the byte
+    reg [8:0] xored, xnored;
+    always @* begin: encodings
+        integer i;
+        xored[0] = data[0];
+        xnored[0] = data[0];
+        for(i=1; i<8; i=i+1) begin
+            xored[i] = data[i] ^ xored[i-1];
+            xnored[i] = ~(data[i] ^ xnored[i-1]);
+        end
+        xored[8] = 1'b1;
+        xnored[8] = 1'b0;
     end
-    else begin
-      data_word <= xored;
-      data_word_inv <=  ~(xored);
-    end
-  end
 
-  // Work out the DC bias of the dataword;
-  assign data_word_disparity = 4'b1100 + data_word[0] + data_word[1] + data_word[2] + data_word[3] + data_word[4] + data_word[5] + data_word[6] + data_word[7];
-  // Now work out what the output should be
-  always @(posedge clk) begin
-    if (!resetn)
-      dc_bias <= 1'b0;
-    if(blank == 1'b1) begin
-      // In the control periods, all values have and have balanced bit count
-      case(c)
-      2'b00 : begin
-        encoded <= 10'b1101010100;
-      end
-      2'b01 : begin
-        encoded <= 10'b0010101011;
-      end
-      2'b10 : begin
-        encoded <= 10'b0101010100;
-      end
-      default : begin
-        encoded <= 10'b1010101011;
-      end
-      endcase
-      dc_bias <= {4{1'b0}};
+    // Decide which encoding to use
+    wire [3:0] ones = popcount(data);
+    reg [8:0] data_word, data_word_inv;
+    always @* begin
+        data_word = (ones > 4 || (ones == 4 && data[0] == 1'b0)) ? xnored : xored;
+        data_word_inv = ~data_word;
     end
-    else begin
-      if(dc_bias == 5'b00000 || data_word_disparity == 0) begin
-        // dataword has no disparity
-        if(data_word[8] == 1'b1) begin
-          encoded <= {2'b01,data_word[7:0]};
-          dc_bias <= dc_bias + data_word_disparity;
+
+    // Work out the DC bias of the dataword
+    wire [3:0] disparity = popcount(data_word[7:0]) - 4'd6;
+
+    // Now work out what the output should be
+    reg [3:0] bias;
+    always @(posedge clk) begin
+        if (!resetn) begin
+            bias <= 4'b0;
+        end
+        if (blank) begin
+            // In the control periods, all values have a balanced bit count
+            // Equivalent to: encoded <= {c[1], 9'b010101011} ^ {10{~c[0]}
+            case(c)
+                2'b00: encoded <= {2'b11, 8'b01010100};
+                2'b01: encoded <= {2'b00, 8'b10101011};
+                2'b10: encoded <= {2'b01, 8'b01010100};
+                2'b11: encoded <= {2'b10, 8'b10101011};
+            endcase
+            bias <= 4'b0;
+        end
+        else if (bias == 4'b0 || disparity == 4'b0) begin
+            // dataword has no disparity
+            if (data_word[8] == 1'b1) begin
+                encoded <= {2'b01, data_word[7:0]};
+                bias <= bias + disparity;
+            end
+            else begin
+                encoded <= {2'b10, data_word_inv[7:0]};
+                bias <= bias - disparity;
+            end
+        end
+        else if (bias[3] == disparity[3]) begin
+            encoded <= {{1'b1,data_word[8]}, data_word_inv[7:0]};
+            bias <= bias + {3'b0,data_word[8]} - disparity;
         end
         else begin
-          encoded <= {2'b10,data_word_inv[7:0]};
-          dc_bias <= dc_bias - data_word_disparity;
+            encoded <= {{1'b0,data_word[8]}, data_word[7:0]};
+            bias <= bias - {3'b0,data_word_inv[8]} + disparity;
         end
-      end
-      else if((dc_bias[3] == 1'b0 && data_word_disparity[3] == 1'b0) || (dc_bias[3] == 1'b1 && data_word_disparity[3] == 1'b1)) begin
-        encoded <= {1'b1,data_word[8],data_word_inv[7:0]};
-        dc_bias <= dc_bias + data_word[8] - data_word_disparity;
-      end
-      else begin
-        encoded <= {1'b0,data_word};
-        dc_bias <= dc_bias - data_word_inv[8] + data_word_disparity;
-      end
     end
-  end
-
-/* verilator lint_on WIDTH */
 
 endmodule

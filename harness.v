@@ -179,7 +179,7 @@ module harness ();
                     //end
                 end
                 else begin
-                    $fwrite(fd_frame, "%c%c%c", uat.vga_color[0+:8], uat.vga_color[8+:8], uat.vga_color[16+:8]);
+                    $fwrite(fd_frame, "%c%c%c", uat.video_rgb[0+:8], uat.video_rgb[8+:8], uat.video_rgb[16+:8]);
                 end
             end
 
