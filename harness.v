@@ -87,8 +87,8 @@ module harness ();
             for(y=0; y<40; y=y+1) begin: dump_y
                 for(x=0; x<64; x=x+2) begin: dump_x
                     reg [7:0] ch1, ch2;
-                    ch1 = uat.mem.bank0.mem[addr>>1][7:0];
-                    ch2 = uat.mem.bank1.mem[addr>>1][7:0];
+                    ch1 = uat.mem.hi.mem[addr>>1][7:0];
+                    ch2 = uat.mem.lo.mem[addr>>1][7:0];
 
                     if (ch1>=8'h20 && ch1<=8'h7e) begin
                         $write("%c  ", ch1);

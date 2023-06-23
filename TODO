@@ -1,6 +1,3 @@
-video:
-    figure out how to make enable signal work for us
-
 clock:
     Right now we're running everything off the ECP5's external 25MHz clock.
     Should try using the PLL to generate a faster internal clock, just as

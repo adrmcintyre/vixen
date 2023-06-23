@@ -19,53 +19,66 @@ module memory (
         input  [15:0] addr2,
         output [7:0]  dout2
 );
-    wire [14:0] mem_addr = addr1[15:1];
-    wire aligned = ~addr1[0];
+    // Port A
+    wire [14:0] mem_addr1 = addr1[15:1];
+    wire aligned1 = ~addr1[0];
 
-    wire bank0_wr = wr1 & (wide1 | aligned);
-    wire bank1_wr = wr1 & (wide1 | ~aligned);
+    wire [14:0] hi_addr1 = aligned1 ? mem_addr1 : mem_addr1 + 1;
+    wire [14:0] lo_addr1 = mem_addr1;
 
-    wire [14:0] bank0_addr = aligned ? mem_addr : mem_addr + 1;
-    wire [14:0] bank1_addr = mem_addr;
+    wire [7:0] hi_din1 = (wide1 & aligned1)  ? din1[15:8] : din1[7:0]; 
+    wire [7:0] lo_din1 = (wide1 & ~aligned1) ? din1[15:8] : din1[7:0];
 
-    wire [7:0] bank0_din = (~wide1 | ~aligned) ? din1[7:0] : din1[15:8];
-    wire [7:0] bank1_din = (~wide1 | aligned)  ? din1[7:0] : din1[15:8];
+    wire [7:0] hi_dout1;
+    wire [7:0] lo_dout1;
 
-    wire [7:0] bank0_dout;
-    wire [7:0] bank0_dout2;
+    wire hi_en1 = en1 & (wide1 | aligned1);
+    wire lo_en1 = en1 & (wide1 | ~aligned1);
 
-    wire [7:0] bank1_dout;
-    wire [7:0] bank1_dout2;
+    wire hi_wr1 = wr1 & hi_en1;
+    wire lo_wr1 = wr1 & lo_en1;
 
-    wire bank0_en1 = 1'b1 | en1;
-    wire bank0_en2 = 1'b1 | en2 & ~addr2[0];
-    wire bank1_en1 = 1'b1 | en1;
-    wire bank1_en2 = 1'b1 | en2 & addr2[0];
+    // Port B
+    wire [14:0] mem_addr2 = addr2[15:1];
+    wire aligned2 = ~addr2[0];
 
-    ram8 #(.FILE("out/mem.bin.0")) bank0(
+    wire [14:0] hi_addr2 = mem_addr2;
+    wire [14:0] lo_addr2 = mem_addr2;
+
+    wire hi_en2 = en2 & aligned2;
+    wire lo_en2 = en2 & ~aligned2;
+
+    wire [7:0] hi_dout2;
+    wire [7:0] lo_dout2;
+
+    ram8 #(.FILE("out/mem.bin.0")) hi(
+            // port A
             .clk1(clk1),
-            .en1(bank0_en1),
-            .wr1(bank0_wr),
-            .addr1(bank0_addr),
-            .din1(bank0_din),
-            .dout1(bank0_dout),
+            .en1(hi_en1),
+            .wr1(wr1),
+            .addr1(hi_addr1),
+            .din1(hi_din1),
+            .dout1(hi_dout1),
+            // port B
             .clk2(clk2),
-            .en2(bank0_en2),
-            .addr2(addr2[15:1]),
-            .dout2(bank0_dout2));
+            .en2(hi_en2),
+            .addr2(hi_addr2),
+            .dout2(hi_dout2));
 
-    ram8 #(.FILE("out/mem.bin.1")) bank1(
+    ram8 #(.FILE("out/mem.bin.1")) lo(
+            // port A
             .clk1(clk1),
-            .en1(bank1_en1),
-            .wr1(bank1_wr),
-            .addr1(bank1_addr),
-            .din1(bank1_din),
-            .dout1(bank1_dout),
+            .en1(lo_en1),
+            .wr1(wr1),
+            .addr1(lo_addr1),
+            .din1(lo_din1),
+            .dout1(lo_dout1),
+            // port B
             .clk2(clk2),
-            .en2(bank1_en2),
-            .addr2(addr2[15:1]),
-            .dout2(bank1_dout2));
+            .en2(lo_en2),
+            .addr2(lo_addr2),
+            .dout2(lo_dout2));
 
-    assign dout1 = aligned ? {bank0_dout, bank1_dout} : {bank1_dout, bank0_dout};
-    assign dout2 = addr2[0] ? bank0_dout2 : bank1_dout2;
+    assign dout1 = aligned1 ? {hi_dout1, lo_dout1} : {lo_dout1, hi_dout1};
+    assign dout2 = aligned2 ? hi_dout2 : lo_dout2;
 endmodule
