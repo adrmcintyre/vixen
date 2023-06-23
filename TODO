@@ -1,3 +1,7 @@
+video:
+    allow cpu to control video mode via memory mapped registers
+    implement colour palettes
+
 clock:
     Right now we're running everything off the ECP5's external 25MHz clock.
     Should try using the PLL to generate a faster internal clock, just as
