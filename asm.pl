@@ -67,6 +67,7 @@ our $image = [(0xff) x 65536];
 #   [0-9]+                  decimal
 #   0x[0-9a-f]+             hex
 #   0b[01]+                 binary
+#   'c'                     char
 #   .[A-Za-z][A-Za-z0-9_]*  label
 #
 #   numeric constants may contain _ as digit separators
