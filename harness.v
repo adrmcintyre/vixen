@@ -83,7 +83,7 @@ module harness ();
         begin: dump_vram
             integer x,y;
             reg [15:0] addr;
-            addr = 16'h0000-64*40;
+            addr = 16'hfc00-64*40;
             for(y=0; y<40; y=y+1) begin: dump_y
                 for(x=0; x<64; x=x+2) begin: dump_x
                     reg [7:0] ch1, ch2;

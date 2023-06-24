@@ -12,41 +12,52 @@ module top (
 
     wire clk = clk_25mhz;
 
-    wire [15:0] mem_dout;
-    wire [7:0] video_data;
+    // CPU
+    wire cpu_en, cpu_wr, cpu_wide;
+    wire [15:0] cpu_addr;
+    wire [15:0] cpu_din;
+    wire [15:0] cpu_dout;
+    vixen cpu(
+            .clk(clk),
+            .mem_en(cpu_en),
+            .mem_wr(cpu_wr),
+            .mem_wide(cpu_wide),
+            .mem_addr(cpu_addr),
+            .mem_din(cpu_dout),
+            .mem_dout(cpu_din),
+            .led(led));
+
+    // memory map i/o at fc00-ffff
+    wire io_sel = (cpu_addr[15:10] == 6'h3f);
+    wire [9:0] io_addr = cpu_addr[9:0];
+
+    wire mem_sel = ~io_sel;
+
+    // memory
     memory mem(
             .clk1(clk),
-            .en1(cpu_mem_en),
-            .wr1(cpu_mem_wr),
-            .wide1(cpu_mem_wide),
-            .addr1(cpu_mem_addr),
-            .din1(cpu_mem_din),
-            .dout1(mem_dout),
+            .en1(cpu_en & mem_sel),
+            .wr1(cpu_wr),
+            .wide1(cpu_wide),
+            .addr1(cpu_addr),
+            .din1(cpu_dout),
+            .dout1(cpu_din),
             .clk2(clk_pixel),
             .en2(video_rd),
             .addr2(video_addr),
-            .dout2(video_data));
+            .dout2(video_din));
 
-    wire cpu_mem_en, cpu_mem_wr, cpu_mem_wide;
-    wire [15:0] cpu_mem_addr;
-    wire [15:0] cpu_mem_din;
-    vixen cpu(
-            .clk(clk),
-            .mem_en(cpu_mem_en),
-            .mem_wr(cpu_mem_wr),
-            .mem_wide(cpu_mem_wide),
-            .mem_addr(cpu_mem_addr),
-            .mem_din(cpu_mem_din),
-            .mem_dout(mem_dout),
-            .led(led)
-            );
+    // video registers at fc00-fc3f
+    wire video_sel = io_sel && (io_addr <= 10'h03f);
 
+    // video controller
     wire vga_vsync;
     wire vga_hsync;
     wire vga_blank;
     wire [23:0] video_rgb;
     wire [15:0] video_addr;
     wire video_rd;
+    wire [7:0] video_din;
     videoctl video(
         .clk_pixel(clk_pixel),
         .nreset(clk_locked),
@@ -56,8 +67,14 @@ module top (
         .rgb(video_rgb),
         .addr(video_addr),
         .rd(video_rd),
-        .din(video_data));
+        .din(video_din),
+        .reg_clk(clk),
+        .reg_wr(video_sel & cpu_en & cpu_wr),
+        .reg_data(cpu_dout[7:0]),
+        .reg_addr(io_addr[5:0])
+    );
 
+    // video output
 `ifdef IVERILOG
     wire clk_locked = 1'b1;
     wire clk_pixel = clk_25mhz;

@@ -5,6 +5,11 @@ module videoctl
     // clock
 	input clk_pixel,
     input nreset,
+    // registers
+    input         reg_clk,
+    input         reg_wr,
+    input  [7:0]  reg_data,
+    input  [5:0]  reg_addr,
     // vga output
     output reg vsync,
     output reg hsync,
@@ -20,15 +25,19 @@ module videoctl
     localparam h_front = 10'd16;
     localparam h_sync = 10'd96;
     localparam h_back = 10'd44;
-    localparam h_total = h_visible + h_front + h_sync + h_back;
 
     localparam v_visible = 10'd480;     // VGA height
     localparam v_front = 10'd10;
     localparam v_sync = 10'd2;
     localparam v_back = 10'd31;
 
-    localparam COLS = 64;
-    localparam ROWS = 40;
+    localparam h_total = h_visible + h_front + h_sync + h_back;
+    localparam v_total = v_visible + v_front + v_sync + v_back;
+
+    localparam [23:0] RGB_CANARY = 24'hffffaa;
+    localparam [23:0] BORDER     = RGB_CANARY;
+
+    localparam FONT_FILE = "out/font.bin";
 
     localparam CHAR_WIDTH = 8;
     localparam CHAR_HEIGHT = 8;
@@ -39,36 +48,50 @@ module videoctl
     localparam CHAR_TOP = 0;
     localparam CHAR_BOTTOM = 7;
 
-    // place video character buffer at top of RAM
-    localparam BASE_ADDR = -(COLS * ROWS);
-    localparam LAST_ADDR = 16'hffff;
+    localparam CTL_BASE      = 6'h00;
+    localparam CTL_LEFT      = 6'h02;    // set reg to vp_left-2
+    localparam CTL_RIGHT     = 6'h04;    // set reg to vp_right-2
+    localparam CTL_TOP       = 6'h06;
+    localparam CTL_BOTTOM    = 6'h08;
+    localparam CTL_MODE      = 6'h0A;
+    localparam CTL_PAL_RED   = 6'h10;
+    localparam CTL_PAL_GREEN = 6'h20;
+    localparam CTL_PAL_BLUE  = 6'h30;
 
-    localparam [9:0] MARGIN_LEFT = (h_visible - COLS * CHAR_WIDTH) / 2;
-    localparam [9:0] MARGIN_TOP = (v_visible - ROWS * CHAR_HEIGHT) / 2;
+    // config register interface
+    reg [7:0] control[0:'h3f];
+    initial begin: init_control
+        integer i;
+        for(i=0; i<='h3f; i=i+1) control[i] = 8'h00;
+    end
+    always @(posedge reg_clk) begin
+        if (reg_wr) control[reg_addr] <= reg_data;
+    end
 
-    localparam [9:0] VIEWPORT_LEFT = MARGIN_LEFT;
-    localparam [9:0] VIEWPORT_TOP = MARGIN_TOP;
-    localparam [9:0] VIEWPORT_RIGHT = h_visible - VIEWPORT_LEFT;;
-    localparam [9:0] VIEWPORT_BOTTOM = v_visible - VIEWPORT_TOP;
+    wire [15:0] base_addr = {control[CTL_BASE  ],      control[CTL_BASE+1]};
+    wire [9:0]  vp_left   = {control[CTL_LEFT  ][1:0], control[CTL_LEFT+1]};
+    wire [9:0]  vp_right  = {control[CTL_RIGHT ][1:0], control[CTL_RIGHT+1]};
+    wire [9:0]  vp_top    = {control[CTL_TOP   ][1:0], control[CTL_TOP+1]};
+    wire [9:0]  vp_bottom = {control[CTL_BOTTOM][1:0], control[CTL_BOTTOM+1]};
+    wire [1:0]  mode      = {control[CTL_MODE  ][1:0]};
 
-    localparam [23:0] RGB_CANARY = 24'hffffaa;
-    localparam [23:0] RGB_BLACK  = 24'h000000;
-    localparam [23:0] RGB_WHITE  = 24'hffffff;
-
-    localparam [23:0] BORDER     = RGB_CANARY;
-    localparam [23:0] BACKGROUND = RGB_BLACK;
-    localparam [23:0] FOREGROUND = RGB_WHITE;
-
-    localparam FONT_FILE = "out/font.bin";
+    reg [2:0] mode_bpp;
+    reg mode_text;
+    always @* begin
+        case (mode)
+            2'd0: begin mode_text = 1'b1; mode_bpp = 3'd1; end
+            2'd1: begin mode_text = 1'b0; mode_bpp = 3'd1; end
+            2'd2: begin mode_text = 1'b0; mode_bpp = 3'd2; end
+            2'd3: begin mode_text = 1'b0; mode_bpp = 3'd4; end
+        endcase
+    end
 
     reg [CHAR_WIDTH-1:0] font_rom[0:256*CHAR_HEIGHT-1];
     initial begin
         if (FONT_FILE != "") $readmemb(FONT_FILE, font_rom);
     end
 
-    localparam v_total = v_visible + v_front + v_sync + v_back;
-
-    reg [9:0] h_pos = 0;
+    reg [9:0] h_pos = 0;    // TODO offset -2 to make up for adjustment problem elsewhere
     reg [9:0] v_pos = 0;
 
     always @(posedge clk_pixel) 
@@ -111,17 +134,18 @@ module videoctl
     always @(posedge clk_pixel) begin
         h_valid <= h_valid_in_1;
         h_valid_in_1 <= h_valid_in_2;
-        if (h_pos == VIEWPORT_LEFT-2) begin
+
+        if (h_pos == vp_left) begin
             h_valid_in_2 <= 1;
         end
-        else if (h_pos == VIEWPORT_RIGHT-2) begin
+        else if (h_pos == vp_right) begin
             h_valid_in_2 <= 0;
         end
 
-        if (v_pos == VIEWPORT_TOP) begin
+        if (v_pos == vp_top) begin
             v_valid <= 1;
         end
-        else if (v_pos == VIEWPORT_BOTTOM) begin
+        else if (v_pos == vp_bottom) begin
             v_valid <= 0;
         end
     end
@@ -133,13 +157,13 @@ module videoctl
 
     always @(posedge clk_pixel) begin
         if (v_valid) begin
-            if (h_pos == VIEWPORT_LEFT-2) begin
-                if (v_pos == VIEWPORT_TOP) begin
-                    addr <= BASE_ADDR;
-                    addr_left <= BASE_ADDR;
+            if (h_pos == vp_left) begin
+                if (v_pos == vp_top) begin
+                    addr <= base_addr;
+                    addr_left <= base_addr;
                     char_y <= CHAR_TOP;
                 end
-                else if ({1'b0,char_y} == CHAR_BOTTOM) begin
+                else if (!mode_text || {1'b0,char_y} == CHAR_BOTTOM) begin
                     char_y <= CHAR_TOP;
                     addr_left <= addr;
                 end
@@ -172,15 +196,21 @@ module videoctl
 
     always @(posedge clk_pixel) begin
         if (char_x == CHAR_LEFT) begin
-            pixels <= font_rom[{char,char_y}];
+            pixels <= mode_text ? font_rom[{char,char_y}] : char;
         end
         else begin
             pixels <= pixels << 1;
         end
     end
 
+    // palette lookup
+    wire [3:0] pixel = {3'b0, pixels[CHAR_RIGHT]};
+    wire [7:0] red   = control[CTL_PAL_RED   | {2'b0, pixel}];
+    wire [7:0] green = control[CTL_PAL_GREEN | {2'b0, pixel}];
+    wire [7:0] blue  = control[CTL_PAL_BLUE  | {2'b0, pixel}];
+
     // output
-    assign rgb = (h_valid && v_valid) ? (pixels[CHAR_RIGHT] ? FOREGROUND : BACKGROUND) : BORDER;
+    assign rgb = (h_valid && v_valid) ? {red,green,blue} : BORDER;
 
 endmodule
 

@@ -1,6 +1,15 @@
-def COLS 64
-def ROWS 40
-def VIDEO 0x10000 - (.ROWS * .COLS)
+def MEM_TOP 0xfc00
+def IO_BASE 0xfc00
+
+def VREG .IO_BASE + 0x000
+def VGA_WIDTH 640
+def VGA_HEIGHT 480
+def TEXT_COLS 64
+def TEXT_ROWS 40
+def TEXT_BASE .MEM_TOP - .TEXT_COLS*.TEXT_ROWS
+
+; well below video for safety
+def STACK_BASE 0x1000
 
 alias r0  video
 alias r1  ch
@@ -16,95 +25,276 @@ alias r15 pc
 
     org 0x0000
 .init
-    ; setup registers
-    mov video, hi(.VIDEO)
-    add video, lo(.VIDEO)
-    mov sp, video
+    mov sp, hi(.STACK_BASE)
+    add sp, lo(.STACK_BASE)
 
-.main
+    bra .text_card  ; display text test-card
+   ;bra .gfx_card   ; display graphics test-card
+
+.text_card
+    ; set 64x40 text
+    mov r0, 0
+    bl .set_video_mode
+    mov video, hi(.TEXT_BASE)
+    add video, lo(.TEXT_BASE)
     mov ch, 0xc0
-    bl .clear
-    bl .draw_table
-    bl .draw_ascii
-    bl .draw_row_nums
-    bl .draw_col_nums
+    bl .text_clear
+    bl .text_card_table
+    bl .text_card_ascii
+    bl .text_card_rows
+    bl .text_card_cols
+    hlt
+
+.gfx_card
+    ; set 512x400 1bpp
+    mov r0, 1
+    bl .set_video_mode
+
+    mov video, hi(.MEM_TOP-512*400/8)
+    add video, lo(.MEM_TOP-512*400/8)
+    mov ch, 0x0000
+    mov n, hi(512*400/8)
+    add n, lo(512*400/8)
+    mov tmp, video
+.gfx_clear_loop
+    stw ch, [tmp]
+    stw ch, [tmp,2]
+    stw ch, [tmp,4]
+    stw ch, [tmp,6]
+    stw ch, [tmp,8]
+    stw ch, [tmp,10]
+    stw ch, [tmp,12]
+    stw ch, [tmp,14]
+    add tmp, 16
+    sub n, 16
+    prne
+    bra .gfx_clear_loop
+
+    mov ch, 0x8000
+    add ch, 0x0080
+    mov x, 0
+    mov y, 0
+    mov n, hi(400)
+    add n, lo(400)
+.gfx_loop
+    mov tmp, video
+    mov dy, y
+    lsl dy, 6
+    add tmp, dy
+    mov dx, x
+    lsr dx, 3
+    add tmp, dx
+
+    stb ch, [tmp]
+    ror ch, 1
+    add x, 1
+    add y, 1
+    sub n, 1
+    prne
+    bra .gfx_loop
     hlt
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .draw_table()
-.draw_table
+;; ROUTINE .set_video_mode(r0=mode)
+.set_video_mode
+    ; validate
+    mov tmp, 4
+    cmp r0, tmp
+    prhs
+    mov pc, link
+
+    lsl r0, 1
+    mov tmp, hi(.video_mode_table)
+    add tmp, lo(.video_mode_table)
+    add tmp, r0
+    ldw r0, [tmp]       ; point to data
+
+    mov r1, hi(.VREG)
+    add r1, lo(.VREG)
+    mov r2, 11          ; 11 registers
+.set_video_mode_lp
+    ldb tmp, [r0]
+    stb tmp, [r1]
+    add r0, 1
+    add r1, 1
+    sub r2, 1
+    prne
+    bra .set_video_mode_lp
+
+    ldb r2, [r0]        ; number of colours
+    add r0, 1
+    mov r1, hi(.VREG + 0x10)
+    add r1, lo(.VREG + 0x10)
+.set_video_mode_pal_lp
+    ldb tmp, [r0]
+    stb tmp, [r1]
+
+    add r1, 0x10
+    ldb tmp, [r0,1]
+    stb tmp, [r1]
+
+    add r1, 0x10
+    ldb tmp, [r0,2]
+    stb tmp, [r1]
+
+    add r0, 3
+    sub r1, 0x20-1
+
+    sub r2, 1
+    prne
+    bra .set_video_mode_pal_lp
+
+    mov pc, link
+    
+.video_mode_table
+    dw .video_mode_0
+    dw .video_mode_1
+    dw .video_mode_2
+    dw .video_mode_3
+
+.video_mode_0
+    ; text 64x40
+    dw .MEM_TOP - .TEXT_COLS * .TEXT_ROWS
+    dw (.VGA_WIDTH  - .TEXT_COLS * 8) / 2 - 2
+    dw (.VGA_WIDTH  + .TEXT_COLS * 8) / 2 - 2
+    dw (.VGA_HEIGHT - .TEXT_ROWS * 8) / 2
+    dw (.VGA_HEIGHT + .TEXT_ROWS * 8) / 2
+    db 0x00                 ; text mode
+    db 2                    ; 2 colour palette
+    db 0xff, 0xaa, 0xaa     ; 0=pink
+    db 0x00, 0x00, 0xcc     ; 1=dark blue
+    align
+
+.video_mode_1
+    ; 512x400, 1-bpp graphics
+    dw .MEM_TOP - 512*400/8
+    dw (.VGA_WIDTH  - 512) / 2 - 2
+    dw (.VGA_WIDTH  + 512) / 2 - 2
+    dw (.VGA_HEIGHT - 400) / 2
+    dw (.VGA_HEIGHT + 400) / 2
+    db 0x01                 ; 1 bpp
+    db 2                    ; 2 colour palette
+    db 0x00, 0x33, 0x00     ; 0=dark green
+    db 0x22, 0xff, 0x22     ; 1=bright green
+    align
+
+.video_mode_2
+    ; 256x400, 2-bpp graphics
+    dw .MEM_TOP - 256*400/8 * 2
+    dw (.VGA_WIDTH  - 256) / 2 - 2
+    dw (.VGA_WIDTH  + 256) / 2 - 2
+    dw (.VGA_HEIGHT - 400) / 2
+    dw (.VGA_HEIGHT + 400) / 2
+    db 0x02                 ; 2 bpp
+    db 4                    ; 4 colour palette
+    db 0x00, 0x00, 0x00     ; 0=black
+    db 0xff, 0x00, 0x00     ; 1=red
+    db 0x00, 0xff, 0x00     ; 2=green
+    db 0xff, 0xff, 0xff     ; 3=white
+    align
+
+.video_mode_3
+    ; 256x200, 4-bpp graphics
+    dw .MEM_TOP - 256*200/8 * 4
+    dw (.VGA_WIDTH  - 256) / 2 - 2
+    dw (.VGA_WIDTH  + 256) / 2 - 2
+    dw (.VGA_HEIGHT - 400) / 2
+    dw (.VGA_HEIGHT + 400) / 2
+    db 0x03                 ; 4 bpp
+    db 16                   ; 4 colour palette
+    db 0x00, 0x00, 0x00     ; 0=black
+    db 0xff, 0x00, 0x00     ; 1=red
+    db 0x00, 0xff, 0x00     ; 2=green
+    db 0xff, 0xff, 0x00     ; 3=yellow
+    db 0x00, 0x00, 0xff     ; 4=blue
+    db 0xff, 0x00, 0xff     ; 5=magenta
+    db 0x00, 0xff, 0xff     ; 6=cyan
+    db 0x55, 0x55, 0x55     ; 7=dark-grey
+    db 0xaa, 0xaa, 0xaa     ; 8=light-grey
+    db 0xff, 0x7f, 0x7f     ; 9=pale-red
+    db 0x7f, 0xff, 0x7f     ; 10=pale-green
+    db 0xff, 0xff, 0x7f     ; 11=pale-yellow
+    db 0x7f, 0x7f, 0xff     ; 12=pale-blue
+    db 0xff, 0x7f, 0xff     ; 13=pale-magenta
+    db 0x7f, 0xff, 0xff     ; 14=pale-cyan
+    db 0xff, 0xff, 0xff     ; 15=white
+    align
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ROUTINE .text_card_table()
+.text_card_table
     sub sp, 2
     stw link, [sp]
-    mov tmp, hi(.table)
-    add tmp, lo(.table)
-.draw_table_loop
+    mov tmp, hi(.text_card_table_data)
+    add tmp, lo(.text_card_table_data)
+.text_card_table_lp
     ldb ch, [tmp, 0]
     orr ch, ch
     preq
-    bra .exit_draw_table
+    bra .text_card_table_exit
     ldb n,  [tmp, 1]
     ldb x,  [tmp, 2]
     ldb y,  [tmp, 3]
     ldb dx, [tmp, 4]
     ldb dy, [tmp, 5]
     add tmp, 6
-    bl .draw
-    bra .draw_table_loop
-.exit_draw_table
+    bl .text_draw
+    bra .text_card_table_lp
+.text_card_table_exit
     ldw link, [sp]
     add sp, 2
     mov pc, link
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE draw_row_nums()
+;; ROUTINE text_card_rows()
 
-.draw_row_nums
+.text_card_rows
     sub sp, 2
     stw link, [sp]
 
     mov x, 8
     mov y, 0
     mov ch, '0'
-.draw_row_nums_loop
-    bl .char_at
+.text_card_rows_lp
+    bl .text_char_at
     add ch, 1
     mov tmp, '9'+1
     cmp ch, tmp
     preq
     mov ch, '0'
     add y, 1
-    mov tmp, .ROWS
+    mov tmp, .TEXT_ROWS
     cmp y, tmp
     prne
-    bra .draw_row_nums_loop
-.draw_row_nums_exit
+    bra .text_card_rows_lp
+.text_card_rows_exit
     ldw link, [sp]
     add sp, 2
     mov pc, link
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE draw_col_nums()
+;; ROUTINE text_card_cols()
 
-.draw_col_nums
+.text_card_cols
     sub sp, 2
     stw link, [sp]
 
     mov x, 0
     mov y, 8
     mov ch, '0'
-.draw_col_nums_loop
-    bl .char_at
+.text_card_cols_lp
+    bl .text_char_at
     add ch, 1
     mov tmp, '9'+1
     cmp ch, tmp
     preq
     mov ch, '0'
     add x, 1
-    mov tmp, .COLS
+    mov tmp, .TEXT_COLS
     cmp x, tmp
     prne
-    bra .draw_col_nums_loop
-.draw_col_nums_exit
+    bra .text_card_cols_lp
+.text_card_cols_exit
     ldw link, [sp]
     add sp, 2
     mov pc, link
@@ -112,36 +302,36 @@ alias r15 pc
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE draw_ascii()
-.draw_ascii
+;; ROUTINE text_card_ascii()
+.text_card_ascii
     sub sp, 2
     stw link, [sp]
     mov ch, 0
 
-.draw_ascii_loop
+.text_card_ascii_lp
     mov tmp, 0x0f
     mov x, ch
     and x, tmp
-    add x, (.COLS-16) / 2
+    add x, (.TEXT_COLS-16) / 2
 
     mov y, ch
     lsr y, 4
-    add y, (.ROWS-16) / 2
+    add y, (.TEXT_ROWS-16) / 2
 
-    bl .char_at
+    bl .text_char_at
     add ch, 1
     tst ch, bit 8
     preq
-    bra .draw_ascii_loop
+    bra .text_card_ascii_lp
 
-.exit_draw_ascii
+.text_card_ascii_exit
     ldw link, [sp]
     add sp, 2
     mov pc, link
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .clear(ch)
-.clear
+;; ROUTINE .text_clear(ch)
+.text_clear
     stw tmp, [sp]
     sub sp, 2
 
@@ -149,7 +339,9 @@ alias r15 pc
     lsl ch, 8
     orr ch, tmp
     mov tmp, video
-.clear_loop
+    mov n, hi(.TEXT_ROWS*.TEXT_COLS/16)
+    add n, lo(.TEXT_ROWS*.TEXT_COLS/16)
+.text_clear_lp
     stw ch, [tmp,0]
     stw ch, [tmp,2]
     stw ch, [tmp,4]
@@ -159,46 +351,47 @@ alias r15 pc
     stw ch, [tmp,12]
     stw ch, [tmp,14]
     add tmp, 16
-    prcc
-    bra .clear_loop
-.exit_clear_loop
+    sub n, 1
+    prne
+    bra .text_clear_lp
+.text_clear_exit
     add sp, 2
     ldw tmp, [sp]
     mov pc, link
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .draw(ch, n, x, y, dx, dy)
-.draw
+;; ROUTINE .text_draw(ch, n, x, y, dx, dy)
+.text_draw
     sub sp, 2
     stw link, [sp]
-.draw_loop
-    bl .char_at
+.text_draw_lp
+    bl .text_char_at
     sub n, 1
     preq
-    bra .exit_draw_loop
+    bra .text_draw_exit
     add x, dx
     add y, dy
-    bra .draw_loop
-.exit_draw_loop
+    bra .text_draw_lp
+.text_draw_exit
     ldw link, [sp]
     add sp, 2
     mov pc, link
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .char_at(ch, x, y)
-.char_at
+;; ROUTINE .text_char_at(ch, x, y)
+.text_char_at
     sub sp, 2
     stw tmp, [sp]
 
     ; sanity check (x,y)
-    mov tmp, .ROWS
+    mov tmp, .TEXT_ROWS
     cmp y, tmp
     prhs
-    bra .exit_char_at
-    mov tmp, .COLS
+    bra .text_char_at_exit
+    mov tmp, .TEXT_COLS
     cmp x, tmp
     prhs
-    bra .exit_char_at
+    bra .text_char_at_exit
 
     mov tmp, y
     lsl tmp, 6
@@ -206,12 +399,12 @@ alias r15 pc
     add tmp, video
     stb ch, [tmp]
 
-.exit_char_at
+.text_char_at_exit
     ldw tmp, [sp]
     add sp, 2
     mov pc, link
 
-.table
+.text_card_table_data
     ; vertical lines, first col
     ;  ch    n  x  y   dx dy
     db 0x80, 4, 0, 4,  0, 1
