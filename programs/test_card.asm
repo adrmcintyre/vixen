@@ -300,11 +300,6 @@ alias r15 pc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE text_card_ascii()
-begin
-    reg r0 ch
-    reg r1 x
-    reg r2 y
-
 .text_card_ascii
     stw link, [sp]
     sub sp, 2
@@ -332,9 +327,6 @@ begin
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_clear(ch)
-begin
-    reg r0 ch
-
 .text_clear
     stw tmp, [sp]
     sub sp, 2
@@ -362,17 +354,9 @@ begin
     add sp, 2
     ldw tmp, [sp]
     mov pc, link
-end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_draw(ch, x, y, dx, dy, n)
-begin
-    reg r0 ch
-    reg r1 x
-    reg r2 y
-    reg r3 dx
-    reg r4 dy
-    reg r5 n
 .text_draw
     stw link, [sp]
     sub sp, 2
@@ -390,10 +374,6 @@ begin
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_char_at(ch, x, y)
-begin
-    reg r0 ch
-    reg r1 x
-    reg r2 y
 .text_char_at
     stw tmp, [sp]
     sub sp, 2
@@ -418,7 +398,6 @@ begin
     add sp, 2
     ldw tmp, [sp]
     mov pc, link
-end
 
 .text_card_table_data
     ; vertical lines, first col
