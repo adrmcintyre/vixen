@@ -106,7 +106,7 @@ our $ops = {
     'and:2'  => '0000:1100:ssss:rrrr',
     'cmp:2'  => '0000:1101:ssss:rrrr',
     'cmn:2'  => '0000:1110:ssss:rrrr',
-    '__4:_'  => '0000:1111:____:____', # 256 encodings
+    'mul:2'  => '0000:1111:ssss:rrrr',
 
     'ror:2'  => '0001:0000:ssss:rrrr',
     'lsl:2'  => '0001:0001:ssss:rrrr',

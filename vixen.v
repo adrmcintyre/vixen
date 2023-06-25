@@ -380,7 +380,7 @@ module vixen (
                     6'b00_1101: {text, alu_cmp_op, alu_c, alu_out} = {"CMP ", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // cmp r_dst, r_src
                     6'b00_1110: {text, alu_cmp_op, alu_c, alu_out} = {"CMN ", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // cmn r_dst, r_src
 
-                    6'b00_1111: substate = SS_TRAP;                                                         // unused (8 bits) ; IDEA mul r_dst, r_src
+                    6'b00_1111: {text, alu_logic_op, alu_out} = {"MUL ", 1'b1, r_dst * r_src};                                    // mul r_dst, r_src 
 
                     6'b01_0000:                                                                             // ror r_dst, r_src
                         begin
@@ -424,7 +424,7 @@ module vixen (
 
                     // 001n-nnnn-nnnn-rrrr
                     6'b1?_????: begin
-                        // 001n-nnnn-nnnn-rrrr                                      // add r_dst, #signed_num9 ; r_dst != r15
+                        // 001n-nnnn-nnnn-rrrr                                      // add r_dst, #signed_num9 ; r_dst != r15 - IDEA, do not set flags
                         if (dst != 4'b1111) begin
                             text = "ADD#";
                             alu_add_op = 1'b1;
