@@ -9,7 +9,7 @@ def TEXT_ROWS 40
 def TEXT_BASE .MEM_TOP - .TEXT_COLS*.TEXT_ROWS
 
 ; well below video for safety
-def STACK_BASE 0x1000
+def STACK_BASE 0x1000-2
 
 alias r0  video
 alias r1  ch
@@ -223,8 +223,8 @@ alias r15 pc
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_card_table()
 .text_card_table
-    sub sp, 2
     stw link, [sp]
+    sub sp, 2
     mov tmp, hi(.text_card_table_data)
     add tmp, lo(.text_card_table_data)
 .text_card_table_lp
@@ -241,16 +241,15 @@ alias r15 pc
     bl .text_draw
     bra .text_card_table_lp
 .text_card_table_exit
-    ldw link, [sp]
     add sp, 2
-    mov pc, link
+    ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE text_card_rows()
 
 .text_card_rows
-    sub sp, 2
     stw link, [sp]
+    sub sp, 2
 
     mov x, 8
     mov y, 0
@@ -268,16 +267,15 @@ alias r15 pc
     prne
     bra .text_card_rows_lp
 .text_card_rows_exit
-    ldw link, [sp]
     add sp, 2
-    mov pc, link
+    ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE text_card_cols()
 
 .text_card_cols
-    sub sp, 2
     stw link, [sp]
+    sub sp, 2
 
     mov x, 0
     mov y, 8
@@ -295,17 +293,21 @@ alias r15 pc
     prne
     bra .text_card_cols_lp
 .text_card_cols_exit
-    ldw link, [sp]
     add sp, 2
-    mov pc, link
+    ldw pc, [sp]
 
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE text_card_ascii()
+begin
+    reg r0 ch
+    reg r1 x
+    reg r2 y
+
 .text_card_ascii
-    sub sp, 2
     stw link, [sp]
+    sub sp, 2
     mov ch, 0
 
 .text_card_ascii_lp
@@ -325,12 +327,14 @@ alias r15 pc
     bra .text_card_ascii_lp
 
 .text_card_ascii_exit
-    ldw link, [sp]
     add sp, 2
-    mov pc, link
+    ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_clear(ch)
+begin
+    reg r0 ch
+
 .text_clear
     stw tmp, [sp]
     sub sp, 2
@@ -358,12 +362,20 @@ alias r15 pc
     add sp, 2
     ldw tmp, [sp]
     mov pc, link
+end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .text_draw(ch, n, x, y, dx, dy)
+;; ROUTINE .text_draw(ch, x, y, dx, dy, n)
+begin
+    reg r0 ch
+    reg r1 x
+    reg r2 y
+    reg r3 dx
+    reg r4 dy
+    reg r5 n
 .text_draw
-    sub sp, 2
     stw link, [sp]
+    sub sp, 2
 .text_draw_lp
     bl .text_char_at
     sub n, 1
@@ -373,15 +385,18 @@ alias r15 pc
     add y, dy
     bra .text_draw_lp
 .text_draw_exit
-    ldw link, [sp]
     add sp, 2
-    mov pc, link
+    ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_char_at(ch, x, y)
+begin
+    reg r0 ch
+    reg r1 x
+    reg r2 y
 .text_char_at
-    sub sp, 2
     stw tmp, [sp]
+    sub sp, 2
 
     ; sanity check (x,y)
     mov tmp, .TEXT_ROWS
@@ -400,9 +415,10 @@ alias r15 pc
     stb ch, [tmp]
 
 .text_char_at_exit
-    ldw tmp, [sp]
     add sp, 2
+    ldw tmp, [sp]
     mov pc, link
+end
 
 .text_card_table_data
     ; vertical lines, first col
