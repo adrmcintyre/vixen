@@ -15,30 +15,6 @@ sub usage {
     exit 0
 }
 
-my $files = [];
-my $outfile = $default_outfile;
-
-while(my $arg = shift) {
-    if ($arg =~ m/^--$/) {
-        last;
-    }
-    elsif ($arg =~ m/^(-h|--help)$/) {
-        usage();
-    }
-    elsif ($arg =~ m/^-o$/ && $#ARGV >= 0) {
-        $outfile = shift;
-    }
-    elsif ($arg =~ m/^-/) {
-        die "unknown option: $arg";
-    }
-    else {
-        push @$files, $arg;
-    }
-}
-
-push @$files, @ARGV;
-die "no input files" if scalar @$files == 0;
-
 our $image = [(0xff) x 65536];
 
 # Syntax:
@@ -90,79 +66,106 @@ our $image = [(0xff) x 65536];
 #   oooo : insert offset as signed word count
 #   mmmm : insert num or num>>8, with top bit indicating which
 
-our $ops = {
-    'mov:2'  => '0000:0000:ssss:rrrr',
-    'mvn:2'  => '0000:0001:ssss:rrrr',
-    'adc:2'  => '0000:0010:ssss:rrrr',
-    'sbc:2'  => '0000:0011:ssss:rrrr',
-    'add:2'  => '0000:0100:ssss:rrrr',
-    'sub:2'  => '0000:0101:ssss:rrrr',
-    'rsc:2'  => '0000:0110:ssss:rrrr',
-    'rsb:2'  => '0000:0111:ssss:rrrr',
-    '__0:_'  => '0000:1000:____:____', #
-    '__1:_'  => '0000:1001:____:____', # \ 1024 encodings
-    '__2:_'  => '0000:1010:____:____', # /
-    '__3:_'  => '0000:1011:____:____', #
-    'and:2'  => '0000:1100:ssss:rrrr',
-    'cmp:2'  => '0000:1101:ssss:rrrr',
-    'cmn:2'  => '0000:1110:ssss:rrrr',
-    'mul:2'  => '0000:1111:ssss:rrrr',
+our $ops = {};
 
-    'ror:2'  => '0001:0000:ssss:rrrr',
-    'lsl:2'  => '0001:0001:ssss:rrrr',
-    'lsr:2'  => '0001:0010:ssss:rrrr',
-    'asr:2'  => '0001:0011:ssss:rrrr',
-    'orr:2'  => '0001:0100:ssss:rrrr',
-    'eor:2'  => '0001:0101:ssss:rrrr',
-    'bic:2'  => '0001:0110:ssss:rrrr',
-    'tst:2'  => '0001:0111:ssss:rrrr',
-    'rrx:0'  => '0001:1000:0000:rrrr',
-    'ror:#'  => '0001:1000:nnnn:rrrr',  # TODO - should reject n=0
-    'lsl:#'  => '0001:1001:nnnn:rrrr',
-    'lsr:#'  => '0001:1010:nnnn:rrrr',
-    'asr:#'  => '0001:1011:nnnn:rrrr',
-    'orr:#'  => '0001:1100:bbbb:rrrr',
-    'eor:#'  => '0001:1101:bbbb:rrrr',
-    'bic:#'  => '0001:1110:bbbb:rrrr',
-    'tst:#'  => '0001:1111:bbbb:rrrr',
+sub def_op {
+    my $op = shift;
+    my $info = shift;
 
-    'add:#'  => '001+:++++:++++:rrrr',  # TODO - should reject r15
-    'sub:#'  => '001-:----:----:rrrr',  # TODO - should reject r15
+    push @{$::ops->{$op}}, $info;
+}
 
-    'ldb:['  => '010n:nnnn:ssss:rrrr',
-    'ldw:['  => '011n:nnnn:ssss:rrrr',
+def_op('mov' => {mode => 2, pat => '0000:0000:ssss:rrrr'});
+def_op('mvn' => {mode => 2, pat => '0000:0001:ssss:rrrr'});
+def_op('adc' => {mode => 2, pat => '0000:0010:ssss:rrrr'});
+def_op('sbc' => {mode => 2, pat => '0000:0011:ssss:rrrr'});
+def_op('add' => {mode => 2, pat => '0000:0100:ssss:rrrr'});
+def_op('sub' => {mode => 2, pat => '0000:0101:ssss:rrrr'});
+def_op('rsc' => {mode => 2, pat => '0000:0110:ssss:rrrr'});
+def_op('rsb' => {mode => 2, pat => '0000:0111:ssss:rrrr'});
 
-    'stb:['  => '100n:nnnn:ssss:rrrr',
-    'stw:['  => '101n:nnnn:ssss:rrrr',
+# '0000:1000:____:____', #
+# '0000:1001:____:____', # \ 1024 encodings
+# '0000:1010:____:____', # /
+# '0000:1011:____:____', #
 
-    'mov:#'  => '110m:mmmm:mmmm:rrrr',
+def_op('and' => {mode => '2', pat => '0000:1100:ssss:rrrr'});
+def_op('cmp' => {mode => '2', pat => '0000:1101:ssss:rrrr'});
+def_op('cmn' => {mode => '2', pat => '0000:1110:ssss:rrrr'});
+def_op('mul' => {mode => '2', pat => '0000:1111:ssss:rrrr'});
 
-    'rdf:1'   => '0011:0000:rrrr:1111',
-    'wrf:1'   => '0011:0001:rrrr:1111',
+def_op('ror' => {mode => '2', pat => '0001:0000:ssss:rrrr'});
+def_op('lsl' => {mode => '2', pat => '0001:0001:ssss:rrrr'});
+def_op('lsr' => {mode => '2', pat => '0001:0010:ssss:rrrr'});
+def_op('asr' => {mode => '2', pat => '0001:0011:ssss:rrrr'});
+def_op('orr' => {mode => '2', pat => '0001:0100:ssss:rrrr'});
+def_op('eor' => {mode => '2', pat => '0001:0101:ssss:rrrr'});
+def_op('bic' => {mode => '2', pat => '0001:0110:ssss:rrrr'});
+def_op('tst' => {mode => '2', pat => '0001:0111:ssss:rrrr'});
 
-    'preq:0'  => '0011:1111:0000:1111',
-    'prne:0'  => '0011:1111:0001:1111',
-    'prcs:0'  => '0011:1111:0010:1111',
-    'prhs:0'  => '0011:1111:0010:1111',
-    'prcc:0'  => '0011:1111:0011:1111',
-    'prlo:0'  => '0011:1111:0011:1111',
-    'prmi:0'  => '0011:1111:0100:1111',
-    'prpl:0'  => '0011:1111:0101:1111',
-    'prvs:0'  => '0011:1111:0110:1111',
-    'prvc:0'  => '0011:1111:0111:1111',
-    'prhi:0'  => '0011:1111:1000:1111',
-    'prls:0'  => '0011:1111:1001:1111',
-    'prge:0'  => '0011:1111:1010:1111',
-    'prlt:0'  => '0011:1111:1011:1111',
-    'prgt:0'  => '0011:1111:1100:1111',
-    'prle:0'  => '0011:1111:1101:1111',
-    'nop:0'   => '0011:1111:1110:1111',
-    'hlt:0'   => '0011:1111:1111:1111',
+def_op('rrx' => {mode => '1', pat => '0001:1000:0000:rrrr'});
 
-    'b:.'    => '1110:oooo:oooo:oooo',
-    'br:.'   => '1110:oooo:oooo:oooo',
-    'bra:.'  => '1110:oooo:oooo:oooo',
-    'bl:.'   => '1111:oooo:oooo:oooo',
+def_op('ror' => {mode => '#', pat => '0001:1000:nnnn:rrrr'});  # TODO - should reject n=0
+def_op('lsl' => {mode => '#', pat => '0001:1001:nnnn:rrrr'});
+def_op('lsr' => {mode => '#', pat => '0001:1010:nnnn:rrrr'});
+def_op('asr' => {mode => '#', pat => '0001:1011:nnnn:rrrr'});
+def_op('orr' => {mode => '#', pat => '0001:1100:bbbb:rrrr'});
+def_op('eor' => {mode => '#', pat => '0001:1101:bbbb:rrrr'});
+def_op('bic' => {mode => '#', pat => '0001:1110:bbbb:rrrr'});
+def_op('tst' => {mode => '#', pat => '0001:1111:bbbb:rrrr'});
+
+def_op('add' => {mode => '#', pat => '001+:++++:++++:rrrr'});  # TODO - should reject r15
+def_op('sub' => {mode => '#', pat => '001-:----:----:rrrr'});  # TODO - should reject r15
+
+def_op('ldb' => {mode => '[', pat => '010n:nnnn:ssss:rrrr'});
+def_op('ldw' => {mode => '[', pat => '011n:nnnn:ssss:rrrr'});
+
+def_op('stb' => {mode => '[', pat => '100n:nnnn:ssss:rrrr'});
+def_op('stw' => {mode => '[', pat => '101n:nnnn:ssss:rrrr'});
+
+#def_op('ldi' => {mode => '#', special => \&ldi});  # TODO - pseudo-op
+def_op('mov' => {mode => '#', pat => '110m:mmmm:mmmm:rrrr'});
+
+def_op('rdf' => {mode => '1', pat => '0011:0000:rrrr:1111'});
+def_op('wrf' => {mode => '1', pat => '0011:0001:rrrr:1111'});
+
+def_op('preq' => {mode => '0', pat => '0011:1111:0000:1111'});
+def_op('prne' => {mode => '0', pat => '0011:1111:0001:1111'});
+def_op('prcs' => {mode => '0', pat => '0011:1111:0010:1111'});
+def_op('prhs' => {mode => '0', pat => '0011:1111:0010:1111'});
+def_op('prcc' => {mode => '0', pat => '0011:1111:0011:1111'});
+def_op('prlo' => {mode => '0', pat => '0011:1111:0011:1111'});
+def_op('prmi' => {mode => '0', pat => '0011:1111:0100:1111'});
+def_op('prpl' => {mode => '0', pat => '0011:1111:0101:1111'});
+def_op('prvs' => {mode => '0', pat => '0011:1111:0110:1111'});
+def_op('prvc' => {mode => '0', pat => '0011:1111:0111:1111'});
+def_op('prhi' => {mode => '0', pat => '0011:1111:1000:1111'});
+def_op('prls' => {mode => '0', pat => '0011:1111:1001:1111'});
+def_op('prge' => {mode => '0', pat => '0011:1111:1010:1111'});
+def_op('prlt' => {mode => '0', pat => '0011:1111:1011:1111'});
+def_op('prgt' => {mode => '0', pat => '0011:1111:1100:1111'});
+def_op('prle' => {mode => '0', pat => '0011:1111:1101:1111'});
+def_op('nop'  => {mode => '0', pat => '0011:1111:1110:1111'});
+def_op('hlt'  => {mode => '0', pat => '0011:1111:1111:1111'});
+
+def_op('b'   => {mode => '.', pat => '1110:oooo:oooo:oooo'});
+def_op('br'  => {mode => '.', pat => '1110:oooo:oooo:oooo'});
+def_op('bra' => {mode => '.', pat => '1110:oooo:oooo:oooo'});
+def_op('bl'  => {mode => '.', pat => '1111:oooo:oooo:oooo'});
+
+my $re_reg1 = qr{(?<reg1> [a-z_]\w*)}xi;
+my $re_reg2 = qr{(?<reg2> [a-z_]\w*)}xi;
+my $re_expr = qr{ (?<expr> .*?) }xi;
+my $re_imm  = qr{ \# s* $re_expr }xi;
+my $re_comma = qr{ \s* , \s* }xi;
+
+our $mode_regex = {
+    '0' => qr{ }xi,
+    '1' => qr{ $re_reg1 }xi,
+    '2' => qr{ $re_reg1 $re_comma $re_reg2 }xi,
+    '[' => qr{ $re_reg1 $re_comma \[ $re_reg2 (?: $re_comma $re_imm )? \s* \] }xi,
+    '#' => qr{ $re_reg1 $re_comma $re_imm }xi,
+    '.' => qr{ $re_expr }xi,
 };
 
 # [arity, map[op -> sub]]
@@ -193,142 +196,30 @@ our $funcs = {
 # At each step of evaluation, values are &ed with this mask.
 our $value_mask = 0xffff_ffff;
 
-my $lines = [];
-
-while(my $file = shift @$files) {
-    open my $fh, "<", $file or die "$file: $!";
-    while (<$fh>) {
-        chomp;
-        s/^\s+//;       # remove leading space
-        s/;.*//;        # remove comment - TODO will break in the presence of quoted ;
-        s/\s+$//;       # remove trailing spaces
-        push @$lines, [$file, $., $_];
-    }
-    $fh->close;
-}
-
-our $labels = {};
-our $registers = { map {("r$_" => $_)} (0..15) };
-
-foreach our $pass (1, 2) {
-    our $org = 0x0000;
-    foreach my $raw_line (@$lines) {
-        our ($file, $lineno, $line) = @$raw_line;
-        if ($line =~ s{^\.([a-z_]\w*)\s*}{}xi) {
-            my $label = $1;
-            if ($pass == 1) {
-                if (exists $labels->{$label}) {
-                    abort("symbol exists: %s", $label);
-                }
-                $labels->{$label} = $org;
-            }
-            else {
-                print ".$label\n";
-            }
-        }
-
-        next if $line eq '';
-
-        if ($line =~ m{^def\s+(\w+)\s+(.*)\s*$}xi) {
-            my $label = $1;
-            my $expr = $2;
-            if ($pass == 1) {
-                if (exists $labels->{$label}) {
-                    abort("symbol exists: %s", $label);
-                }
-            }
-            $labels->{$label} = value($expr);
-        }
-        elsif ($line =~ m{^org\s+(.*?)$}xi) {
-            $org = value($1);
-        }
-        elsif ($line =~ m{^db\s+(.*?)$}xi) {
-            emit_byte($_) foreach value_list($1);
-        }
-        elsif ($line =~ m{^dw\s+(.*?)$}xi) {
-            foreach my $value (value_list($1)) {
-                emit_word($value);
-            }
-        }
-        elsif ($line =~ m{^ds\s+(.*?)$}xi) {
-            emit_string($1);
-        }
-        elsif ($line =~ m{^align$}xi) {
-            align();
-        }
-        elsif ($line =~ m{^alias\s+r([0-9]+)\s+([a-z_]\w*)$}xi) {
-            alias($1, $2);
-        }
-        elsif ($line =~ m{^(\w+)\s*(.*?)\s*$}xi) {
-            decode_op($1, $2);
-        }
-        else {
-            abort("syntax error");
-        }
-    }
-}
-
-print ";; \n";
-print ";; Writing image to $outfile.0, $outfile.1\n";
-print ";; \n";
-open my $fh0, ">:raw", "$outfile.0" or die "$outfile.0: $!";
-open my $fh1, ">:raw", "$outfile.1" or die "$outfile.1: $!";
-foreach my $i (0..32767) {
-    my $hi = $image->[$i*2];
-    my $lo = $image->[$i*2+1];
-    $fh0->printf("%02x\n", $hi);
-    $fh1->printf("%02x\n", $lo);
-}
-$fh1->close;
-$fh0->close;
-exit 0;
-
 sub decode_op {
     my $op = shift;
     my $args = shift;
 
-    my $mode = "0";
-    my $desc = "implied";
-    my $reg1 = "?";
-    my $reg2 = "?";
-    my $num = "?";
+    my $template = undef;
+    my $reg1 = undef;
+    my $reg2 = undef;
+    my $num = 0;
 
-    if ($args =~ s{^([a-z_]\w*)\s*}{}xi && is_reg($1)) {
-        $mode = '1';
-        $desc = 'reg';
-        $reg1 = get_reg($1);
-        if ($args =~ s{^,\s*}{}xi) {
-            if ($args =~ s{^([a-z_]\w*)\s*$}{}xi && is_reg($1)) {
-                $mode = '2';
-                $desc = 'reg1, reg2';
-                $reg2 = get_reg($1);
-            }
-            elsif ($args =~ s{^\[\s*([a-z_]\w*)\s*\]\s*$}{}xi && is_reg($1)) {
-                $mode = '[';
-                $desc = 'reg1, [reg2]';
-                $reg2 = get_reg($1);
-                $num = 0;
-            }
-            elsif ($args =~ s{^\[\s*([a-z_]\w*)\s*,\s*(.*?)\s*\]\s*$}{}xi && is_reg($1)) {
-                $mode = '[';
-                $desc = 'reg1, [reg2, imm]';
-                $reg2 = get_reg($1);
-                $num = value($2);
-            }
-            elsif ($args =~ s{^(.*?)\s*$}{}xi) {
-                $mode = '#';
-                $desc = 'reg, imm';
-                $num = value($1);
-            }
+    my $infos = $::ops->{$op};
+    foreach my $info (@$infos) {
+        my $mode = $info->{mode};
+        my $re = $::mode_regex->{$mode};
+        if ($args =~ m{^$re\s*$}) {
+            my %match = %+;
+            $template = $info->{pat};
+            $reg1 = get_reg($match{reg1})   if defined $match{reg1};
+            $reg2 = get_reg($match{reg2})   if defined $match{reg2};
+            $num  = get_value($match{expr}) if defined $match{expr};
+            last;
         }
     }
-    elsif ($args =~ s{^(\.\w+)$}{}xi) {
-        $mode = '.';
-        $desc = 'label';
-        $num = value($1);
-    }
 
-    if ($args ne '') {
+    if (!defined $template) {
         abort("syntax error");
     }
 
@@ -337,13 +228,6 @@ sub decode_op {
         return;
     }
 
-    my $op_mode = "$op:$mode";
-
-    if (!defined $::ops->{$op_mode}) {
-        abort("no such instruction format");
-    }
-
-    my $template = $::ops->{$op_mode};
     $template =~ s/://g;
 
     my $word = 0;
@@ -442,10 +326,11 @@ sub decode_op {
             $word <<= $bits;
             $word |= $off & ((1<<$bits)-1);
 
+            # WHAT ABOUT PREDICATION....?
             # b far_address:
             # +00   ldw pc, [pc]
             # +02   dw far_address
-            
+
             # bl far_address:
             # +00   mov link, pc
             # +02   add link, 6
@@ -462,13 +347,11 @@ sub decode_op {
     emit_op($word);
 }
 
-sub is_reg {
-    my $word = shift;
-    return defined $::registers->{$word};
-}
-
 sub get_reg {
     my $word = shift;
+    if (!defined $::registers->{$word}) {
+        abort("unknown register: $word");
+    }
     return $::registers->{$word};
 }
 
@@ -547,7 +430,7 @@ sub emit_op {
     emit_word($op);
 }
 
-sub value_list {
+sub get_list {
     my $e = shift;
     my @values = ();
     while(1) {
@@ -565,7 +448,7 @@ sub value_list {
     return @values;
 }
 
-sub value {
+sub get_value {
     my $e = shift;
     my ($v, $rest) = op_value($e, 0);
     if ($rest ne '') {
@@ -732,3 +615,122 @@ sub abort {
     printf("%s:%d: %s -- %s\n", $::file, $::lineno, $::line, sprintf($fmt, @args));
     exit 1;
 }
+
+sub main {
+    $| = 1;
+    my $files = [];
+    my $outfile = $default_outfile;
+
+    while(my $arg = shift) {
+        if ($arg =~ m/^--$/) {
+            last;
+        }
+        elsif ($arg =~ m/^(-h|--help)$/) {
+            usage();
+        }
+        elsif ($arg =~ m/^-o$/ && $#ARGV >= 0) {
+            $outfile = shift;
+        }
+        elsif ($arg =~ m/^-/) {
+            die "unknown option: $arg";
+        }
+        else {
+            push @$files, $arg;
+        }
+    }
+
+    push @$files, @ARGV;
+    die "no input files" if scalar @$files == 0;
+
+    my $lines = [];
+
+    while(my $file = shift @$files) {
+        open my $fh, "<", $file or die "$file: $!";
+        while (<$fh>) {
+            chomp;
+            s/^\s+//;       # remove leading space
+            s/;.*//;        # remove comment - TODO will break in the presence of quoted ;
+            s/\s+$//;       # remove trailing spaces
+            push @$lines, [$file, $., $_];
+        }
+        $fh->close;
+    }
+
+    our $labels = {};
+    our $registers = { map {("r$_" => $_)} (0..15) };
+
+    foreach our $pass (1, 2) {
+        our $org = 0x0000;
+        foreach my $raw_line (@$lines) {
+            our ($file, $lineno, $line) = @$raw_line;
+            if ($line =~ s{^\.([a-z_]\w*)\s*}{}xi) {
+                my $label = $1;
+                if ($pass == 1) {
+                    if (exists $labels->{$label}) {
+                        abort("symbol exists: %s", $label);
+                    }
+                    $labels->{$label} = $org;
+                }
+                else {
+                    print ".$label\n";
+                }
+            }
+
+            next if $line eq '';
+
+            if ($line =~ m{^def\s+(\w+)\s+(.*)\s*$}xi) {
+                my $label = $1;
+                my $expr = $2;
+                if ($pass == 1) {
+                    if (exists $labels->{$label}) {
+                        abort("symbol exists: %s", $label);
+                    }
+                }
+                $labels->{$label} = get_value($expr);
+            }
+            elsif ($line =~ m{^org\s+(.*?)$}xi) {
+                $org = get_value($1);
+            }
+            elsif ($line =~ m{^db\s+(.*?)$}xi) {
+                emit_byte($_) foreach get_list($1);
+            }
+            elsif ($line =~ m{^dw\s+(.*?)$}xi) {
+                foreach my $value (get_list($1)) {
+                    emit_word($value);
+                }
+            }
+            elsif ($line =~ m{^ds\s+(.*?)$}xi) {
+                emit_string($1);
+            }
+            elsif ($line =~ m{^align$}xi) {
+                align();
+            }
+            elsif ($line =~ m{^alias\s+r([0-9]+)\s+([a-z_]\w*)$}xi) {
+                alias($1, $2);
+            }
+            elsif ($line =~ m{^(\w+)\s*(.*?)\s*$}xi) {
+                decode_op($1, $2);
+            }
+            else {
+                abort("syntax error");
+            }
+        }
+    }
+
+    print ";; \n";
+    print ";; Writing image to $outfile.0, $outfile.1\n";
+    print ";; \n";
+    open my $fh0, ">:raw", "$outfile.0" or die "$outfile.0: $!";
+    open my $fh1, ">:raw", "$outfile.1" or die "$outfile.1: $!";
+    foreach my $i (0..32767) {
+        my $hi = $image->[$i*2];
+        my $lo = $image->[$i*2+1];
+        $fh0->printf("%02x\n", $hi);
+        $fh1->printf("%02x\n", $lo);
+    }
+    $fh1->close;
+    $fh0->close;
+}
+
+main();
+

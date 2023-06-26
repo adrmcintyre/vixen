@@ -11,13 +11,13 @@ def TEXT_BASE .MEM_TOP - .TEXT_COLS*.TEXT_ROWS
 ; well below video for safety
 def STACK_BASE 0x1000-2
 
-alias r0  video
 alias r1  ch
 alias r2  n
 alias r3  x
 alias r4  y
 alias r5  dx
 alias r6  dy
+alias r10 video
 alias r12 tmp
 alias r13 sp
 alias r14 link
@@ -25,19 +25,19 @@ alias r15 pc
 
     org 0x0000
 .init
-    mov sp, hi(.STACK_BASE)
-    add sp, lo(.STACK_BASE)
+    mov sp, #hi(.STACK_BASE)
+    add sp, #lo(.STACK_BASE)
 
     bra .text_card  ; display text test-card
    ;bra .gfx_card   ; display graphics test-card
 
 .text_card
     ; set 64x40 text
-    mov r0, 0
+    mov r0, #0
     bl .set_video_mode
-    mov video, hi(.TEXT_BASE)
-    add video, lo(.TEXT_BASE)
-    mov ch, 0xc0
+    mov video, #hi(.TEXT_BASE)
+    add video, #lo(.TEXT_BASE)
+    mov ch, #0xc0
     bl .text_clear
     bl .text_card_table
     bl .text_card_ascii
@@ -47,100 +47,101 @@ alias r15 pc
 
 .gfx_card
     ; set 512x400 1bpp
-    mov r0, 1
+    mov r0, #1
     bl .set_video_mode
 
-    mov video, hi(.MEM_TOP-512*400/8)
-    add video, lo(.MEM_TOP-512*400/8)
-    mov ch, 0x0000
-    mov n, hi(512*400/8)
-    add n, lo(512*400/8)
+    mov video, #hi(.MEM_TOP-512*400/8)
+    add video, #lo(.MEM_TOP-512*400/8)
+    mov ch, #0x0000
+    mov n, #hi(512*400/8)
+    add n, #lo(512*400/8)
     mov tmp, video
 .gfx_clear_loop
     stw ch, [tmp]
-    stw ch, [tmp,2]
-    stw ch, [tmp,4]
-    stw ch, [tmp,6]
-    stw ch, [tmp,8]
-    stw ch, [tmp,10]
-    stw ch, [tmp,12]
-    stw ch, [tmp,14]
-    add tmp, 16
-    sub n, 16
+    stw ch, [tmp,#2]
+    stw ch, [tmp,#4]
+    stw ch, [tmp,#6]
+    stw ch, [tmp,#8]
+    stw ch, [tmp,#10]
+    stw ch, [tmp,#12]
+    stw ch, [tmp,#14]
+    add tmp, #16
+    sub n, #16
     prne
     bra .gfx_clear_loop
 
-    mov ch, 0x8000
-    add ch, 0x0080
-    mov x, 0
-    mov y, 0
-    mov n, hi(400)
-    add n, lo(400)
+    mov ch, #0x8000
+    add ch, #0x0080
+    mov x, #0
+    mov y, #0
+    mov n, #hi(400)
+    add n, #lo(400)
 .gfx_loop
     mov tmp, video
     mov dy, y
-    lsl dy, 6
+    lsl dy, #6
     add tmp, dy
     mov dx, x
-    lsr dx, 3
+    lsr dx, #3
     add tmp, dx
 
     stb ch, [tmp]
-    ror ch, 1
-    add x, 1
-    add y, 1
-    sub n, 1
+    ror ch, #1
+    add x, #1
+    add y, #1
+    sub n, #1
     prne
     bra .gfx_loop
     hlt
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .set_video_mode(r0=mode)
 .set_video_mode
     ; validate
-    mov tmp, 4
+    mov tmp, #4
     cmp r0, tmp
     prhs
     mov pc, link
 
-    lsl r0, 1
-    mov tmp, hi(.video_mode_table)
-    add tmp, lo(.video_mode_table)
+    lsl r0, #1
+    mov tmp, #hi(.video_mode_table)
+    add tmp, #lo(.video_mode_table)
     add tmp, r0
     ldw r0, [tmp]       ; point to data
 
-    mov r1, hi(.VREG)
-    add r1, lo(.VREG)
-    mov r2, 11          ; 11 registers
+    mov r1, #hi(.VREG)
+    add r1, #lo(.VREG)
+    mov r2, #11          ; 11 registers
 .set_video_mode_lp
     ldb tmp, [r0]
     stb tmp, [r1]
-    add r0, 1
-    add r1, 1
-    sub r2, 1
+    add r0, #1
+    add r1, #1
+    sub r2, #1
     prne
     bra .set_video_mode_lp
 
     ldb r2, [r0]        ; number of colours
-    add r0, 1
-    mov r1, hi(.VREG + 0x10)
-    add r1, lo(.VREG + 0x10)
+    add r0, #1
+    mov r1, #hi(.VREG + 0x10)
+    add r1, #lo(.VREG + 0x10)
 .set_video_mode_pal_lp
     ldb tmp, [r0]
     stb tmp, [r1]
 
-    add r1, 0x10
-    ldb tmp, [r0,1]
+    add r1, #0x10
+    ldb tmp, [r0,#1]
     stb tmp, [r1]
 
-    add r1, 0x10
-    ldb tmp, [r0,2]
+    add r1, #0x10
+    ldb tmp, [r0,#2]
     stb tmp, [r1]
 
-    add r0, 3
-    sub r1, 0x20-1
+    add r0, #3
+    sub r1, #0x20-1
 
-    sub r2, 1
+    sub r2, #1
     prne
     bra .set_video_mode_pal_lp
 
@@ -224,24 +225,24 @@ alias r15 pc
 ;; ROUTINE .text_card_table()
 .text_card_table
     stw link, [sp]
-    sub sp, 2
-    mov tmp, hi(.text_card_table_data)
-    add tmp, lo(.text_card_table_data)
+    sub sp, #2
+    mov tmp, #hi(.text_card_table_data)
+    add tmp, #lo(.text_card_table_data)
 .text_card_table_lp
-    ldb ch, [tmp, 0]
+    ldb ch, [tmp, #0]
     orr ch, ch
     preq
     bra .text_card_table_exit
-    ldb n,  [tmp, 1]
-    ldb x,  [tmp, 2]
-    ldb y,  [tmp, 3]
-    ldb dx, [tmp, 4]
-    ldb dy, [tmp, 5]
-    add tmp, 6
+    ldb n,  [tmp, #1]
+    ldb x,  [tmp, #2]
+    ldb y,  [tmp, #3]
+    ldb dx, [tmp, #4]
+    ldb dy, [tmp, #5]
+    add tmp, #6
     bl .text_draw
     bra .text_card_table_lp
 .text_card_table_exit
-    add sp, 2
+    add sp, #2
     ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -249,25 +250,25 @@ alias r15 pc
 
 .text_card_rows
     stw link, [sp]
-    sub sp, 2
+    sub sp, #2
 
-    mov x, 8
-    mov y, 0
-    mov ch, '0'
+    mov x, #8
+    mov y, #0
+    mov ch, #'0'
 .text_card_rows_lp
     bl .text_char_at
-    add ch, 1
-    mov tmp, '9'+1
+    add ch, #1
+    mov tmp, #'9'+1
     cmp ch, tmp
     preq
-    mov ch, '0'
-    add y, 1
-    mov tmp, .TEXT_ROWS
+    mov ch, #'0'
+    add y, #1
+    mov tmp, #.TEXT_ROWS
     cmp y, tmp
     prne
     bra .text_card_rows_lp
 .text_card_rows_exit
-    add sp, 2
+    add sp, #2
     ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -275,25 +276,25 @@ alias r15 pc
 
 .text_card_cols
     stw link, [sp]
-    sub sp, 2
+    sub sp, #2
 
-    mov x, 0
-    mov y, 8
-    mov ch, '0'
+    mov x, #0
+    mov y, #8
+    mov ch, #'0'
 .text_card_cols_lp
     bl .text_char_at
-    add ch, 1
-    mov tmp, '9'+1
+    add ch, #1
+    mov tmp, #'9'+1
     cmp ch, tmp
     preq
-    mov ch, '0'
-    add x, 1
-    mov tmp, .TEXT_COLS
+    mov ch, #'0'
+    add x, #1
+    mov tmp, #.TEXT_COLS
     cmp x, tmp
     prne
     bra .text_card_cols_lp
 .text_card_cols_exit
-    add sp, 2
+    add sp, #2
     ldw pc, [sp]
 
 
@@ -302,56 +303,56 @@ alias r15 pc
 ;; ROUTINE text_card_ascii()
 .text_card_ascii
     stw link, [sp]
-    sub sp, 2
-    mov ch, 0
+    sub sp, #2
+    mov ch, #0
 
 .text_card_ascii_lp
-    mov tmp, 0x0f
+    mov tmp, #0x0f
     mov x, ch
     and x, tmp
-    add x, (.TEXT_COLS-16) / 2
+    add x, #(.TEXT_COLS-16) / 2
 
     mov y, ch
-    lsr y, 4
-    add y, (.TEXT_ROWS-16) / 2
+    lsr y, #4
+    add y, #(.TEXT_ROWS-16) / 2
 
     bl .text_char_at
-    add ch, 1
-    tst ch, bit 8
+    add ch, #1
+    tst ch, #bit 8
     preq
     bra .text_card_ascii_lp
 
 .text_card_ascii_exit
-    add sp, 2
+    add sp, #2
     ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_clear(ch)
 .text_clear
     stw tmp, [sp]
-    sub sp, 2
+    sub sp, #2
 
     mov tmp, ch
-    lsl ch, 8
+    lsl ch, #8
     orr ch, tmp
     mov tmp, video
-    mov n, hi(.TEXT_ROWS*.TEXT_COLS/16)
-    add n, lo(.TEXT_ROWS*.TEXT_COLS/16)
+    mov n, #hi(.TEXT_ROWS*.TEXT_COLS/16)
+    add n, #lo(.TEXT_ROWS*.TEXT_COLS/16)
 .text_clear_lp
-    stw ch, [tmp,0]
-    stw ch, [tmp,2]
-    stw ch, [tmp,4]
-    stw ch, [tmp,6]
-    stw ch, [tmp,8]
-    stw ch, [tmp,10]
-    stw ch, [tmp,12]
-    stw ch, [tmp,14]
-    add tmp, 16
-    sub n, 1
+    stw ch, [tmp,#0]
+    stw ch, [tmp,#2]
+    stw ch, [tmp,#4]
+    stw ch, [tmp,#6]
+    stw ch, [tmp,#8]
+    stw ch, [tmp,#10]
+    stw ch, [tmp,#12]
+    stw ch, [tmp,#14]
+    add tmp, #16
+    sub n, #1
     prne
     bra .text_clear_lp
 .text_clear_exit
-    add sp, 2
+    add sp, #2
     ldw tmp, [sp]
     mov pc, link
 
@@ -359,43 +360,43 @@ alias r15 pc
 ;; ROUTINE .text_draw(ch, x, y, dx, dy, n)
 .text_draw
     stw link, [sp]
-    sub sp, 2
+    sub sp, #2
 .text_draw_lp
     bl .text_char_at
-    sub n, 1
+    sub n, #1
     preq
     bra .text_draw_exit
     add x, dx
     add y, dy
     bra .text_draw_lp
 .text_draw_exit
-    add sp, 2
+    add sp, #2
     ldw pc, [sp]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_char_at(ch, x, y)
 .text_char_at
     stw tmp, [sp]
-    sub sp, 2
+    sub sp, #2
 
     ; sanity check (x,y)
-    mov tmp, .TEXT_ROWS
+    mov tmp, #.TEXT_ROWS
     cmp y, tmp
     prhs
     bra .text_char_at_exit
-    mov tmp, .TEXT_COLS
+    mov tmp, #.TEXT_COLS
     cmp x, tmp
     prhs
     bra .text_char_at_exit
 
     mov tmp, y
-    lsl tmp, 6
+    lsl tmp, #6
     add tmp, x
     add tmp, video
     stb ch, [tmp]
 
 .text_char_at_exit
-    add sp, 2
+    add sp, #2
     ldw tmp, [sp]
     mov pc, link
 
