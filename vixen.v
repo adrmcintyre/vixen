@@ -433,7 +433,7 @@ module vixen (
                         end
                         // 001?-????-????-1111
                         else if (op[12:8] == 5'b1_1111) begin
-                            // 0011-1111-cccc-1111 : pr<cond>                       // IDEA 001o-oooo-cccc-1111 ; br<cc> -62..+64
+                            // 0011-1111-cccc-1111 : pr<cond>
                             substate = SS_PRED;
                             case (op_pred_cond)
                                 4'b0000: {text, pred_true} = {"PREQ", flag_z};                        // preq      ; ==
@@ -470,22 +470,22 @@ module vixen (
                 endcase
             end
 
-            // 010w-nnnn-bbbb-tttt:
+            // 01wn-nnnn-bbbb-tttt:
             // 010n-nnnn-bbbb-tttt      ldb target, [base,#num5] ; alias "ldb target, [base]" when n == 0
             // 011n-nnnn-bbbb-tttt      ldw target, [base,#num5] ; alias "ldw target, [base]" when n == 0
             2'b01: begin
-                text =op_ld_st_wide ? "LDW " : "LDB ";
+                text = op_ld_st_wide ? "LDW " : "LDB ";
                 substate = SS_LOAD;
                 ld_st_addr   = r_base + {11'b0,op_num5};
                 ld_st_wide   = op_ld_st_wide;
                 ld_st_target = op_ld_st_target;
             end
 
-            // 100w-nnnn-bbbb-tttt:
+            // 10wn-nnnn-bbbb-tttt:
             // 100n-nnnn-bbbb-tttt      stb target, [base,#num5] ; alias "stb target, [base]" when n == 0
             // 101n-nnnn-bbbb-tttt      stw target, [base,#num5] ; alias "stw target, [base]" when n == 0
             2'b10: begin
-                text =op_ld_st_wide ? "STW " : "STB ";
+                text = op_ld_st_wide ? "STW " : "STB ";
                 substate = SS_STORE;
                 ld_st_addr = r_base + {11'b0,op_num5};
                 ld_st_wide = op_ld_st_wide;
@@ -495,7 +495,7 @@ module vixen (
             // 11??-????-????-????
             2'b11: begin
                 casez (op_mov8_br)
-                    // 1100-nnnn-nnnn-rrrr  ; mov r, #num8
+                    // 1100-nnnn-nnnn-rrrr  ; mov r, #num8          -- IDEA signed?
                     // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8
                     2'b00: {text, substate, alu_mov_op, alu_out} = {"MOVL", SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8
                     2'b01: {text, substate, alu_mov_op, alu_out} = {"MOVH", SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8

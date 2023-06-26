@@ -116,7 +116,8 @@ our $ops = {
     'eor:2'  => '0001:0101:ssss:rrrr',
     'bic:2'  => '0001:0110:ssss:rrrr',
     'tst:2'  => '0001:0111:ssss:rrrr',
-    'ror:#'  => '0001:1000:nnnn:rrrr', 'rrx:0'  => '0001:1000:0000:rrrr',
+    'rrx:0'  => '0001:1000:0000:rrrr',
+    'ror:#'  => '0001:1000:nnnn:rrrr',  # TODO - should reject n=0
     'lsl:#'  => '0001:1001:nnnn:rrrr',
     'lsr:#'  => '0001:1010:nnnn:rrrr',
     'asr:#'  => '0001:1011:nnnn:rrrr',
@@ -440,6 +441,18 @@ sub decode_op {
             }
             $word <<= $bits;
             $word |= $off & ((1<<$bits)-1);
+
+            # b far_address:
+            # +00   ldw pc, [pc]
+            # +02   dw far_address
+            
+            # bl far_address:
+            # +00   mov link, pc
+            # +02   add link, 6
+            # +04   ldw pc, [pc]
+            # +06   dw far_address
+            # +08   ; resume
+
         }
         else {
             abort("(wtf) unexpected character '%s' in template", substr($template, 0, 1));
