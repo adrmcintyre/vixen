@@ -58,6 +58,11 @@ module videoctl
     localparam CTL_PAL_GREEN = 6'h20;
     localparam CTL_PAL_BLUE  = 6'h30;
 
+    localparam MODE_TEXT = 2'd0;
+    localparam MODE_1BPP = 2'd1;
+    localparam MODE_2BPP = 2'd2;
+    localparam MODE_4BPP = 2'd3;
+
     // config register interface
     reg [7:0] control[0:'h3f];
     initial begin: init_control
@@ -75,14 +80,15 @@ module videoctl
     wire [9:0]  vp_bottom = {control[CTL_BOTTOM][1:0], control[CTL_BOTTOM+1]};
     wire [1:0]  mode      = {control[CTL_MODE  ][1:0]};
 
+    reg [2:0] mode_pre1, mode_pre2;
     reg [2:0] mode_bpp;
     reg mode_text;
     always @* begin
         case (mode)
-            2'd0: begin mode_text = 1'b1; mode_bpp = 3'd1; end
-            2'd1: begin mode_text = 1'b0; mode_bpp = 3'd1; end
-            2'd2: begin mode_text = 1'b0; mode_bpp = 3'd2; end
-            2'd3: begin mode_text = 1'b0; mode_bpp = 3'd4; end
+            MODE_TEXT: {mode_text, mode_bpp, mode_pre1, mode_pre2} = {1'b1, 3'd1, 3'd7, 3'd6};
+            MODE_1BPP: {mode_text, mode_bpp, mode_pre1, mode_pre2} = {1'b0, 3'd1, 3'd7, 3'd6};
+            MODE_2BPP: {mode_text, mode_bpp, mode_pre1, mode_pre2} = {1'b0, 3'd2, 3'd6, 3'd4};
+            MODE_4BPP: {mode_text, mode_bpp, mode_pre1, mode_pre2} = {1'b0, 3'd4, 3'd4, 3'd0};
         endcase
     end
 
@@ -171,43 +177,68 @@ module videoctl
                     addr <= addr_left;
                     char_y <= char_y + 1;
                 end
-                char_x <= CHAR_RIGHT;
+                char_x <= mode_pre1;
             end
             else if (h_valid_in_2) begin
-                if (char_x == CHAR_PRE_RIGHT) begin
+                if (char_x == mode_pre2) begin
                     addr <= addr+1;
                 end
-                if (char_x == CHAR_RIGHT) begin
+                if (char_x == mode_pre1) begin
                     char_x <= CHAR_LEFT;
                 end
                 else begin
-                    char_x <= char_x+1;
+                    char_x <= char_x + mode_bpp;
                 end
             end
         end
     end
 
     // memory read
-    assign rd = h_valid_in_2 && v_valid && (char_x == CHAR_RIGHT);
-    wire [7:0] char = din;
+    assign rd = h_valid_in_2 && v_valid && (char_x == mode_pre1);
+    wire [7:0] data = din;
 
     // pixel shift-register
     reg [CHAR_WIDTH-1:0] pixels = {CHAR_WIDTH{1'b0}};
 
+    /*
+    reg [2:0] pix_acc = 0;  // pixel is emitted every time this hits 0
+    reg [2:0] pix_inc = 0;  // pix_acc increment
+
     always @(posedge clk_pixel) begin
-        if (char_x == CHAR_LEFT) begin
-            pixels <= mode_text ? font_rom[{char,char_y}] : char;
+        pix_acc <= pix_acc + pix_inc;
+        if (pix_acc == 3'd0) begin
+            if (char_x == CHAR_LEFT) begin
+                pixels <= mode_text ? font_rom[{data,char_y}] : data;
+            end
+            else begin
+                pixels <= pixels << mode_bpp;
+            end
+        end
+    end
+    */
+
+    always @(posedge clk_pixel) begin
+        if (char_x == 0) begin
+            pixels <= mode_text ? font_rom[{data,char_y}] : data;
         end
         else begin
-            pixels <= pixels << 1;
+            pixels <= pixels << mode_bpp;
         end
     end
 
     // palette lookup
-    wire [3:0] pixel = {3'b0, pixels[CHAR_RIGHT]};
-    wire [7:0] red   = control[CTL_PAL_RED   | {2'b0, pixel}];
-    wire [7:0] green = control[CTL_PAL_GREEN | {2'b0, pixel}];
-    wire [7:0] blue  = control[CTL_PAL_BLUE  | {2'b0, pixel}];
+    reg [3:0] pixel;
+    always @* begin
+        case (mode)
+            MODE_TEXT,
+            MODE_1BPP: pixel = {3'b0, pixels[CHAR_RIGHT]};
+            MODE_2BPP: pixel = {2'b0, pixels[CHAR_RIGHT-:2]};
+            MODE_4BPP: pixel = pixels[CHAR_RIGHT-:4];
+        endcase
+    end
+    wire [7:0] red   = control[CTL_PAL_RED   | pixel];
+    wire [7:0] green = control[CTL_PAL_GREEN | pixel];
+    wire [7:0] blue  = control[CTL_PAL_BLUE  | pixel];
 
     // output
     assign rgb = (h_valid && v_valid) ? {red,green,blue} : BORDER;
