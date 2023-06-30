@@ -4,6 +4,24 @@ def IO_BASE 0xfc00
 def VREG .IO_BASE + 0x000
 def VGA_WIDTH 640
 def VGA_HEIGHT 480
+def VGA_HBACK 44
+def VGA_VBACK 31
+
+def VZOOM_1 0<<4
+def VZOOM_2 1<<4
+def VZOOM_3 2<<4
+def VZOOM_4 3<<4
+
+def HZOOM_1 0<<2
+def HZOOM_2 1<<2
+def HZOOM_3 2<<2
+def HZOOM_4 3<<2
+
+def MODE_TEXT 0<<0
+def MODE_1BPP 1<<0
+def MODE_2BPP 2<<0
+def MODE_4BPP 3<<0
+
 def TEXT_COLS 64
 def TEXT_ROWS 40
 def TEXT_BASE .MEM_TOP - .TEXT_COLS*.TEXT_ROWS
@@ -47,7 +65,7 @@ alias r15 pc
 
 .gfx_card
     ; set 512x400 1bpp
-    mov r0, #1
+    mov r0, #3
     bl .set_video_mode
 
     mov video, #hi(.MEM_TOP-512*400/8)
@@ -155,12 +173,12 @@ alias r15 pc
 
 .video_mode_0
     ; text 64x40
-    dw .MEM_TOP - .TEXT_COLS * .TEXT_ROWS
-    dw (.VGA_WIDTH  - .TEXT_COLS * 8) / 2 - 2
-    dw (.VGA_WIDTH  + .TEXT_COLS * 8) / 2 - 2
-    dw (.VGA_HEIGHT - .TEXT_ROWS * 8) / 2
-    dw (.VGA_HEIGHT + .TEXT_ROWS * 8) / 2
-    db 0x00                 ; text mode
+    dw .MEM_TOP - .TEXT_COLS * .TEXT_ROWS               ; base addr
+    dw (.VGA_WIDTH  - .TEXT_COLS * 8) / 2 + .VGA_HBACK  ; vp_left
+    dw (.VGA_WIDTH  + .TEXT_COLS * 8) / 2 + .VGA_HBACK  ; vp_right
+    dw (.VGA_HEIGHT - .TEXT_ROWS * 8) / 2 + .VGA_VBACK  ; vp_top
+    dw (.VGA_HEIGHT + .TEXT_ROWS * 8) / 2 + .VGA_VBACK  ; vp_bottom
+    db .MODE_TEXT | .HZOOM_1 | .VZOOM_1
     db 2                    ; 2 colour palette
     db 0xff, 0xaa, 0xaa     ; 0=pink
     db 0x00, 0x00, 0xcc     ; 1=dark blue
@@ -169,12 +187,12 @@ alias r15 pc
 .video_mode_1
     ; 512x400, 1-bpp graphics
     dw .MEM_TOP - 512*400/8
-    dw (.VGA_WIDTH  - 512) / 2 - 2
-    dw (.VGA_WIDTH  + 512) / 2 - 2
-    dw (.VGA_HEIGHT - 400) / 2
-    dw (.VGA_HEIGHT + 400) / 2
-    db 0x01                 ; 1 bpp
-    db 2                    ; 2 colour palette
+    dw (.VGA_WIDTH  - 512) / 2 + .VGA_HBACK  ; vp_left
+    dw (.VGA_WIDTH  + 512) / 2 + .VGA_HBACK  ; vp_right
+    dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
+    dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
+    db .MODE_1BPP | .HZOOM_1 | .VZOOM_1
+    db 2                    ; 2-colour palette
     db 0x00, 0x33, 0x00     ; 0=dark green
     db 0x22, 0xff, 0x22     ; 1=bright green
     align
@@ -182,12 +200,12 @@ alias r15 pc
 .video_mode_2
     ; 256x400, 2-bpp graphics
     dw .MEM_TOP - 256*400/8 * 2
-    dw (.VGA_WIDTH  - 256) / 2 - 2
-    dw (.VGA_WIDTH  + 256) / 2 - 2
-    dw (.VGA_HEIGHT - 400) / 2
-    dw (.VGA_HEIGHT + 400) / 2
-    db 0x02                 ; 2 bpp
-    db 4                    ; 4 colour palette
+    dw (.VGA_WIDTH  - 256) / 2 + .VGA_HBACK  ; vp_left
+    dw (.VGA_WIDTH  + 256) / 2 + .VGA_HBACK  ; vp_right
+    dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
+    dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
+    db .MODE_2BPP | .HZOOM_1 | .VZOOM_1
+    db 4                    ; 4-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
     db 0xff, 0x00, 0x00     ; 1=red
     db 0x00, 0xff, 0x00     ; 2=green
@@ -197,12 +215,12 @@ alias r15 pc
 .video_mode_3
     ; 256x200, 4-bpp graphics
     dw .MEM_TOP - 256*200/8 * 4
-    dw (.VGA_WIDTH  - 256) / 2 - 2
-    dw (.VGA_WIDTH  + 256) / 2 - 2
-    dw (.VGA_HEIGHT - 400) / 2
-    dw (.VGA_HEIGHT + 400) / 2
-    db 0x03                 ; 4 bpp
-    db 16                   ; 4 colour palette
+    dw (.VGA_WIDTH  - 256) / 2 + .VGA_HBACK  ; vp_left
+    dw (.VGA_WIDTH  + 256) / 2 + .VGA_HBACK  ; vp_right
+    dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
+    dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
+    db .MODE_4BPP | .HZOOM_1 | .VZOOM_1
+    db 16                   ; 16-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
     db 0xff, 0x00, 0x00     ; 1=red
     db 0x00, 0xff, 0x00     ; 2=green

@@ -133,9 +133,9 @@ module harness ();
                     vsync_count = vsync_count+1;
                     fd_frame = $fopen("out/frame.bmp", "w");
 
-                    width = uat.video.h_visible;
-                    height = -uat.video.v_visible;
-                    pixels = uat.video.h_visible * uat.video.v_visible;
+                    width = uat.video.H_VISIBLE;
+                    height = -uat.video.V_VISIBLE;
+                    pixels = uat.video.H_VISIBLE * uat.video.V_VISIBLE;
                     filesize = 54 + 3 * pixels;
 
                     // file header
