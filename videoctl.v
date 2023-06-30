@@ -109,7 +109,11 @@ module videoctl
     wire [1:0]  vzoom_max = {control[CTL_MODE  ][5:4]};
     wire [7:0]  hphys_max = 8'd0; // TODO?
 
-    // TODO - horizontal zoom has some timing issues
+    // TODO - horizontal zoom has some timing issues:
+    //      zoom=1 okay
+    //      zoom=2 2 pixels to left
+    //      zoom=3 4 pixels to left
+    //      zoom=4 6 pixels to left
     // TODO - test cards for 2-bpp and 4-bpp
 
     reg [2:0] mode_pre1, mode_pre2;
@@ -239,7 +243,7 @@ module videoctl
                     hzoom_cnt <= hzoom_cnt - 1;
                 end
                 else begin
-                    // the issue is that char_x is counting logical rather than physical pixels
+                    // the issue is perhaps that char_x is counting logical rather than physical pixels
                     hzoom_cnt <= hzoom_max;
                     if (char_x == mode_pre2) begin
                         addr <= addr+1;

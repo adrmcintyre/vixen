@@ -46,8 +46,8 @@ alias r15 pc
     mov sp, #hi(.STACK_BASE)
     add sp, #lo(.STACK_BASE)
 
-    bra .text_card  ; display text test-card
-   ;bra .gfx_card   ; display graphics test-card
+   ;bra .text_card  ; display text test-card
+    bra .gfx_card   ; display graphics test-card
 
 .text_card
     ; set 64x40 text
@@ -88,23 +88,23 @@ alias r15 pc
     prne
     bra .gfx_clear_loop
 
-    mov ch, #0x8000
-    add ch, #0x0080
+    mov ch, #0xf000     ; mode1: 8080; mode2: c0c0; mode3: f0f0
+    add ch, #0x00f0
     mov x, #0
     mov y, #0
-    mov n, #hi(400)
-    add n, #lo(400)
+    mov n, #hi(200)     ; mode1: 400; mode2: 200; mode3: 200
+    add n, #lo(200)     ; mode1: 400; mode2: 200; mode3: 200
 .gfx_loop
     mov tmp, video
     mov dy, y
-    lsl dy, #6
+    lsl dy, #7          ; mode1: 6; mode2: 6; mode3: 7
     add tmp, dy
     mov dx, x
-    lsr dx, #3
+    lsr dx, #1          ; mode1: 3; mode2: 2; mode3: 1
     add tmp, dx
 
     stb ch, [tmp]
-    ror ch, #1
+    ror ch, #4          ; mode2: 1; mode3: 2; mode4: 4
     add x, #1
     add y, #1
     sub n, #1
@@ -178,7 +178,7 @@ alias r15 pc
     dw (.VGA_WIDTH  + .TEXT_COLS * 8) / 2 + .VGA_HBACK  ; vp_right
     dw (.VGA_HEIGHT - .TEXT_ROWS * 8) / 2 + .VGA_VBACK  ; vp_top
     dw (.VGA_HEIGHT + .TEXT_ROWS * 8) / 2 + .VGA_VBACK  ; vp_bottom
-    db .MODE_TEXT | .HZOOM_1 | .VZOOM_1
+    db .MODE_TEXT | .HZOOM_2 | .VZOOM_1
     db 2                    ; 2 colour palette
     db 0xff, 0xaa, 0xaa     ; 0=pink
     db 0x00, 0x00, 0xcc     ; 1=dark blue
@@ -200,11 +200,11 @@ alias r15 pc
 .video_mode_2
     ; 256x400, 2-bpp graphics
     dw .MEM_TOP - 256*400/8 * 2
-    dw (.VGA_WIDTH  - 256) / 2 + .VGA_HBACK  ; vp_left
-    dw (.VGA_WIDTH  + 256) / 2 + .VGA_HBACK  ; vp_right
+    dw (.VGA_WIDTH  - 256*2) / 2 + .VGA_HBACK  ; vp_left
+    dw (.VGA_WIDTH  + 256*2) / 2 + .VGA_HBACK  ; vp_right
     dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
     dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
-    db .MODE_2BPP | .HZOOM_1 | .VZOOM_1
+    db .MODE_2BPP | .HZOOM_2 | .VZOOM_1
     db 4                    ; 4-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
     db 0xff, 0x00, 0x00     ; 1=red
@@ -215,11 +215,11 @@ alias r15 pc
 .video_mode_3
     ; 256x200, 4-bpp graphics
     dw .MEM_TOP - 256*200/8 * 4
-    dw (.VGA_WIDTH  - 256) / 2 + .VGA_HBACK  ; vp_left
-    dw (.VGA_WIDTH  + 256) / 2 + .VGA_HBACK  ; vp_right
-    dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
-    dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
-    db .MODE_4BPP | .HZOOM_1 | .VZOOM_1
+    dw (.VGA_WIDTH  - 256*2) / 2 + .VGA_HBACK  ; vp_left
+    dw (.VGA_WIDTH  + 256*2) / 2 + .VGA_HBACK  ; vp_right
+    dw (.VGA_HEIGHT - 200*2) / 2 + .VGA_VBACK  ; vp_top
+    dw (.VGA_HEIGHT + 200*2) / 2 + .VGA_VBACK  ; vp_bottom
+    db .MODE_4BPP | .HZOOM_2 | .VZOOM_2
     db 16                   ; 16-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
     db 0xff, 0x00, 0x00     ; 1=red
