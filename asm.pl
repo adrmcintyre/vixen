@@ -96,6 +96,7 @@ def_op('mul' => {mode => '2', pat => '0000:1111:ssss:rrrr'});
 
 def_op('ror' => {mode => '2', pat => '0001:0000:ssss:rrrr'});
 def_op('lsl' => {mode => '2', pat => '0001:0001:ssss:rrrr'});
+def_op('asl' => {mode => '2', pat => '0001:0001:ssss:rrrr'});   # alias for lsl
 def_op('lsr' => {mode => '2', pat => '0001:0010:ssss:rrrr'});
 def_op('asr' => {mode => '2', pat => '0001:0011:ssss:rrrr'});
 def_op('orr' => {mode => '2', pat => '0001:0100:ssss:rrrr'});
@@ -107,6 +108,7 @@ def_op('rrx' => {mode => '1', pat => '0001:1000:0000:rrrr'});
 
 def_op('ror' => {mode => '#', pat => '0001:1000:nnnn:rrrr'});  # TODO - should reject n=0
 def_op('lsl' => {mode => '#', pat => '0001:1001:nnnn:rrrr'});
+def_op('asl' => {mode => '#', pat => '0001:1001:nnnn:rrrr'});   # alias for lsl
 def_op('lsr' => {mode => '#', pat => '0001:1010:nnnn:rrrr'});
 def_op('asr' => {mode => '#', pat => '0001:1011:nnnn:rrrr'});
 def_op('orr' => {mode => '#', pat => '0001:1100:bbbb:rrrr'});

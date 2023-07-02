@@ -46,13 +46,13 @@ alias r15 pc
     mov sp, #hi(.STACK_BASE)
     add sp, #lo(.STACK_BASE)
 
-   ;bra .text_card  ; display text test-card
-    bra .gfx_card   ; display graphics test-card
+   ;bra .text_test_card   ; display text test-card
+    bra .gfx_test_card2   ; display graphics test-card
 
-.text_card
+.text_test_card
     ; set 64x40 text
     mov r0, #0
-    bl .set_video_mode
+    bl .video_set_mode
     mov video, #hi(.TEXT_BASE)
     add video, #lo(.TEXT_BASE)
     mov ch, #0xc0
@@ -63,31 +63,11 @@ alias r15 pc
     bl .text_card_cols
     hlt
 
-.gfx_card
+.gfx_test_card1
     ; set 512x400 1bpp
-    mov r0, #3
-    bl .set_video_mode
-
-    mov video, #hi(.MEM_TOP-512*400/8)
-    add video, #lo(.MEM_TOP-512*400/8)
-    mov ch, #0x0000
-    mov n, #hi(512*400/8)
-    add n, #lo(512*400/8)
-    mov tmp, video
-.gfx_clear_loop
-    stw ch, [tmp]
-    stw ch, [tmp,#2]
-    stw ch, [tmp,#4]
-    stw ch, [tmp,#6]
-    stw ch, [tmp,#8]
-    stw ch, [tmp,#10]
-    stw ch, [tmp,#12]
-    stw ch, [tmp,#14]
-    add tmp, #16
-    sub n, #16
-    prne
-    bra .gfx_clear_loop
-
+    mov r0, #1
+    bl .video_set_mode
+    bl .gfx_clear
     mov ch, #0xf000     ; mode1: 8080; mode2: c0c0; mode3: f0f0
     add ch, #0x00f0
     mov x, #0
@@ -112,10 +92,225 @@ alias r15 pc
     bra .gfx_loop
     hlt
 
+.gfx_test_card2
+    ; set 512x400 1bpp
+    mov r0, #1
+    bl .video_set_mode
+    bl .gfx_clear
+
+    mov r0, #10
+    mov r1, #10
+    mov r2, #200
+    mov r3, #43
+    bl .gfx_line
+
+    mov r0, #200
+    mov r1, #50
+    mov r2, #10
+    mov r3, #70
+    bl .gfx_line
+
+    mov r0, #100
+    mov r1, #10
+    mov r2, #67
+    mov r3, #200
+    bl .gfx_line
+
+    mov r0, #107
+    mov r1, #10
+    mov r2, #133
+    mov r3, #200
+    bl .gfx_line
+
+    hlt
+
+.gfx_clear
+    mov video, #hi(.MEM_TOP-512*400/8)
+    add video, #lo(.MEM_TOP-512*400/8)
+    mov ch, #0x0000
+    mov n, #hi(512*400/8)
+    add n, #lo(512*400/8)
+    mov tmp, video
+.gfx_clear_loop
+    stw ch, [tmp]
+    stw ch, [tmp,#2]
+    stw ch, [tmp,#4]
+    stw ch, [tmp,#6]
+    stw ch, [tmp,#8]
+    stw ch, [tmp,#10]
+    stw ch, [tmp,#12]
+    stw ch, [tmp,#14]
+    add tmp, #16
+    sub n, #16
+    prne
+    bra .gfx_clear_loop
+    mov pc, link
+
+;; .gfx_line(r0=x0, r1=y0, r2=x1, r3=y1, r4=mask, r5=color)
+;;
+;; TODO - clipping; other video modes; mask / color / dot-dash
+;;
+;; Draw a line from (x0,y0)->(x1,y1), clearing the bits in mask,
+;; and xoring the bits in color:
+;;
+;;      mask=0 color=0 => clear bit
+;;      mask=0 color=1 => set bit
+;;      mask=1 color=0 => transparent
+;;      mask=1 color=1 => invert
+;;
+.gfx_line
+    alias r0 x        
+    alias r1 y      ; only used during init
+    alias r2 x2     ; only used during init
+    alias r3 y2     ; only used during init
+    alias r1 addr
+    alias r2 count
+    alias r3 err
+    alias r4 ystep    
+    alias r5 dx       
+    alias r6 dy       
+    alias r7 addr     
+    alias r8 mask    
+    alias r9 pattern
+    ; r9  unused
+    ; r10 unused
+    ; r11 unused
+    ; r12 tmp
+    
+    ;;   Slope <= 45         |          slope > 45
+    ;; ----------------------+--------------------------
+    ;;                       |
+    ;;   l->r ...            |   top->bot             : 
+    ;;           ''...       |       :               :  
+    ;;                ''...  |        :             :   
+    ;;                       |         :           :    
+    ;;                  ...  |          :         :     
+    ;;             ...''     |           :       :      
+    ;;   l->r ...''          |            :  bot->top   
+    ;;
+
+
+    ;; TODO save/restore working registers
+
+    mov pattern, #0xc300
+    add pattern, #0x00c3
+    mov ystep, #512/8       ;; TODO stride
+    mov tmp, #0
+
+    mov dy, y2
+    sub dy, y
+    asl dy, #1          ;; dy = (y2-y)*2
+
+    mov dx, x2
+    sub dx, x
+    asl dx, #1          ;; dx = (x2-x)*2
+
+    prpl
+    bra .gfx_line_pos_dx
+    mov x, x2
+    mov y, y2
+    rsb dx, tmp
+    rsb dy, tmp
+.gfx_line_pos_dx
+    cmp dy, tmp
+    prpl
+    bra .gfx_line_pos_dy
+    rsb dy, tmp
+    rsb ystep, tmp
+.gfx_line_pos_dy
+    mov tmp, #1<<7
+    mov mask, tmp
+    lsl mask, #8
+    orr mask, tmp
+    mov tmp, #7
+    and tmp, x
+    lsr mask, tmp
+
+    mov addr, #hi(.MEM_TOP-512*400/8)
+    add addr, #lo(.MEM_TOP-512*400/8)
+    mov tmp, #512/8     ;; TODO - stride
+    mul tmp, y
+    add addr, tmp
+    mov tmp, x
+    lsr tmp, #3
+    add addr, tmp   ;; addr = video_base + y*stride + x>>3
+        
+    cmp dx, dy
+    prlo
+    bra .gfx_line_steep
+
+    mov count, dx
+    lsr count, #1
+    mov err, count
+
+.gfx_line_shallow_loop
+    ror pattern, #1
+    prcc
+    bra .shallow_skip
+    ldb tmp, [addr]
+    orr tmp, mask
+    stb tmp, [addr]
+.shallow_skip
+    sub count, #1
+    prmi
+    bra .gfx_line_done
+
+    sub err, dy
+    prpl
+    bra .gfx_line_no_ystep
+    add err, dx
+    add addr, ystep
+
+.gfx_line_no_ystep
+    add x, #1
+    mov tmp, #7
+    and tmp, x
+    preq
+    add addr, #1
+    ror mask, #1
+
+    bra .gfx_line_shallow_loop
+
+.gfx_line_steep
+    mov count, dy
+    lsr count, #1
+    mov err, count
+
+.gfx_line_steep_loop
+    ror pattern, #1
+    prcc
+    bra .steep_skip
+    ldb tmp, [addr]
+    orr tmp, mask
+    stb tmp, [addr]
+.steep_skip
+    sub count, #1
+    prmi
+    bra .gfx_line_done
+
+    sub err, dx
+    prpl
+    bra .gfx_line_no_xstep
+    add err, dy
+    add x, #1
+    mov tmp, #7
+    and tmp, x
+    preq
+    add addr, #1
+    ror mask, #1
+
+.gfx_line_no_xstep
+    add addr, ystep
+    bra .gfx_line_steep_loop
+
+.gfx_line_done
+    ;; TODO - restore registers
+    mov pc, link
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .set_video_mode(r0=mode)
-.set_video_mode
+;; ROUTINE .video_set_mode(r0=mode)
+.video_set_mode
     ; validate
     mov tmp, #4
     cmp r0, tmp
@@ -131,20 +326,20 @@ alias r15 pc
     mov r1, #hi(.VREG)
     add r1, #lo(.VREG)
     mov r2, #11          ; 11 registers
-.set_video_mode_lp
+.video_set_mode_lp
     ldb tmp, [r0]
     stb tmp, [r1]
     add r0, #1
     add r1, #1
     sub r2, #1
     prne
-    bra .set_video_mode_lp
+    bra .video_set_mode_lp
 
     ldb r2, [r0]        ; number of colours
     add r0, #1
     mov r1, #hi(.VREG + 0x10)
     add r1, #lo(.VREG + 0x10)
-.set_video_mode_pal_lp
+.video_set_mode_pal_lp
     ldb tmp, [r0]
     stb tmp, [r1]
 
@@ -161,7 +356,7 @@ alias r15 pc
 
     sub r2, #1
     prne
-    bra .set_video_mode_pal_lp
+    bra .video_set_mode_pal_lp
 
     mov pc, link
     
@@ -222,20 +417,20 @@ alias r15 pc
     db .MODE_4BPP | .HZOOM_2 | .VZOOM_2
     db 16                   ; 16-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
-    db 0xff, 0x00, 0x00     ; 1=red
-    db 0x00, 0xff, 0x00     ; 2=green
-    db 0xff, 0xff, 0x00     ; 3=yellow
-    db 0x00, 0x00, 0xff     ; 4=blue
-    db 0xff, 0x00, 0xff     ; 5=magenta
-    db 0x00, 0xff, 0xff     ; 6=cyan
-    db 0x55, 0x55, 0x55     ; 7=dark-grey
-    db 0xaa, 0xaa, 0xaa     ; 8=light-grey
-    db 0xff, 0x7f, 0x7f     ; 9=pale-red
-    db 0x7f, 0xff, 0x7f     ; 10=pale-green
-    db 0xff, 0xff, 0x7f     ; 11=pale-yellow
-    db 0x7f, 0x7f, 0xff     ; 12=pale-blue
-    db 0xff, 0x7f, 0xff     ; 13=pale-magenta
-    db 0x7f, 0xff, 0xff     ; 14=pale-cyan
+    db 0x7f, 0x00, 0x00     ; 1=dark-red
+    db 0x00, 0x7f, 0x00     ; 2=dark-green
+    db 0x7f, 0x7f, 0x00     ; 3=dark-yellow
+    db 0x00, 0x00, 0x7f     ; 4=dark-blue
+    db 0x7f, 0x00, 0x7f     ; 5=dark-magenta
+    db 0x00, 0x7f, 0x7f     ; 6=dark-cyan
+    db 0x7f, 0x7f, 0x7f     ; 7=light-grey
+    db 0x55, 0x55, 0x55     ; 8=dark-grey
+    db 0xff, 0x00, 0x00     ; 9=red
+    db 0x00, 0xff, 0x00     ; 10=green
+    db 0xff, 0xff, 0x00     ; 11=yellow
+    db 0x00, 0x00, 0xff     ; 12=blue
+    db 0xff, 0x00, 0xff     ; 13=magenta
+    db 0x00, 0xff, 0xff     ; 14=cyan
     db 0xff, 0xff, 0xff     ; 15=white
     align
 
