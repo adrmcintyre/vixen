@@ -98,39 +98,60 @@ alias r15 pc
     bl .video_set_mode
     bl .gfx_clear
 
-    mov r0, #10
-    mov r1, #10
-    mov r2, #200
-    mov r3, #43
+    mov r4, #20<<8   ; px
+    mov r5, #0       ; py
+    mov r6, #50      ; n
+
+.gfx_t2_lp
+    mov r0, #255    ; cx
+    mov tmp, r4
+    asr tmp, #5
+    mov r2, r0
+    add r2, tmp     ; arg_x2 = cx+px>>5
+    asr tmp, #2
+    add r0, tmp     ; arg_x1 = cx+px>>7
+
+    mov r1, #200    ; arg_y1
+    mov tmp, r5
+    asr tmp, #5
+    mov r3, r1
+    add r3, tmp     ; arg_y2
+    asr tmp, #2
+    add r1, tmp
+
     bl .gfx_line
 
-    mov r0, #200
-    mov r1, #50
-    mov r2, #10
-    mov r3, #70
-    bl .gfx_line
+    sub r6, #1
+    preq
+    bra .gfx_t2_done
 
-    mov r0, #100
-    mov r1, #10
-    mov r2, #67
-    mov r3, #200
-    bl .gfx_line
+    mov r0, r4
+    asr r0, #3
+    add r5, r0
 
-    mov r0, #107
-    mov r1, #10
-    mov r2, #133
-    mov r3, #200
-    bl .gfx_line
+    mov r1, r5
+    asr r1, #3
+    sub r4, r1
 
+    bra .gfx_t2_lp
+
+.gfx_t2_done
     hlt
 
+;; .gfx_clear()
+;;
+;; Clear video memory to zero.
+;;
 .gfx_clear
-    mov video, #hi(.MEM_TOP-512*400/8)
-    add video, #lo(.MEM_TOP-512*400/8)
+    alias r0 ch
+    alias r1 n
+    ; r12 tmp
+
+    mov tmp, #hi(.MEM_TOP-512*400/8)
+    add tmp, #lo(.MEM_TOP-512*400/8)
     mov ch, #0x0000
     mov n, #hi(512*400/8)
     add n, #lo(512*400/8)
-    mov tmp, video
 .gfx_clear_loop
     stw ch, [tmp]
     stw ch, [tmp,#2]
@@ -159,41 +180,46 @@ alias r15 pc
 ;;      mask=1 color=1 => invert
 ;;
 .gfx_line
-    alias r0 x        
+    alias r0 x
     alias r1 y      ; only used during init
     alias r2 x2     ; only used during init
     alias r3 y2     ; only used during init
     alias r1 addr
     alias r2 count
     alias r3 err
-    alias r4 ystep    
-    alias r5 dx       
-    alias r6 dy       
-    alias r7 addr     
-    alias r8 mask    
+    alias r4 ystep
+    alias r5 dx
+    alias r6 dy
+    alias r7 addr
+    alias r8 mask
     alias r9 pattern
-    ; r9  unused
     ; r10 unused
     ; r11 unused
     ; r12 tmp
-    
+
     ;;   Slope <= 45         |          slope > 45
     ;; ----------------------+--------------------------
     ;;                       |
-    ;;   l->r ...            |   top->bot             : 
-    ;;           ''...       |       :               :  
-    ;;                ''...  |        :             :   
-    ;;                       |         :           :    
-    ;;                  ...  |          :         :     
-    ;;             ...''     |           :       :      
-    ;;   l->r ...''          |            :  bot->top   
+    ;;   l->r ...            |   top->bot             :
+    ;;           ''...       |       :               :
+    ;;                ''...  |        :             :
+    ;;                       |         :           :
+    ;;                  ...  |          :         :
+    ;;             ...''     |           :       :
+    ;;   l->r ...''          |            :  bot->top
     ;;
 
 
-    ;; TODO save/restore working registers
+    sub sp, #12
+    stw r4, [sp,#2]
+    stw r5, [sp,#4]
+    stw r6, [sp,#6]
+    stw r7, [sp,#8]
+    stw r8, [sp,#10]
+    stw r9, [sp,#12]
 
-    mov pattern, #0xc300
-    add pattern, #0x00c3
+    mov pattern, #0xff00
+    add pattern, #0x00ff
     mov ystep, #512/8       ;; TODO stride
     mov tmp, #0
 
@@ -234,7 +260,7 @@ alias r15 pc
     mov tmp, x
     lsr tmp, #3
     add addr, tmp   ;; addr = video_base + y*stride + x>>3
-        
+
     cmp dx, dy
     prlo
     bra .gfx_line_steep
@@ -246,11 +272,11 @@ alias r15 pc
 .gfx_line_shallow_loop
     ror pattern, #1
     prcc
-    bra .shallow_skip
+    bra .gfx_line_shallow_skip
     ldb tmp, [addr]
     orr tmp, mask
     stb tmp, [addr]
-.shallow_skip
+.gfx_line_shallow_skip
     sub count, #1
     prmi
     bra .gfx_line_done
@@ -279,11 +305,11 @@ alias r15 pc
 .gfx_line_steep_loop
     ror pattern, #1
     prcc
-    bra .steep_skip
+    bra .gfx_line_steep_skip
     ldb tmp, [addr]
     orr tmp, mask
     stb tmp, [addr]
-.steep_skip
+.gfx_line_steep_skip
     sub count, #1
     prmi
     bra .gfx_line_done
@@ -304,62 +330,76 @@ alias r15 pc
     bra .gfx_line_steep_loop
 
 .gfx_line_done
-    ;; TODO - restore registers
+    ldw r4, [sp,#2]
+    ldw r5, [sp,#4]
+    ldw r6, [sp,#6]
+    ldw r7, [sp,#8]
+    ldw r8, [sp,#10]
+    ldw r9, [sp,#12]
+    add sp, #12
     mov pc, link
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .video_set_mode(r0=mode)
+;; .video_set_mode(r0=mode)
+;;
+;; Set video mode 0..3
+;;
+alias r0 mode
+alias r0 entry
+alias r1 vreg
+alias r2 count
+
 .video_set_mode
     ; validate
     mov tmp, #4
-    cmp r0, tmp
+    cmp mode, tmp
     prhs
     mov pc, link
 
-    lsl r0, #1
+    lsl mode, #1
     mov tmp, #hi(.video_mode_table)
     add tmp, #lo(.video_mode_table)
-    add tmp, r0
-    ldw r0, [tmp]       ; point to data
+    add tmp, mode
 
-    mov r1, #hi(.VREG)
-    add r1, #lo(.VREG)
-    mov r2, #11          ; 11 registers
+    ldw entry, [tmp]       ; point to data
+
+    mov vreg, #hi(.VREG)
+    add vreg, #lo(.VREG)
+    mov count, #11          ; 11 registers
 .video_set_mode_lp
-    ldb tmp, [r0]
-    stb tmp, [r1]
-    add r0, #1
-    add r1, #1
-    sub r2, #1
+    ldb tmp, [entry]
+    stb tmp, [vreg]
+    add entry, #1
+    add vreg, #1
+    sub count, #1
     prne
     bra .video_set_mode_lp
 
-    ldb r2, [r0]        ; number of colours
-    add r0, #1
-    mov r1, #hi(.VREG + 0x10)
-    add r1, #lo(.VREG + 0x10)
+    ldb count, [entry]        ; number of colours
+    add entry, #1
+    mov vreg, #hi(.VREG + 0x10)
+    add vreg, #lo(.VREG + 0x10)
 .video_set_mode_pal_lp
-    ldb tmp, [r0]
-    stb tmp, [r1]
+    ldb tmp, [entry]
+    stb tmp, [vreg]
 
-    add r1, #0x10
-    ldb tmp, [r0,#1]
-    stb tmp, [r1]
+    add vreg, #0x10
+    ldb tmp, [entry,#1]
+    stb tmp, [vreg]
 
-    add r1, #0x10
-    ldb tmp, [r0,#2]
-    stb tmp, [r1]
+    add vreg, #0x10
+    ldb tmp, [entry,#2]
+    stb tmp, [vreg]
 
-    add r0, #3
-    sub r1, #0x20-1
+    add entry, #3
+    sub vreg, #0x20-1
 
-    sub r2, #1
+    sub count, #1
     prne
     bra .video_set_mode_pal_lp
 
     mov pc, link
-    
+
 .video_mode_table
     dw .video_mode_0
     dw .video_mode_1
