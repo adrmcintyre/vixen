@@ -15,18 +15,28 @@ sub usage {
     exit 0
 }
 
+our ($file, $lineno, $line);
 our $image = [(0xff) x 65536];
+our $labels = {};
+our $last_label = undef;
+our $scope = "";
+our $scopes = [$scope];
+our $registers = { map {("r$_" => $_)} (0..15) };
+our $pass;
+our $org;
 
 # Syntax:
-#     org expr
-#     def label, expr
-#     db expr, ...
-#     dw expr, ...
-#     ds "string"
-#     align
-#     alias rN name
-#     .label
-#     ; comment
+#   org expr        - set current memory position
+#   def label expr  - define a constant, referenced as .label
+#   db expr, ...    - insert 1 or more bytes
+#   dw expr, ...    - insert 1 or more words
+#   ds "string"     - insert a string (not \0 delimited)
+#   align           - align current memory position to word boundary
+#   alias rN name   - create a register alias
+#   .label          - define a label referencing the current memory position
+#   ; comment       - ignore comment
+#   begin ... end   - delimit a scope for labels and register aliases
+#   { ... }         - alternative scope syntax
 
 # Expressions in order of precedence:
 #   e := (e)
@@ -351,10 +361,12 @@ sub decode_op {
 
 sub get_reg {
     my $word = shift;
-    if (!defined $::registers->{$word}) {
-        abort("unknown register: $word");
+    foreach my $scope (@$::scopes) {
+        if (defined $::registers->{$scope.$word}) {
+            return $::registers->{$scope.$word};
+        }
     }
-    return $::registers->{$word};
+    abort("unknown register: $word");
 }
 
 sub bitpos {
@@ -421,7 +433,22 @@ sub align {
 sub alias {
     my $reg = shift;
     my $name = shift;
-    $::registers->{$name} = $reg;
+    $::registers->{$::scope.$name} = $reg;
+}
+
+sub scope_begin {
+    $::scope = "$last_label/";
+    unshift @$::scopes, $::scope;
+}
+
+sub scope_end {
+    $::last_label = shift @$::scopes;
+    $::last_label =~ s{/$}{};
+    my $len = scalar @$::scopes;
+    if ($len < 1) {
+        abort("unexpected end: missing begin?");
+    }
+    $::scope = $::scopes->[0];
 }
 
 sub emit_op {
@@ -595,14 +622,20 @@ sub terminal_value {
         $v = ord $char;
     }
     elsif ($e =~ m{^ \.([a-z_]\w*) \s*(.*)}xi) {
-        if (defined $::labels->{$1}) {
-            ($v, $rest) = ($::labels->{$1}, $2);
+        my $found = 0;
+        foreach my $scope (@$::scopes) {
+            if (defined $::labels->{$scope.$1}) {
+                ($found, $v, $rest) = (1, $::labels->{$scope.$1}, $2);
+                last
+            }
         }
-        elsif ($::pass == 1) {
-            ($v, $rest) = (0, $2);
-        }
-        else {
-            abort("undefined symbol: %s", $1);
+        if (!$found) {
+            if ($::pass == 1) {
+                ($v, $rest) = (0, $2);
+            }
+            else {
+                abort("undefined symbol: %s", $1);
+            }
         }
     }
     else {
@@ -658,59 +691,63 @@ sub main {
         $fh->close;
     }
 
-    our $labels = {};
-    our $registers = { map {("r$_" => $_)} (0..15) };
-
-    foreach our $pass (1, 2) {
-        our $org = 0x0000;
+    foreach $::pass (1, 2) {
+        $::org = 0x0000;
         foreach my $raw_line (@$lines) {
-            our ($file, $lineno, $line) = @$raw_line;
-            if ($line =~ s{^\.([a-z_]\w*)\s*}{}xi) {
+            ($::file, $::lineno, $::line) = @$raw_line;
+            if ($::line =~ s{^ \.([a-z_]\w*) \s*}{}xi) {
                 my $label = $1;
-                if ($pass == 1) {
-                    if (exists $labels->{$label}) {
+                $::last_label = $::scope.$label;
+                if ($::pass == 1) {
+                    if (exists $::labels->{$::scope.$label}) {
                         abort("symbol exists: %s", $label);
                     }
-                    $labels->{$label} = $org;
+                    $::labels->{$::scope.$label} = $::org;
                 }
                 else {
                     print ".$label\n";
                 }
             }
 
-            next if $line eq '';
+            next if $::line eq '';
 
-            if ($line =~ m{^def\s+(\w+)\s+(.*)\s*$}xi) {
+            if ($::line =~ m{^ def \s+ (\w+) \s+ (.*)$}xi) {
                 my $label = $1;
                 my $expr = $2;
-                if ($pass == 1) {
-                    if (exists $labels->{$label}) {
-                        abort("symbol exists: %s", $label);
+                if ($::pass == 1) {
+                    if (exists $::labels->{$::scope.$label}) {
+                        abort("symbol exists: %s", $::scope.$label);
                     }
                 }
-                $labels->{$label} = get_value($expr);
+                $::labels->{$::scope.$label} = get_value($expr);
             }
-            elsif ($line =~ m{^org\s+(.*?)$}xi) {
-                $org = get_value($1);
+            elsif ($::line =~ m{^ org \s+ (.*) $}xi) {
+                $::org = get_value($1);
             }
-            elsif ($line =~ m{^db\s+(.*?)$}xi) {
+            elsif ($::line =~ m{^ db \s+ (.*) $}xi) {
                 emit_byte($_) foreach get_list($1);
             }
-            elsif ($line =~ m{^dw\s+(.*?)$}xi) {
+            elsif ($::line =~ m{^ dw \s+ (.*) $}xi) {
                 foreach my $value (get_list($1)) {
                     emit_word($value);
                 }
             }
-            elsif ($line =~ m{^ds\s+(.*?)$}xi) {
+            elsif ($::line =~ m{^ ds \s+ (.*) $}xi) {
                 emit_string($1);
             }
-            elsif ($line =~ m{^align$}xi) {
+            elsif ($::line =~ m{^ align $}xi) {
                 align();
             }
-            elsif ($line =~ m{^alias\s+r([0-9]+)\s+([a-z_]\w*)$}xi) {
+            elsif ($::line =~ m{^ alias \s+ r([0-9]+) \s+ ([a-z_]\w*) $}xi) {
                 alias($1, $2);
             }
-            elsif ($line =~ m{^(\w+)\s*(.*?)\s*$}xi) {
+            elsif ($::line =~ m{^(?: begin | \{ )$}xi) {
+                scope_begin();
+            }
+            elsif ($::line =~ m{^(?: end | \} )$}xi) {
+                scope_end();
+            }
+            elsif ($::line =~ m{^ (\w+) \s* (.*?) $}xi) {
                 decode_op($1, $2);
             }
             else {
