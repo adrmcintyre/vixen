@@ -20,3 +20,18 @@ asm.pl:
 
             add3 r1, r2, r3
 
+video code:
+    load xshift, width, height from video mode table
+    reverse pattern
+    apply pattern differently for stretched modes?
+    fast mode for horiz/vert lines
+
+    retain x, y
+    provide:
+        option to draw last point
+        move, move_to, line, line_to
+        point
+        set_color
+        set_pattern
+        set_mode (replace/invert)
+        fill rect

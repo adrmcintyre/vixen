@@ -213,7 +213,38 @@
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ; VERIFY SHIFT OPS
 
-    ;; TODO
+    ; verify asr preserves sign
+    mov r0, #hi(0xffff)
+    add r0, #lo(0xffff)
+    asr r0, #1
+    mov r1, #hi(0xffff)
+    add r1, #lo(0xffff)
+    cmp r0, r1
+    prne
+    bl .fail
+
+    mov r0, #hi(0xfffc)
+    add r0, #lo(0xfffc)
+    asr r0, #1
+    mov r1, #hi(0xfffe)
+    add r1, #lo(0xfffe)
+    cmp r0, r1
+    prne
+    bl .fail
+
+    mov r0, #0x8000
+    asr r0, #1
+    mov r1, #0xc000
+    cmp r0, r1
+    prne
+    bl .fail
+
+    mov r0, #0x4000
+    asr r0, #1
+    mov r1, #0x2000
+    cmp r0, r1
+    prne
+    bl .fail
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ; VERIFY COMPARISON OPS
