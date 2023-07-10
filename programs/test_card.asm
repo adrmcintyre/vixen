@@ -26,8 +26,6 @@ def TEXT_COLS 64
 def TEXT_ROWS 40
 def TEXT_BASE .MEM_TOP - .TEXT_COLS*.TEXT_ROWS
 
-def GFX_BASE .MEM_TOP - 512*400/8
-
 ; well below video for safety
 def STACK_BASE 0x2000-2
 
@@ -43,7 +41,7 @@ alias r15 pc
     add sp, #lo(.STACK_BASE)
 
    ;bl .text_test_card   ; display text test-card
-    bl .gfx_test_card1   ; display graphics test-card
+    bl .gfx_test_card2   ; display graphics test-card
 
     hlt
 
@@ -80,11 +78,12 @@ alias r15 pc
 
     mov r0, #0
     mov r1, #0
-    mov r2, #512
-    mov r3, #hi(400)
-    add r3, #lo(400)
+    bl .gfx_move_to
 
-    bl .gfx_line_clipped
+    mov r0, #512
+    mov r1, #hi(400)
+    add r1, #lo(400)
+    bl .gfx_line_to
 
     ldw r4, [sp,#2]
     ldw r5, [sp,#4]
@@ -93,141 +92,66 @@ alias r15 pc
     ldw pc, [sp]
 }
 
-.gfx_test_card3 {
-    alias r0 x1
-    alias r1 y1
-    alias r2 x2
-    alias r3 y2
-
+.gfx_test_card2 {
     ; TODO - stack
     alias r4 dx
     alias r5 dy
+    alias r6 color
 
-    mov r0, #3          ; TODO debug mode setting!
-    bl .video_set_mode
-    bl .gfx_clear
+    def CX 128
+    def CY 100
+    def STEP 5
 
-    ;         x   20,10
-    ;        x x
-    ; 10,20 x   x 30,20
-    ;        x x
-    ;         x   20,30
-
-    mov dx, #80
-
-.loop
-    mov dy, #100
-    sub dy, dx
-
-    mov x1, #100
-    sub x1, dx
-    mov y1, #100
-    mov x2, #100
-    mov y2, #100
-    sub y2, dy
-    bl .gfx_line_clipped
-
-    mov x1, #100
-    mov y1, #100
-    sub y1, dy
-    mov x2, #100
-    add x2, dx
-    mov y2, #100
-    bl .gfx_line_clipped
-
-    mov x1, #100
-    add x1, dx
-    mov y1, #100
-    mov x2, #100
-    mov y2, #100
-    add y2, dy
-    bl .gfx_line_clipped
-
-    mov x1, #100
-    mov y1, #100
-    add y1, dy
-    mov x2, #100
-    sub x2, dx
-    mov y2, #100
-    bl .gfx_line_clipped
-
-    sub dx, #20
-    prne
-    bra .loop
-
-    hlt
-}
-
-.gfx_test_card2 {
-    def centre_x 128
-    def centre_y 50
-
-    alias r4 px
-    alias r5 py
-    alias r6 count
-
-    stw link, [sp]
-    sub sp, #8
-    stw r4, [sp,#2]
-    stw r5, [sp,#4]
-    stw r6, [sp,#6]
-
-    ; set 256x200 4bpp
     mov r0, #3
     bl .video_set_mode
     bl .gfx_clear
 
-    mov px, #20<<8
-    mov py, #0
-    mov count, #50
+    mov dx, #.STEP
+    mov color, #0
 
 .loop
-    ; set color to count & 0x0f
-    mov r0, count
-    mov tmp, #15
-    and r0, tmp
-    mov tmp, #hi(.WS_VINFO)
-    add tmp, #lo(.WS_VINFO)
-    stb r0, [tmp, #.VINFO_COLOR]
+    mov dy, #100
+    sub dy, dx
+    prle
+    bra .exit
 
-    mov r0, #.centre_x
-    mov tmp, px
-    asr tmp, #6
-    mov r2, r0
-    add r2, tmp     ; x2 = centre_x + px>>6
-    asr tmp, #1
-    add r0, tmp     ; x1 = centre_x + px>>7
+    add color, #1
+    tst color, #16
+    prne
+    mov color, #1
+    mov r0, color
+    bl .gfx_set_color
 
-    mov r1, #.centre_y
-    mov tmp, py
-    asr tmp, #6
-    mov r3, r1
-    add r3, tmp     ; y2 = centre_y + py>>6
-    asr tmp, #1
-    add r1, tmp     ; y1 = centre_y + py>>7
+    mov r0, #.CX
+    sub r0, dx
+    mov r1, #.CY
+    bl .gfx_move_to
 
-    bl .gfx_line_clipped
+    mov r0, #.CX
+    mov r1, #.CY
+    sub r1, dy
+    bl .gfx_line_to
 
-    sub count, #1
-    preq
-    bra .done
+    mov r0, #.CX
+    add r0, dx
+    mov r1, #.CY
+    bl .gfx_line_to
 
-    mov r0, px
-    asr r0, #3
-    add py, r0
+    mov r0, #.CX
+    mov r1, #.CY
+    add r1, dy
+    bl .gfx_line_to
 
-    mov r1, py
-    asr r1, #3
-    sub px, r1
+    mov r0, #.CX
+    sub r0, dx
+    mov r1, #.CY
+    bl .gfx_line_to
 
+    add dx, #.STEP
     bra .loop
 
-.done
-    ldw r4, [sp,#2]
-    ldw r5, [sp,#4]
-    ldw r6, [sp,#6]
-    add sp, #8
-    ldw pc, [sp]
+.exit
+    hlt
 }
 
 ; .gfx_clear()
@@ -295,42 +219,146 @@ alias r15 pc
     mov pc, link
 }
 
-; .gfx_line(r0=x1, r1=y1, r2=x2, r3=y2)
-.gfx_line_clipped {
-    alias r8 vinfo
+; gfx_set_color(r0=color)
+;
+; Set foreground colour.
+;
+.gfx_set_color {
+    alias r0 color
 
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+
+    ; TODO - ensure valid in current mode
+    stb color, [tmp, #.VINFO_COLOR]
+
+    mov pc, link
+}
+
+; gfx_set_mask(r0=mask)
+;
+; Set draw mask.
+;
+.gfx_set_mask {
+    alias r0 mask
+
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+
+    ; TODO - ensure valid in current mode
+    stb mask, [tmp, #.VINFO_MASK]
+
+    mov pc, link
+}
+
+; gfx_set_pattern(r0=pattern)
+;
+; Set dot-dash pattern.
+;
+.gfx_set_pattern {
+    alias r0 pattern
+
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+
+    stw pattern, [tmp, #.VINFO_PATTERN]
+
+    mov pc, link
+}
+
+; gfx_move(r0=dx, r1=dy)
+;
+; Move relative to current position.
+;
+.gfx_move {
+    alias r0 dx
+    alias r1 dy
+    alias r2 vinfo
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+
+    ldw tmp, [vinfo, #.VINFO_X]
+    add tmp, dx
+    stw tmp, [vinfo, #.VINFO_X]
+
+    ldw tmp, [vinfo, #.VINFO_Y]
+    add tmp, dy
+    stw tmp, [vinfo, #.VINFO_Y]
+
+    mov pc, link
+}
+
+; gfx_move_to(r0=x, r1=y)
+;
+; Move to specified position.
+;
+.gfx_move_to {
+    alias r0 x
+    alias r1 y
+
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+
+    stw r0, [tmp, #.VINFO_X]
+    stw r1, [tmp, #.VINFO_Y]
+
+    mov pc, link
+}
+
+; gfx_line(r0=dx, r1=dy)
+;
+; Draw a line relative to the current position.
+;
+.gfx_line {
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+    ldw r2, [tmp, #.VINFO_X]
+    ldw r3, [tmp, #.VINFO_Y]
+    add r0, r2                          ; line_to x+dx, y+dy
+    add r1, r3
+
+    bra .gfx_line_to
+}
+    
+; .gfx_line_to(r0=x, r1=y)
+.gfx_line_to {
     stw link, [sp]
-    sub sp, #12
+    sub sp, #10
     stw r4, [sp, #2]
     stw r5, [sp, #4]
     stw r6, [sp, #6]
     stw r7, [sp, #8]
-    stw r8, [sp, #10]
 
-    mov vinfo, #hi(.WS_VINFO)
-    add vinfo, #lo(.WS_VINFO)
-    mov r4, #0
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+    ldw r2, [tmp, #.VINFO_X]
+    ldw r3, [tmp, #.VINFO_Y]
+    stw r0, [tmp, #.VINFO_X]
+    stw r1, [tmp, #.VINFO_Y]
+
+    mov r4, #0                          ; clipping rectangle
     mov r5, #0
-    ldw r6, [vinfo, #.VINFO_WIDTH]
-    ldw r7, [vinfo, #.VINFO_HEIGHT]
-    bl .gfx_clip
+    ldw r6, [tmp, #.VINFO_WIDTH]
+    ldw r7, [tmp, #.VINFO_HEIGHT]
+
+    bl .gfx_clip                        ; visibility returned in tmp
     orr tmp, tmp
     preq
     bra .exit
 
-    bl .gfx_line
+    bl .gfx_line_unclipped
 
 .exit
     ldw r4, [sp, #2]
     ldw r5, [sp, #4]
     ldw r6, [sp, #6]
     ldw r7, [sp, #8]
-    ldw r8, [sp, #10]
-    add sp, #12
+    add sp, #10
     ldw pc, [sp]
 }
 
-; .gfx_line(r0=x1, r1=y1, r2=x2, r3=y2)
+; .gfx_line_unclipped(r0=x1, r1=y1, r2=x2, r3=y2)
 ;
 ; Draw a line from (x0,y0)->(x1,y1), clearing the bits in VINFO_MASK
 ; and xoring the bits in VINFO_COLOR:
@@ -340,7 +368,7 @@ alias r15 pc
 ;      mask=1 color=0 => transparent
 ;      mask=1 color=1 => invert
 ;
-.gfx_line {
+.gfx_line_unclipped {
     alias r0  x         ; used in inner loop
     alias r1  y         ; only used during init
     alias r2  x2        ; only used during init
@@ -355,7 +383,9 @@ alias r15 pc
     alias r7  mask      ; used in inner loop
     alias r8  color     ; used in inner loop
     alias r9  pattern   ; used in inner loop
-    alias r10 vinfo     ; used throughout
+    alias r10 vinfo     ; used during init
+    alias r10 bpp       ; used in inner loop
+    alias r11 xmask     ; used in inner loop
     ; r12 tmp
 
     ;   Slope <= 45         |          slope > 45
@@ -413,7 +443,6 @@ alias r15 pc
     rsb ystep, tmp
 
 .pos_dy
-    {
     ; compute initial alignment for mask and color
     ldb tmp, [vinfo, #.VINFO_BPP]
     ldb shift, [vinfo, #.VINFO_XMASK]
@@ -446,7 +475,13 @@ alias r15 pc
     mov tmp, x
     lsr tmp, shift
     add addr, tmp       ; addr = video_base + y*stride + x>>xshift
-    }
+
+    ; order is important here because of aliasing
+    ldb xmask, [vinfo, #.VINFO_XMASK]
+    ldb bpp,   [vinfo, #.VINFO_BPP]
+
+    ; NOTE vinfo is invalid beyond here as it is aliased by bpp
+
     cmp dx_by2, dy_by2
     prlo
     bra .steep
@@ -477,13 +512,11 @@ alias r15 pc
 
 .no_ystep
     add x, #1
-    ldb tmp, [vinfo, #.VINFO_XMASK]  ; TODO - keep in register
-    and tmp, x
+    tst x, xmask
     preq
     add addr, #1
-    ldb tmp, [vinfo, #.VINFO_BPP]    ; TODO - keep in register
-    ror mask, tmp
-    ror color, tmp
+    ror mask, bpp
+    ror color, bpp
 
     bra .loop
 }
@@ -511,13 +544,11 @@ alias r15 pc
     bra .no_xstep
     add err, dy_by2
     add x, #1
-    ldb tmp, [vinfo, #.VINFO_XMASK]  ; TODO - keep in register
-    and tmp, x
+    tst x, xmask
     preq
     add addr, #1
-    ldb tmp, [vinfo, #.VINFO_BPP]    ; TODO - keep in register
-    ror mask, tmp
-    ror color, tmp
+    ror mask, bpp
+    ror color, bpp
 
 .no_xstep
     add addr, ystep
