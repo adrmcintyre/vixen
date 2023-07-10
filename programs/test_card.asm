@@ -4,19 +4,21 @@ def IO_BASE 0xfc00
 ; video workspace
 def WS_VINFO 0x1000
 
+; mode related data
 def VINFO_BASE      0x00    ; 2 - base mem address
-def VINFO_X         0x02    ; 2 - current x co-ord
-def VINFO_Y         0x04    ; 2 - current y co-ord
-def VINFO_STRIDE    0x06    ; 2 - bytes to move 1 in y direction
-def VINFO_XSHIFT    0x08    ; 1 - bits to shift to convert x to byte offset
-def VINFO_XMASK     0x09    ; 1 - mask for lower bits of x for pixel index
-def VINFO_BPP       0x0a    ; 1 - bits per pixel
-def VINFO_COLOR     0x0b    ; 1 - current color (initial: 1<<bpp)-1
-def VINFO_MASK      0x0c    ; 1 - current mask  (initial: 1<<bpp)-1
-def VINFO_UNUSED1   0x0d    ; unused
-def VINFO_PATTERN   0x0e    ; 2 - dot pattern   (initial: 0xffff)
-def VINFO_WIDTH     0x10
-def VINFO_HEIGHT    0x12
+def VINFO_LEN       0x02    ; 2 - base mem address
+def VINFO_WIDTH     0x04    ; 2 - width in pixels
+def VINFO_HEIGHT    0x06    ; 2 - height in pixels
+def VINFO_STRIDE    0x08    ; 2 - bytes to move 1 in y direction
+def VINFO_XSHIFT    0x0a    ; 1 - bits to shift to convert x to byte offset
+def VINFO_XMASK     0x0b    ; 1 - mask for lower bits of x for pixel index
+def VINFO_BPP       0x0c    ; 1 - bits per pixel
+; user context
+def VINFO_X         0x10    ; 2 - current x co-ord
+def VINFO_Y         0x12    ; 2 - current y co-ord
+def VINFO_PATTERN   0x14    ; 2 - dot pattern   (initial: 0xffff)
+def VINFO_COLOR     0x16    ; 1 - current color (initial: 1<<bpp)-1
+def VINFO_MASK      0x17    ; 1 - current mask  (initial: 1<<bpp)-1
 
 def VREG .IO_BASE + 0x000
 
@@ -41,7 +43,7 @@ alias r15 pc
     add sp, #lo(.STACK_BASE)
 
    ;bl .text_test_card   ; display text test-card
-    bl .gfx_test_card2   ; display graphics test-card
+    bl .gfx_test_card1   ; display graphics test-card
 
     hlt
 
@@ -72,17 +74,15 @@ alias r15 pc
     stw r6, [sp,#6]
 
     ; set 256x200 4bpp
-    mov r0, #3
+    mov r0, #1
     bl .video_set_mode
     bl .gfx_clear
 
     mov r0, #0
-    sub r0, #1
-    mov r1, r0
-
-    mov r2, #256
-    add r2, #1
-    mov r3, #201
+    mov r1, #0
+    mov r2, #512
+    mov r3, #hi(400)
+    add r3, #lo(400)
 
     bl .gfx_line_clipped
 
@@ -235,27 +235,63 @@ alias r15 pc
 ; Clear video memory to zero.
 ;
 .gfx_clear {
-    alias r0 zero
-    alias r1 count
+    mov tmp, #hi(.WS_VINFO)
+    add tmp, #lo(.WS_VINFO)
+    ldw r0, [tmp, #.VINFO_BASE]
+    mov r1, #0x00                       ; TODO background colour?
+    ldw r2, [tmp, #.VINFO_LEN]
+    bra .memset
+}
 
-    mov tmp, #hi(.GFX_BASE)
-    add tmp, #lo(.GFX_BASE)
-    mov zero, #0x0000
-    mov count, #hi(512*400/8)
-    add count, #lo(512*400/8)
+; .memset(ptr, fill, bytes)
+;
+; TODO - could be made slightly more efficient by using a computed
+; jump into the unrolled loop and some other cleverness
+;
+.memset {
+    alias r0 ptr
+    alias r1 fill
+    alias r2 bytes
+    alias r3 stride
+
+    orr bytes, bytes
+    preq
+    mov pc, link
+
+    mov tmp, fill
+    lsl fill, #8
+    orr fill, tmp
+
+    mov stride, #16
+    cmp bytes, stride
+    prlt
+    bra .trailing
 .loop
-    stw zero, [tmp]
-    stw zero, [tmp,#2]
-    stw zero, [tmp,#4]
-    stw zero, [tmp,#6]
-    stw zero, [tmp,#8]
-    stw zero, [tmp,#10]
-    stw zero, [tmp,#12]
-    stw zero, [tmp,#14]
-    add tmp, #16
-    sub count, #16
-    prne
+    stw fill, [ptr, #0]
+    stw fill, [ptr, #2]
+    stw fill, [ptr, #4]
+    stw fill, [ptr, #6]
+    stw fill, [ptr, #8]
+    stw fill, [ptr, #10]
+    stw fill, [ptr, #12]
+    stw fill, [ptr, #14]
+    add ptr, stride
+    sub bytes, stride
+    cmp bytes, stride
+    prhs
     bra .loop
+
+    orr bytes, bytes
+    preq
+    mov pc, link
+
+.trailing
+    stb fill, [ptr]
+    add ptr, #1
+    sub bytes, #1
+    prne
+    bra .trailing
+
     mov pc, link
 }
 
@@ -310,15 +346,15 @@ alias r15 pc
     alias r2  x2        ; only used during init
     alias r3  y2        ; only used during init
     alias r4  shift     ; only used during init
-    alias r1  count     ; used in inner loop 
+    alias r1  count     ; used in inner loop
     alias r2  addr      ; used in inner loop
-    alias r3  ystep     ; used in inner loop 
-    alias r4  err       ; used in inner loop 
-    alias r5  dx_by2    ; used in inner loop 
-    alias r6  dy_by2    ; used in inner loop 
-    alias r7  mask      ; used in inner loop 
-    alias r8  color     ; used in inner loop 
-    alias r9  pattern   ; used in inner loop 
+    alias r3  ystep     ; used in inner loop
+    alias r4  err       ; used in inner loop
+    alias r5  dx_by2    ; used in inner loop
+    alias r6  dy_by2    ; used in inner loop
+    alias r7  mask      ; used in inner loop
+    alias r8  color     ; used in inner loop
+    alias r9  pattern   ; used in inner loop
     alias r10 vinfo     ; used throughout
     ; r12 tmp
 
@@ -500,7 +536,7 @@ alias r15 pc
     mov pc, link
 }
 
-; Assumes (rect_x1,rect_y1)-(rect_x2,rect_y2) is top-left to bottom-right 
+; Assumes (rect_x1,rect_y1)-(rect_x2,rect_y2) is top-left to bottom-right
 .gfx_clip {
     alias r0 line_x1 ; \  these are stashed on
     alias r1 line_y1 ;  | the stack as needed
@@ -510,7 +546,7 @@ alias r15 pc
     alias r5 rect_y1 ;  | these are preserved
     alias r6 rect_x2 ;  | throughout
     alias r7 rect_y2 ; /
-    alias r8 px      ; \ 
+    alias r8 px      ; \
     alias r9 py      ;  | these are used as working data
     alias r10 code1  ;  | preserved by gfx_clip, but not
     alias r11 code2  ; /  by internal recursion
@@ -706,6 +742,23 @@ alias r15 pc
     alias r5 entry
     alias r6 vreg
     alias r7 count
+    alias r8 width
+    alias r9 height
+
+    def VGA_WIDTH  640
+    def VGA_HEIGHT 480
+    def VGA_HBACK  44
+    def VGA_VBACK  31
+
+    def VREG_BASE   0x00
+    def VREG_LEFT   0x02
+    def VREG_RIGHT  0x04
+    def VREG_TOP    0x06
+    def VREG_BOTTOM 0x08
+    def VREG_MODE   0x0A
+    def VREG_RED    0x10
+    def VREG_GREEN  0x20
+    def VREG_BLUE   0x30
 
     ; validate
     mov tmp, #4
@@ -713,37 +766,112 @@ alias r15 pc
     prhs
     mov pc, link
 
-    add sp, #8
+    add sp, #12
     stw r4, [sp, #2]
     stw r5, [sp, #4]
     stw r6, [sp, #6]
     stw r7, [sp, #8]
+    stw r8, [sp, #10]
+    stw r9, [sp, #12]
 
-    mov vinfo, #hi(.WS_VINFO)
+    lsl mode, #1
+    mov tmp, #hi(.mode_ptrs)
+    add tmp, #lo(.mode_ptrs)
+    add mode, tmp
+    ldw entry, [mode]                   ; point to data
+
+    mov vinfo, #hi(.WS_VINFO)           ; in-memory info
     add vinfo, #lo(.WS_VINFO)
 
-    mov tmp, #hi(.GFX_BASE)
-    add tmp, #lo(.GFX_BASE)
+    mov vreg, #hi(.VREG)                ; display registers
+    add vreg, #lo(.VREG)
+
+    ldb mode, [entry, #.ENTRY_MODE]
+    stb mode, [vreg, #.VREG_MODE]
+
+    ldw width, [entry, #.ENTRY_WIDTH]
+    stw width, [vinfo, #.VINFO_WIDTH]
+
+    mov tmp, #.HZOOM_MASK
+    and tmp, mode
+    lsr tmp, #.HZOOM_SHIFT
+    add tmp, #1
+    mul width, tmp                      ; convert to physical width
+
+    mov tmp, #hi(.VGA_WIDTH)            ; compute timing for left pixel
+    add tmp, #lo(.VGA_WIDTH)
+    sub tmp, width
+    asr tmp, #1
+    add tmp, #.VGA_HBACK
+
+    ror tmp, #8                         ; move hi byte to bottom 8 bits
+    stb tmp, [vreg, #.VREG_LEFT]
+    ror tmp, #8                         ; restore (move lo byte)
+    stb tmp, [vreg, #.VREG_LEFT+1]
+
+    add tmp, width                      ; timing for right pixel
+
+    ror tmp, #8                         ; move hi byte to bottom 8 bits
+    stb tmp, [vreg, #.VREG_RIGHT]
+    ror tmp, #8                         ; restore (move lo byte)
+    stb tmp, [vreg, #.VREG_RIGHT+1]
+    asr width, #1                       ; restore width
+
+    ldw height, [entry, #.ENTRY_HEIGHT]
+    stw height, [vinfo, #.VINFO_HEIGHT]
+
+    mov tmp, #.VZOOM_MASK
+    and tmp, mode
+    lsr tmp, #.VZOOM_SHIFT
+    add tmp, #1
+    mul height, tmp                     ; convert to physical lines
+
+    mov tmp, #hi(.VGA_HEIGHT)           ; compute timing for top line
+    add tmp, #lo(.VGA_HEIGHT)
+    sub tmp, height
+    asr tmp, #1
+    add tmp, #.VGA_VBACK
+
+    ror tmp, #8
+    stb tmp, [vreg, #.VREG_TOP]
+    ror tmp, #8
+    stb tmp, [vreg, #.VREG_TOP+1]
+
+    add tmp, height                     ; compute timing for bottom line
+
+    ror tmp, #8
+    stb tmp, [vreg, #.VREG_BOTTOM]
+    ror tmp, #8
+    stb tmp, [vreg, #.VREG_BOTTOM+1]
+
+    ldb xshift, [entry, #.ENTRY_XSHIFT]
+    stb xshift, [vinfo, #.VINFO_XSHIFT]
+
+    ldw tmp, [vinfo, #.VINFO_WIDTH]
+    lsr tmp, xshift
+    stw tmp, [vinfo, #.VINFO_STRIDE]
+
+    ldw height, [vinfo, #.VINFO_HEIGHT]
+    mul height, tmp                     ; height = stride*height = bytes
+    stw height, [vinfo, #.VINFO_LEN]
+
+    mov tmp, #hi(.MEM_TOP)
+    add tmp, #lo(.MEM_TOP)
+    sub tmp, height
     stw tmp, [vinfo, #.VINFO_BASE]
+    ror tmp, #8
+    stb tmp, [vreg, #.VREG_BASE]
+    ror tmp, #8
+    stb tmp, [vreg, #.VREG_BASE+1]
 
     mov tmp, #0
     stw tmp, [vinfo, #.VINFO_X]
     stw tmp, [vinfo, #.VINFO_Y]
 
-    mov xshift, #1                      ; TODO - load from mode table - 1bpp=3, 2bpp=2, 4bpp=1, 8bpp=0
-    stb xshift, [vinfo, #.VINFO_XSHIFT]
-
     mov tmp, #1
     lsl tmp, xshift
     sub tmp, #1
     stb tmp, [vinfo, #.VINFO_XMASK]
-
-    mov tmp, #200                       ; TODO - load from mode table - height
-    stw tmp, [vinfo, #.VINFO_HEIGHT]
-    mov tmp, #256                       ; TODO - load from mode table - width
-    stw tmp, [vinfo, #.VINFO_WIDTH]
-    lsr tmp, xshift
-    stw tmp, [vinfo, #.VINFO_STRIDE]
 
     mov tmp, #3                         ; log2(bits_in_a_byte)
     sub tmp, xshift
@@ -757,50 +885,29 @@ alias r15 pc
     stb tmp, [vinfo, #.VINFO_MASK]      ; all colour bits
     stb tmp, [vinfo, #.VINFO_COLOR]     ; last colour in palette
 
+    ; solid pattern
     mov tmp, #0xff00
     add tmp, #0x00ff
     stw tmp, [vinfo, #.VINFO_PATTERN]
 
-    lsl mode, #1
-    mov tmp, #hi(.mode_ptrs)
-    add tmp, #lo(.mode_ptrs)
-    add mode, tmp
+    ldb count, [entry, #.ENTRY_COLORS]  ; number of colours
+    add entry, #.ENTRY_PALETTE
 
-    ldw entry, [mode]       ; point to data
-
-.control {
-    mov vreg, #hi(.VREG)
-    add vreg, #lo(.VREG)
-    mov count, #11          ; 11 registers
+    add vreg, #.VREG_RED
 .loop
-    ldb tmp, [entry]
-    stb tmp, [vreg]
-    add entry, #1
-    add vreg, #1
-    sub count, #1
-    prne
-    bra .loop
-}
-
-.palette {
-    ldb count, [entry]        ; number of colours
-    add entry, #1
-    mov vreg, #hi(.VREG + 0x10) ; red palette
-    add vreg, #lo(.VREG + 0x10)
-.loop
-    ldb tmp, [entry]
+    ldb tmp, [entry, #.PAL_RED]
     stb tmp, [vreg]
 
-    add vreg, #0x10         ; green palette
-    ldb tmp, [entry,#1]
-    stb tmp, [vreg]         
+    add vreg, #0x10                     ; green palette
+    ldb tmp, [entry, #.PAL_GREEN]
+    stb tmp, [vreg]
 
-    add vreg, #0x10         ; blue palette
-    ldb tmp, [entry,#2]
+    add vreg, #0x10                     ; blue palette
+    ldb tmp, [entry, #.PAL_BLUE]
     stb tmp, [vreg]
 
     add entry, #3
-    sub vreg, #0x20-1       ; back to red, but next entry
+    sub vreg, #0x20-1                   ; back to red, but next entry
 
     sub count, #1
     prne
@@ -812,9 +919,41 @@ alias r15 pc
     ldw r5, [sp, #4]
     ldw r6, [sp, #6]
     ldw r7, [sp, #8]
-    sub sp, #8
+    ldw r8, [sp, #10]
+    ldw r9, [sp, #12]
+    sub sp, #12
 
     mov pc, link
+
+    def VZOOM_SHIFT 4
+    def VZOOM_1    0x00 << .VZOOM_SHIFT
+    def VZOOM_2    0x01 << .VZOOM_SHIFT
+    def VZOOM_3    0x02 << .VZOOM_SHIFT
+    def VZOOM_4    0x03 << .VZOOM_SHIFT
+    def VZOOM_MASK 0x03 << .VZOOM_SHIFT
+
+    def HZOOM_SHIFT 2
+    def HZOOM_1    0x00 << .HZOOM_SHIFT
+    def HZOOM_2    0x01 << .HZOOM_SHIFT
+    def HZOOM_3    0x02 << .HZOOM_SHIFT
+    def HZOOM_4    0x03 << .HZOOM_SHIFT
+    def HZOOM_MASK 0x03 << .HZOOM_SHIFT
+
+    def MODE_TEXT 0x00 << 0
+    def MODE_1BPP 0x01 << 0
+    def MODE_2BPP 0x02 << 0
+    def MODE_4BPP 0x03 << 0
+
+    def ENTRY_WIDTH   0
+    def ENTRY_HEIGHT  2
+    def ENTRY_XSHIFT  4
+    def ENTRY_MODE    5
+    def ENTRY_COLORS  6
+    def ENTRY_PALETTE 7
+
+    def PAL_RED   0
+    def PAL_GREEN 1
+    def PAL_BLUE  2
 
 .mode_ptrs {
     dw .mode_0
@@ -822,27 +961,13 @@ alias r15 pc
     dw .mode_2
     dw .mode_3
 
-    def VGA_WIDTH 640
+    def VGA_WIDTH  640
     def VGA_HEIGHT 480
-    def VGA_HBACK 44
-    def VGA_VBACK 31
-
-    def VZOOM_1 0<<4
-    def VZOOM_2 1<<4
-    def VZOOM_3 2<<4
-    def VZOOM_4 3<<4
-
-    def HZOOM_1 0<<2
-    def HZOOM_2 1<<2
-    def HZOOM_3 2<<2
-    def HZOOM_4 3<<2
-
-    def MODE_TEXT 0<<0
-    def MODE_1BPP 1<<0
-    def MODE_2BPP 2<<0
-    def MODE_4BPP 3<<0
+    def VGA_HBACK  44
+    def VGA_VBACK  31
 
 .mode_0
+    ; TODO
     ; text 64x40
     dw .MEM_TOP - .TEXT_COLS * .TEXT_ROWS               ; base addr
     dw (.VGA_WIDTH  - .TEXT_COLS * 8) / 2 + .VGA_HBACK  ; vp_left
@@ -857,11 +982,9 @@ alias r15 pc
 
 .mode_1
     ; 512x400, 1-bpp graphics
-    dw .MEM_TOP - 512*400/8
-    dw (.VGA_WIDTH  - 512) / 2 + .VGA_HBACK  ; vp_left
-    dw (.VGA_WIDTH  + 512) / 2 + .VGA_HBACK  ; vp_right
-    dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
-    dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
+    dw 512                  ; width
+    dw 400                  ; height
+    db 3                    ; xshift
     db .MODE_1BPP | .HZOOM_1 | .VZOOM_1
     db 2                    ; 2-colour palette
     db 0x00, 0x33, 0x00     ; 0=dark green
@@ -870,11 +993,9 @@ alias r15 pc
 
 .mode_2
     ; 256x400, 2-bpp graphics
-    dw .MEM_TOP - 256*400/8 * 2
-    dw (.VGA_WIDTH  - 256*2) / 2 + .VGA_HBACK  ; vp_left
-    dw (.VGA_WIDTH  + 256*2) / 2 + .VGA_HBACK  ; vp_right
-    dw (.VGA_HEIGHT - 400) / 2 + .VGA_VBACK  ; vp_top
-    dw (.VGA_HEIGHT + 400) / 2 + .VGA_VBACK  ; vp_bottom
+    dw 256                  ; width
+    dw 400                  ; height
+    db 2                    ; xshift
     db .MODE_2BPP | .HZOOM_2 | .VZOOM_1
     db 4                    ; 4-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
@@ -885,11 +1006,9 @@ alias r15 pc
 
 .mode_3
     ; 256x200, 4-bpp graphics
-    dw .MEM_TOP - 256*200/8 * 4
-    dw (.VGA_WIDTH  - 256*2) / 2 + .VGA_HBACK  ; vp_left
-    dw (.VGA_WIDTH  + 256*2) / 2 + .VGA_HBACK  ; vp_right
-    dw (.VGA_HEIGHT - 200*2) / 2 + .VGA_VBACK  ; vp_top
-    dw (.VGA_HEIGHT + 200*2) / 2 + .VGA_VBACK  ; vp_bottom
+    dw 256                  ; width
+    dw 200                  ; height
+    db 1                    ; xshift
     db .MODE_4BPP | .HZOOM_2 | .VZOOM_2
     db 16                   ; 16-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
@@ -909,7 +1028,6 @@ alias r15 pc
     db 0x00, 0xff, 0xff     ; 14=cyan
     db 0xff, 0xff, 0xff     ; 15=white
     align
-}
 }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
