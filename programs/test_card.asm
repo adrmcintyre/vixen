@@ -13,6 +13,7 @@ def VINFO_STRIDE    0x08    ; 2 - bytes to move 1 in y direction
 def VINFO_XSHIFT    0x0a    ; 1 - bits to shift to convert x to byte offset
 def VINFO_XMASK     0x0b    ; 1 - mask for lower bits of x for pixel index
 def VINFO_BPP       0x0c    ; 1 - bits per pixel
+def VINFO_GRAPH     0x0d    ; 1 - 0=text mode, 1=graphics mode
 ; user context
 def VINFO_X         0x10    ; 2 - current x co-ord
 def VINFO_Y         0x12    ; 2 - current y co-ord
@@ -40,8 +41,8 @@ alias r15 pc
     mov sp, #hi(.STACK_BASE)
     add sp, #lo(.STACK_BASE)
 
-   ;bl .text_test_card   ; display text test-card
-    bl .gfx_test_card2   ; display graphics test-card
+    bl .text_test_card2   ; display text test-card
+   ;bl .gfx_test_card2   ; display graphics test-card
 
     hlt
 
@@ -49,12 +50,11 @@ alias r15 pc
     stw link, [sp]
     sub sp, #2
 
-    ; set 64x40 text
+    ; set 80x60 text
     mov r0, #0
     bl .video_set_mode
+    bl .video_clear
 
-    mov r0, #0xc0
-    bl .text_clear
     bl .text_card_table
     bl .text_card_ascii
     bl .text_card_rows
@@ -64,6 +64,39 @@ alias r15 pc
     ldw pc, [sp]
 }
 
+.text_test_card2 {
+    stw link, [sp]
+    sub sp, #2
+
+    mov r0, #1
+    bl .video_set_mode
+    bl .video_clear
+
+    mov r0, #hi(.string)
+    add r0, #lo(.string)
+    bl .text_write_string
+
+    add sp, #2
+    ldw pc, [sp]
+
+.string
+    ds "Hello, world!"
+    db 0x0d, 0x0a
+    ds "very long line of text with more than sixty-four characters which should wrap to next line"
+    db 0x0d, 0x0a
+    ds "1."
+    db 0x09
+    ds "tabs work!"
+    db 0x0d, 0x0a
+    ds "2."
+    db 0x09, 0x09
+    ds "two tabs work too!"
+
+    db 0x00
+    align
+}
+
+
 .gfx_test_card1 {
     stw link, [sp]
     sub sp, #8
@@ -72,9 +105,9 @@ alias r15 pc
     stw r6, [sp,#6]
 
     ; set 256x200 4bpp
-    mov r0, #1
+    mov r0, #2
     bl .video_set_mode
-    bl .gfx_clear
+    bl .video_clear
 
     mov r0, #0
     mov r1, #0
@@ -102,9 +135,9 @@ alias r15 pc
     def CY 100
     def STEP 5
 
-    mov r0, #3
+    mov r0, #4
     bl .video_set_mode
-    bl .gfx_clear
+    bl .video_clear
 
     mov dx, #.STEP
     mov color, #0
@@ -154,15 +187,19 @@ alias r15 pc
     hlt
 }
 
-; .gfx_clear()
+; .video_clear()
 ;
 ; Clear video memory to zero.
 ;
-.gfx_clear {
+.video_clear {
     mov tmp, #hi(.WS_VINFO)
     add tmp, #lo(.WS_VINFO)
     ldw r0, [tmp, #.VINFO_BASE]
+    ldb r1, [tmp, #.VINFO_GRAPH]
+    orr r1, r1                          ; text mode?
     mov r1, #0x00                       ; TODO background colour?
+    preq
+    mov r1, #' '                        ; fill with space in text mode
     ldw r2, [tmp, #.VINFO_LEN]
     bra .memset
 }
@@ -320,7 +357,7 @@ alias r15 pc
 
     bra .gfx_line_to
 }
-    
+
 ; .gfx_line_to(r0=x, r1=y)
 .gfx_line_to {
     stw link, [sp]
@@ -764,13 +801,12 @@ alias r15 pc
 ; Set video mode 0..3
 ;
 .video_set_mode {
-    ; TODO - optimise register usage here
     alias r0 mode
-    alias r1 vinfo
-    alias r2 xshift
-    alias r3 bpp
-    alias r4 mask
-    alias r5 entry
+    alias r1 entry
+    alias r2 vinfo
+    alias r3 xshift
+    alias r4 bpp
+    alias r5 mask
     alias r6 vreg
     alias r7 count
     alias r8 width
@@ -791,12 +827,22 @@ alias r15 pc
     def VREG_GREEN  0x20
     def VREG_BLUE   0x30
 
-    ; validate
-    mov tmp, #4
-    cmp mode, tmp
-    prhs
+    ; search for mode
+    mov tmp, #hi(.mode_ptrs)
+    add tmp, #lo(.mode_ptrs)
+.mode_loop
+    ldw entry, [tmp]
+    orr entry, entry                    ; null terminator found?
+    preq
     mov pc, link
+    orr mode, mode
+    preq
+    bra .mode_found
+    sub mode, #1
+    add tmp, #2
+    bra .mode_loop
 
+.mode_found
     add sp, #12
     stw r4, [sp, #2]
     stw r5, [sp, #4]
@@ -804,12 +850,6 @@ alias r15 pc
     stw r7, [sp, #8]
     stw r8, [sp, #10]
     stw r9, [sp, #12]
-
-    lsl mode, #1
-    mov tmp, #hi(.mode_ptrs)
-    add tmp, #lo(.mode_ptrs)
-    add mode, tmp
-    ldw entry, [mode]                   ; point to data
 
     mov vinfo, #hi(.WS_VINFO)           ; in-memory info
     add vinfo, #lo(.WS_VINFO)
@@ -820,6 +860,13 @@ alias r15 pc
     ldb mode, [entry, #.ENTRY_MODE]
     stb mode, [vreg, #.VREG_MODE]
 
+    mov tmp, #.MODE_MASK
+    tst mode, tmp                       ; text mode?
+    mov tmp, #1
+    preq
+    mov tmp, #0
+    stb tmp, [vinfo, #.VINFO_GRAPH]
+
     ldw width, [entry, #.ENTRY_WIDTH]
     stw width, [vinfo, #.VINFO_WIDTH]
 
@@ -828,6 +875,10 @@ alias r15 pc
     lsr tmp, #.HZOOM_SHIFT
     add tmp, #1
     mul width, tmp                      ; convert to physical width
+    mov tmp, #.MODE_MASK
+    tst mode, tmp
+    preq
+    asl width, #3                       ; multiply by an extra 8 in text mode
 
     mov tmp, #hi(.VGA_WIDTH)            ; compute timing for left pixel
     add tmp, #lo(.VGA_WIDTH)
@@ -846,7 +897,6 @@ alias r15 pc
     stb tmp, [vreg, #.VREG_RIGHT]
     ror tmp, #8                         ; restore (move lo byte)
     stb tmp, [vreg, #.VREG_RIGHT+1]
-    asr width, #1                       ; restore width
 
     ldw height, [entry, #.ENTRY_HEIGHT]
     stw height, [vinfo, #.VINFO_HEIGHT]
@@ -856,6 +906,10 @@ alias r15 pc
     lsr tmp, #.VZOOM_SHIFT
     add tmp, #1
     mul height, tmp                     ; convert to physical lines
+    mov tmp, #.MODE_MASK
+    tst mode, tmp
+    preq
+    asl height, #3                      ; multiply by an extra 8 in text mode
 
     mov tmp, #hi(.VGA_HEIGHT)           ; compute timing for top line
     add tmp, #lo(.VGA_HEIGHT)
@@ -925,7 +979,7 @@ alias r15 pc
     add entry, #.ENTRY_PALETTE
 
     add vreg, #.VREG_RED
-.loop
+.palette_loop
     ldb tmp, [entry, #.PAL_RED]
     stb tmp, [vreg]
 
@@ -942,7 +996,7 @@ alias r15 pc
 
     sub count, #1
     prne
-    bra .loop
+    bra .palette_loop
 }
 
 .exit
@@ -974,11 +1028,12 @@ alias r15 pc
     def MODE_1BPP 0x01 << 0
     def MODE_2BPP 0x02 << 0
     def MODE_4BPP 0x03 << 0
+    def MODE_MASK 0x03 << 0
 
-    def ENTRY_WIDTH   0
-    def ENTRY_HEIGHT  2
-    def ENTRY_XSHIFT  4
-    def ENTRY_MODE    5
+    def ENTRY_MODE    0
+    def ENTRY_XSHIFT  1
+    def ENTRY_WIDTH   2
+    def ENTRY_HEIGHT  4
     def ENTRY_COLORS  6
     def ENTRY_PALETTE 7
 
@@ -987,10 +1042,17 @@ alias r15 pc
     def PAL_BLUE  2
 
 .mode_ptrs {
+    ; text modes
     dw .mode_0
     dw .mode_1
+
+    ; graphics modes
     dw .mode_2
     dw .mode_3
+    dw .mode_4
+
+    ; end of pointers
+    dw 0
 
     def VGA_WIDTH  640
     def VGA_HEIGHT 480
@@ -998,36 +1060,43 @@ alias r15 pc
     def VGA_VBACK  31
 
 .mode_0
-    ; TODO
-    ; text 64x40
-    dw .MEM_TOP - .TEXT_COLS * .TEXT_ROWS               ; base addr
-    dw (.VGA_WIDTH  - .TEXT_COLS * 8) / 2 + .VGA_HBACK  ; vp_left
-    dw (.VGA_WIDTH  + .TEXT_COLS * 8) / 2 + .VGA_HBACK  ; vp_right
-    dw (.VGA_HEIGHT - .TEXT_ROWS * 8) / 2 + .VGA_VBACK  ; vp_top
-    dw (.VGA_HEIGHT + .TEXT_ROWS * 8) / 2 + .VGA_VBACK  ; vp_bottom
     db .MODE_TEXT | .HZOOM_1 | .VZOOM_1
+    db 0                    ; must be 0
+    dw 64                   ; cols
+    dw 40                   ; rows
     db 2                    ; 2 colour palette
     db 0xff, 0xaa, 0xaa     ; 0=pink
     db 0x00, 0x00, 0xcc     ; 1=dark blue
     align
 
 .mode_1
+    ; 40x30 zoomed text
+    db .MODE_TEXT | .HZOOM_2 | .VZOOM_2
+    db 0
+    dw 40
+    dw 30
+    db 2                    ; 2 colour palette
+    db 0xff, 0xaa, 0xaa     ; 0=pink
+    db 0x00, 0x00, 0xcc     ; 1=dark blue
+    align
+
+.mode_2
     ; 512x400, 1-bpp graphics
+    db .MODE_1BPP | .HZOOM_1 | .VZOOM_1
+    db 3                    ; xshift
     dw 512                  ; width
     dw 400                  ; height
-    db 3                    ; xshift
-    db .MODE_1BPP | .HZOOM_1 | .VZOOM_1
     db 2                    ; 2-colour palette
     db 0x00, 0x33, 0x00     ; 0=dark green
     db 0x22, 0xff, 0x22     ; 1=bright green
     align
 
-.mode_2
+.mode_3
     ; 256x400, 2-bpp graphics
+    db .MODE_2BPP | .HZOOM_2 | .VZOOM_1
+    db 2                    ; xshift
     dw 256                  ; width
     dw 400                  ; height
-    db 2                    ; xshift
-    db .MODE_2BPP | .HZOOM_2 | .VZOOM_1
     db 4                    ; 4-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
     db 0xff, 0x00, 0x00     ; 1=red
@@ -1035,12 +1104,12 @@ alias r15 pc
     db 0xff, 0xff, 0xff     ; 3=white
     align
 
-.mode_3
+.mode_4
     ; 256x200, 4-bpp graphics
+    db .MODE_4BPP | .HZOOM_2 | .VZOOM_2
+    db 1                    ; xshift
     dw 256                  ; width
     dw 200                  ; height
-    db 1                    ; xshift
-    db .MODE_4BPP | .HZOOM_2 | .VZOOM_2
     db 16                   ; 16-colour palette
     db 0x00, 0x00, 0x00     ; 0=black
     db 0x7f, 0x00, 0x00     ; 1=dark-red
@@ -1059,6 +1128,275 @@ alias r15 pc
     db 0x00, 0xff, 0xff     ; 14=cyan
     db 0xff, 0xff, 0xff     ; 15=white
     align
+}
+
+; text_write_string(r0=string)
+;
+; Write a nul-delimited sequence of characters and control
+; codes to the screen.
+;
+.text_write_string {
+    alias r0 ch
+    alias r4 ptr
+
+    stw link, [sp]
+    sub sp, #4
+    stw r4, [sp, #2]
+
+    mov ptr, r0
+
+.loop
+    ldb ch, [ptr]
+    add ptr, #1
+    mov tmp, #0x20
+    cmp ch, tmp
+    prlo
+    bra .control
+    bl .text_set_char
+    bl .text_next
+    bra .loop
+
+.control
+    orr ch, ch
+    preq
+    bra .exit
+
+    mov tmp, #0x07                      ; bell character
+    cmp ch, tmp
+    prlo
+    bra .unknown
+    mov tmp, #0x0d                      ; carriage return
+    cmp ch, tmp
+    prhi
+    bra .unknown
+
+    sub ch, #0x07
+    lsl ch, #1
+    mov link, #hi(.loop)
+    add link, #lo(.loop)
+    add pc, ch
+    bra .text_bell                      ; 0x07
+    bra .text_backspace                 ; 0x08
+    bra .text_htab                      ; 0x09
+    bra .text_newline                   ; 0x0a
+    bra .text_vtab                      ; 0x0b
+    bra .text_formfeed                  ; 0x0c
+    bra .text_return                    ; 0x0d
+
+.unknown
+    bl .text_set_char
+    bl .text_next
+    bra .loop
+
+.exit
+    ldw ptr, [sp, #2]
+    add sp, #4
+    ldw pc, [sp]
+}
+
+; text_set_char(r0=char)
+;
+; Set character at cursor.
+;
+.text_set_char {
+    alias r0 ch
+    alias r1 vinfo
+    alias r2 ptr
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+
+    ldw ptr, [vinfo, #.VINFO_Y]
+    ldw tmp, [vinfo, #.VINFO_STRIDE]
+    mul ptr, tmp
+    ldw tmp, [vinfo, #.VINFO_X]
+    add ptr, tmp
+    ldw tmp, [vinfo, #.VINFO_BASE]
+    add ptr, tmp
+
+    stb ch, [ptr]
+    mov pc, link
+}
+
+; text_next()
+;
+; Move cursor to next cell, wrapping at end of line.
+;
+.text_next {
+    alias r0 vinfo
+    alias r1 pos
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+
+    ldw pos, [vinfo, #.VINFO_X]
+    ldw tmp, [vinfo, #.VINFO_WIDTH]
+    add pos, #1
+    cmp pos, tmp
+    prhs
+    bra .wrap
+    stw pos, [vinfo, #.VINFO_X]
+    mov pc, link
+
+.wrap
+    mov pos, #0
+    stw pos, [vinfo, #.VINFO_X]
+    bra .text_newline
+}
+
+; text_bell()
+;
+; Ring the bell.
+;
+.text_bell {
+    mov pc, link                        ; TODO???
+}
+
+; text_backspace()
+;
+; Move cursor left, wrapping to end of previous line if at first column.
+; Do nothing if at first column of first line.
+;
+.text_backspace {
+    alias r0 vinfo
+    alias r1 pos
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+    ldw pos, [vinfo, #.VINFO_X]
+    sub pos, #1
+    prlo                                ; start of line?
+    bra .wrap
+    stw pos, [vinfo, #.VINFO_X]
+    mov pc, link
+
+.wrap
+    ldw pos, [vinfo, #.VINFO_Y]
+    sub pos, #1
+    prlo                                ; start of screen?
+    mov pc, link
+
+    stw pos, [vinfo, #.VINFO_Y]
+
+    ldw pos, [vinfo, #.VINFO_WIDTH]
+    sub pos, #1
+    stw pos, [vinfo, #.VINFO_X]
+    mov pc, link
+}
+
+; text_htab()
+;
+; Move cursor to next tab position, wrapping to start of line and
+; issuing a newline if necessary.
+;
+.text_htab {
+    alias r0 vinfo
+    alias r1 pos
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+    ldw pos, [vinfo, #.VINFO_X]
+    add pos, #8                         ; next multiple of 8 - TODO make tab stops customisable
+    mov tmp, #7                         ;
+    bic pos, tmp
+    ldw tmp, [vinfo, #.VINFO_WIDTH]
+    cmp pos, tmp
+    prhs
+    bra .wrap
+
+    stw pos, [vinfo, #.VINFO_X]
+    mov pc, link
+
+.wrap
+    mov pos, #0
+    stw pos, [vinfo, #.VINFO_X]
+    bra .text_newline
+}
+
+; text_newline()
+;
+; Move cursor down one line, remaining in same column.
+;
+.text_newline {
+    alias r0 vinfo
+    alias r1 pos
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+
+    ldw tmp, [vinfo, #.VINFO_HEIGHT]
+    ldw pos, [vinfo, #.VINFO_Y]
+    add pos, #1
+    cmp pos, tmp
+    prhs
+    bra .wrap
+    stw pos, [vinfo, #.VINFO_Y]
+    mov pc, link
+
+.wrap
+    ; TODO - make end-of-screen behaviour customisable - scroll/wrap/clear/none
+    mov pos, #0
+    stw pos, [vinfo, #.VINFO_Y]
+    mov pc, link
+}
+
+; text_vtab()
+;
+; Move cursor up one line. Do nothing if already at first line.
+;
+.text_vtab {
+    alias r0 vinfo
+    alias r1 pos
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+    ldw pos, [vinfo, #.VINFO_Y]
+    sub pos, #1
+    prhs
+    stw pos, [vinfo, #.VINFO_Y]
+    mov pc, link
+}
+
+; text_formfeed()
+;
+; Clear screen, and move cursor to top-left home position.
+;
+.text_formfeed {
+    stw link, [sp]
+    sub sp, #2
+    bl .video_clear
+    bl .text_home
+    add sp, #2
+    ldw pc, [sp]
+}
+
+; text_return()
+;
+; Move cursor to first column.
+;
+.text_return {
+    alias r0 vinfo
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+    mov tmp, #0
+    stw tmp, [vinfo, #.VINFO_X]
+    mov pc, link
+}
+
+; text_home()
+;
+; Move cursor to top-left corner.
+;
+.text_home {
+    alias r0 vinfo
+
+    mov vinfo, #hi(.WS_VINFO)
+    add vinfo, #lo(.WS_VINFO)
+    mov tmp, #0
+    stw tmp, [vinfo, #.VINFO_X]
+    stw tmp, [vinfo, #.VINFO_Y]
+    mov pc, link
 }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1211,38 +1549,6 @@ alias r15 pc
 }
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; ROUTINE .text_clear(r0=ch)
-.text_clear {
-    alias r0 ch
-    alias r1 count
-
-    mov tmp, ch
-    lsl ch, #8
-    orr ch, tmp
-    mov tmp, #hi(.TEXT_BASE)
-    add tmp, #lo(.TEXT_BASE)
-    mov count, #hi(.TEXT_ROWS*.TEXT_COLS/16)
-    add count, #lo(.TEXT_ROWS*.TEXT_COLS/16)
-
-.loop
-    stw ch, [tmp,#0]
-    stw ch, [tmp,#2]
-    stw ch, [tmp,#4]
-    stw ch, [tmp,#6]
-    stw ch, [tmp,#8]
-    stw ch, [tmp,#10]
-    stw ch, [tmp,#12]
-    stw ch, [tmp,#14]
-    add tmp, #16
-    sub count, #1
-    prne
-    bra .loop
-
-.done
-    mov pc, link
-}
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROUTINE .text_draw(ch, x, y, dx, dy, count)
 .text_draw {
     alias r0 ch     ; as used by text_char_at
@@ -1283,33 +1589,31 @@ alias r15 pc
     alias r0 ch
     alias r1 x
     alias r2 y
-    alias r4 video
+    alias r3 addr
 
-    sub sp, #2
-    stw video, [sp,#2]
-
-    mov video, #hi(.TEXT_BASE)
-    add video, #lo(.TEXT_BASE)
+    mov addr, #hi(.WS_VINFO)
+    add addr, #lo(.WS_VINFO)
 
     ; sanity check (x,y)
-    mov tmp, #.TEXT_ROWS
+    ldw tmp, [addr, #.VINFO_HEIGHT]
     cmp y, tmp
     prhs
-    bra .done
+    mov pc, link
+
+    ldw tmp, [addr, #.VINFO_WIDTH]
     mov tmp, #.TEXT_COLS
     cmp x, tmp
     prhs
-    bra .done
+    mov pc, link
 
-    mov tmp, y
-    lsl tmp, #6
+    ldw tmp, [addr, #.VINFO_STRIDE]
+    mul tmp, y
     add tmp, x
-    add tmp, video
-    stb ch, [tmp]
 
-.done
-    ldw video, [sp,#2]
-    add sp, #2
+    ldw addr, [addr, #.VINFO_BASE]
+    add addr, tmp
+    stb ch, [addr]
+
     mov pc, link
 }
 
