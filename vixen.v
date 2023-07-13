@@ -371,8 +371,8 @@ module vixen (
                     6'b00_0110: {text, alu_sub_op, alu_c, alu_out} = {"RSC ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,flag_c}};   // rsc r_dst, r_src
                     6'b00_0111: {text, alu_sub_op, alu_c, alu_out} = {"RSB ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,1'b1}};     // rsb r_dst, r_src
 
-                    6'b00_1000: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA teq r_dst, r_src
-                    6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits) ; IDEA teq r_dst, #1<<n
+                    6'b00_1000: substate = SS_TRAP;                                                                 // unused (8 bits)
+                    6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1010: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1011: substate = SS_TRAP;                                                                 // unused (8 bits)
 
@@ -413,9 +413,9 @@ module vixen (
                             end
                         end
 
-                    6'b01_1001: {text, alu_shift_op, alu_c, alu_out} = {"LSL#", 1'b1, {1'b0,r_dst} << op_num4};           // lsl r_dst, #num4
-                    6'b01_1010: {text, alu_shift_op, alu_out, alu_c} = {"LSR#", 1'b1, {r_dst,1'b0} >> op_num4};           // lsr r_dst, #num4
-                    6'b01_1011: {text, alu_shift_op, alu_out, alu_c} = {"ASR#", 1'b1, $signed({r_dst,1'b0}) >>> op_num4}; // asr r_dst, #num4
+                    6'b01_1001: {text, alu_shift_op, alu_c, alu_out} = {"LSL#", 1'b1, {1'b0,r_dst} << op_num4};           // lsl r_dst, #num4   ; IDEA: steal num==0 - 16 encodings
+                    6'b01_1010: {text, alu_shift_op, alu_out, alu_c} = {"LSR#", 1'b1, {r_dst,1'b0} >> op_num4};           // lsr r_dst, #num4   ; IDEA: steal num==0 - 16 encodings
+                    6'b01_1011: {text, alu_shift_op, alu_out, alu_c} = {"ASR#", 1'b1, $signed({r_dst,1'b0}) >>> op_num4}; // asr r_dst, #num4   ; IDEA: steal num==0 - 16 encodings
 
                     6'b01_1100: {text, alu_logic_op, alu_out} = {"ORR#", 1'b1, r_dst |  (16'b1 << op_num4)};              // orr r_dst, #1<<num4
                     6'b01_1101: {text, alu_logic_op, alu_out} = {"EOR#", 1'b1, r_dst ^  (16'b1 << op_num4)};              // eor r_dst, #1<<num4
@@ -424,7 +424,7 @@ module vixen (
 
                     // 001n-nnnn-nnnn-rrrr
                     6'b1?_????: begin
-                        // 001n-nnnn-nnnn-rrrr                                      // add r_dst, #signed_num9 ; r_dst != r15 - IDEA, do not set flags
+                        // 001n-nnnn-nnnn-rrrr                                      // add r_dst, #signed_num9 ; r_dst != r15 - IDEA: do not set flags; IDEA steal num==0 - 16 encodings
                         if (dst != 4'b1111) begin
                             text = "ADD#";
                             alu_add_op = 1'b1;
@@ -497,8 +497,8 @@ module vixen (
                 casez (op_mov8_br)
                     // 1100-nnnn-nnnn-rrrr  ; mov r, #num8          -- IDEA signed?
                     // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8
-                    2'b00: {text, substate, alu_mov_op, alu_out} = {"MOVL", SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8
-                    2'b01: {text, substate, alu_mov_op, alu_out} = {"MOVH", SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8
+                    2'b00: {text, substate, alu_mov_op, alu_out} = {"MVL", SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8
+                    2'b01: {text, substate, alu_mov_op, alu_out} = {"MVH", SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8
 
                     // 1110-oooo-oooo-oooo
                     2'b10: begin

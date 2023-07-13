@@ -1,3 +1,16 @@
+vixen:
+    ideas for instructions:
+        NEG r_dst, r_src                - r_dst = -r_src
+        MVL r_dst, r_src                - r_dst = r_src & 0x00ff
+        LDW/STW r_dst, [r_src, #off]    - offset is doubled giving 0..62 reach, in two byte intervals
+        LDB/STB r_dst, [r_src, #off]    - offset is not doubled, giving 0..31 reach
+        MOV r_dst, r_src                - set N,Z flags
+        SWI #num8                       - software interrupt - we need a shadow link register at least
+        LSL/LSR/ASR r_dst, #0           - can be stolen
+
+    many instructions with r_dst=R15 can be stolen - gets us around 24*16 = 384 encodings
+
+
 video:
 
 clock:
