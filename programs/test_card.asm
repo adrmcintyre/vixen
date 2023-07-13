@@ -91,6 +91,20 @@ alias r15 pc
     ds "2."
     db 0x09, 0x09
     ds "two tabs work too!"
+    db 0x0d, 0x0a
+    ds "quick brown fox jumps over the lazy dog!"
+    ds "THE LAZY BROWN DOG JUMPS OVER QUICK FOX?"
+    ds "QUICK BROWN FOX JUMPS OVER THE LAZY DOG!"
+    ds "the lazy brown fox jumps over dog quick?"
+    ds "quick brown fox jumps over the lazy dog!"
+    db 0x0d, 0x0a
+    ds "1234567890  @#$% ~^&|"
+    db 0x0d, 0x0a
+    ds "[{(<=>)}] _ .,"
+    db 0x3b         ; semi-colon
+    ds ":!?"
+    db 0x22         ; double quote
+    ds "'` +-/*\"
 
     db 0x00
     align
