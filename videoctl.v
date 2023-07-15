@@ -80,9 +80,8 @@ module videoctl
     localparam CTL_TOP       = 6'h06;   // v_pos of first line, from start of vertical back porch
     localparam CTL_BOTTOM    = 6'h08;   // v_pos+1 of last line, from start of vertical back porch
     localparam CTL_MODE      = 6'h0A;   // [5:4]=vert zoom-1; [3:2]=horiz zoom-1; [1:0]=display mode 
-    localparam CTL_PAL_RED   = 6'h10;   // base of palette entries (red components)
-    localparam CTL_PAL_GREEN = 6'h20;   // (green components)
-    localparam CTL_PAL_BLUE  = 6'h30;   // (blue components)
+                                        // 0B .. 1F unused
+    localparam CTL_PALETTE   = 6'h20;   // base of palette 16 entries x 16-bits = 32 bytes
 
     localparam MODE_TEXT = 2'd0;
     localparam MODE_1BPP = 2'd1;
@@ -287,12 +286,27 @@ module videoctl
             MODE_4BPP: pixel = pixels[CHAR_RIGHT-:4];
         endcase
     end
-    wire [7:0] red   = control[CTL_PAL_RED   | {2'b0, pixel}];
-    wire [7:0] green = control[CTL_PAL_GREEN | {2'b0, pixel}];
-    wire [7:0] blue  = control[CTL_PAL_BLUE  | {2'b0, pixel}];
+
+    // Combine adjacent palette bytes to form ????:RRRR:GGGG:BBBB
+    // where the top 4 bits ???? are (currently) ignored.
+    wire [15:0] u4r4g4b4 = {
+        control[CTL_PALETTE | {1'b0, pixel, 1'b0}],
+        control[CTL_PALETTE | {1'b0, pixel, 1'b1}]
+    };
+
+    // Split into 4-bit components
+    wire [3:0] red4 = u4r4g4b4[8+:4];
+    wire [3:0] grn4 = u4r4g4b4[4+:4];
+    wire [3:0] blu4 = u4r4g4b4[0+:4];
+
+    // Expand to 8 bits by replicating top 4 bits into bottom 4 to ensure
+    // we use the full dynamic range (effectively multiplies by 255/15).
+    wire [7:0] red8 = {red4, red4};
+    wire [7:0] grn8 = {grn4, grn4};
+    wire [7:0] blu8 = {blu4, blu4};
 
     // output
-    assign rgb = (h_valid && v_valid) ? {red,green,blue} : BORDER;
+    assign rgb = (h_valid && v_valid) ? {red8, grn8, blu8} : BORDER;
 
 endmodule
 

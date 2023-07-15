@@ -41,8 +41,10 @@ alias r15 pc
     mov sp, #hi(.STACK_BASE)
     add sp, #lo(.STACK_BASE)
 
-    bl .text_test_card2   ; display text test-card
-   ;bl .gfx_test_card2   ; display graphics test-card
+   ;bl .text_test_card   ; test character rendering
+   ;bl .text_test_card2  ; test text routines
+   ;bl .gfx_test_card1   ; test diagonal line
+    bl .gfx_test_card2   ; test graphics colours
 
     hlt
 
@@ -831,15 +833,13 @@ alias r15 pc
     def VGA_HBACK  44
     def VGA_VBACK  31
 
-    def VREG_BASE   0x00
-    def VREG_LEFT   0x02
-    def VREG_RIGHT  0x04
-    def VREG_TOP    0x06
-    def VREG_BOTTOM 0x08
-    def VREG_MODE   0x0A
-    def VREG_RED    0x10
-    def VREG_GREEN  0x20
-    def VREG_BLUE   0x30
+    def VREG_BASE    0x00
+    def VREG_LEFT    0x02
+    def VREG_RIGHT   0x04
+    def VREG_TOP     0x06
+    def VREG_BOTTOM  0x08
+    def VREG_MODE    0x0A
+    def VREG_PALETTE 0x20
 
     ; search for mode
     mov tmp, #hi(.mode_ptrs)
@@ -900,17 +900,16 @@ alias r15 pc
     asr tmp, #1
     add tmp, #.VGA_HBACK
 
+    stb tmp, [vreg, #.VREG_LEFT+1]
     ror tmp, #8                         ; move hi byte to bottom 8 bits
     stb tmp, [vreg, #.VREG_LEFT]
-    ror tmp, #8                         ; restore (move lo byte)
-    stb tmp, [vreg, #.VREG_LEFT+1]
+    ror tmp, #8                         ; restore
 
     add tmp, width                      ; timing for right pixel
 
+    stb tmp, [vreg, #.VREG_RIGHT+1]
     ror tmp, #8                         ; move hi byte to bottom 8 bits
     stb tmp, [vreg, #.VREG_RIGHT]
-    ror tmp, #8                         ; restore (move lo byte)
-    stb tmp, [vreg, #.VREG_RIGHT+1]
 
     ldw height, [entry, #.ENTRY_HEIGHT]
     stw height, [vinfo, #.VINFO_HEIGHT]
@@ -931,17 +930,16 @@ alias r15 pc
     asr tmp, #1
     add tmp, #.VGA_VBACK
 
+    stb tmp, [vreg, #.VREG_TOP+1]
     ror tmp, #8
     stb tmp, [vreg, #.VREG_TOP]
-    ror tmp, #8
-    stb tmp, [vreg, #.VREG_TOP+1]
+    ror tmp, #8                         ; restore
 
     add tmp, height                     ; compute timing for bottom line
 
+    stb tmp, [vreg, #.VREG_BOTTOM+1]
     ror tmp, #8
     stb tmp, [vreg, #.VREG_BOTTOM]
-    ror tmp, #8
-    stb tmp, [vreg, #.VREG_BOTTOM+1]
 
     ldb xshift, [entry, #.ENTRY_XSHIFT]
     stb xshift, [vinfo, #.VINFO_XSHIFT]
@@ -958,10 +956,10 @@ alias r15 pc
     add tmp, #lo(.MEM_TOP)
     sub tmp, height
     stw tmp, [vinfo, #.VINFO_BASE]
+
+    stb tmp, [vreg, #.VREG_BASE+1]
     ror tmp, #8
     stb tmp, [vreg, #.VREG_BASE]
-    ror tmp, #8
-    stb tmp, [vreg, #.VREG_BASE+1]
 
     mov tmp, #0
     stw tmp, [vinfo, #.VINFO_X]
@@ -980,6 +978,7 @@ alias r15 pc
 
     mov tmp, #1
     lsl tmp, bpp
+    mov count, tmp                      ; number of colours
     sub tmp, #1
     stb tmp, [vinfo, #.VINFO_MASK]      ; all colour bits
     stb tmp, [vinfo, #.VINFO_COLOR]     ; last colour in palette
@@ -989,25 +988,15 @@ alias r15 pc
     add tmp, #0x00ff
     stw tmp, [vinfo, #.VINFO_PATTERN]
 
-    ldb count, [entry, #.ENTRY_COLORS]  ; number of colours
     add entry, #.ENTRY_PALETTE
-
-    add vreg, #.VREG_RED
+    add vreg, #.VREG_PALETTE
 .palette_loop
-    ldb tmp, [entry, #.PAL_RED]
+    ldw tmp, [entry]
+    stb tmp, [vreg, #1]
+    ror tmp, #8
     stb tmp, [vreg]
-
-    add vreg, #0x10                     ; green palette
-    ldb tmp, [entry, #.PAL_GREEN]
-    stb tmp, [vreg]
-
-    add vreg, #0x10                     ; blue palette
-    ldb tmp, [entry, #.PAL_BLUE]
-    stb tmp, [vreg]
-
-    add entry, #3
-    sub vreg, #0x20-1                   ; back to red, but next entry
-
+    add entry, #2
+    add vreg, #2
     sub count, #1
     prne
     bra .palette_loop
@@ -1051,10 +1040,6 @@ alias r15 pc
     def ENTRY_COLORS  6
     def ENTRY_PALETTE 7
 
-    def PAL_RED   0
-    def PAL_GREEN 1
-    def PAL_BLUE  2
-
 .mode_ptrs {
     ; text modes
     dw .mode_0
@@ -1075,12 +1060,12 @@ alias r15 pc
 
 .mode_0
     db .MODE_TEXT | .HZOOM_1 | .VZOOM_1
-    db 0                    ; must be 0
-    dw 64                   ; cols
-    dw 40                   ; rows
-    db 2                    ; 2 colour palette
-    db 0xff, 0xaa, 0xaa     ; 0=pink
-    db 0x00, 0x00, 0xcc     ; 1=dark blue
+    db 0        ; must be 0
+    dw 64       ; cols
+    dw 40       ; rows
+    db 2        ; 2 colour palette
+    dw 0x0faa   ; 0=pink
+    dw 0x000c   ; 1=dark blue
     align
 
 .mode_1
@@ -1089,58 +1074,58 @@ alias r15 pc
     db 0
     dw 40
     dw 30
-    db 2                    ; 2 colour palette
-    db 0xff, 0xaa, 0xaa     ; 0=pink
-    db 0x00, 0x00, 0xcc     ; 1=dark blue
+    db 2        ; 2 colour palette
+    dw 0x0faa   ; 0=pink
+    dw 0x000c   ; 1=dark blue
     align
 
 .mode_2
     ; 512x400, 1-bpp graphics
     db .MODE_1BPP | .HZOOM_1 | .VZOOM_1
-    db 3                    ; xshift
-    dw 512                  ; width
-    dw 400                  ; height
-    db 2                    ; 2-colour palette
-    db 0x00, 0x33, 0x00     ; 0=dark green
-    db 0x22, 0xff, 0x22     ; 1=bright green
+    db 3        ; xshift
+    dw 512      ; width
+    dw 400      ; height
+    db 2        ; 2-colour palette
+    dw 0x0030   ; 0=dark green
+    dw 0x02f2   ; 1=bright green
     align
 
 .mode_3
     ; 256x400, 2-bpp graphics
     db .MODE_2BPP | .HZOOM_2 | .VZOOM_1
-    db 2                    ; xshift
-    dw 256                  ; width
-    dw 400                  ; height
-    db 4                    ; 4-colour palette
-    db 0x00, 0x00, 0x00     ; 0=black
-    db 0xff, 0x00, 0x00     ; 1=red
-    db 0x00, 0xff, 0x00     ; 2=green
-    db 0xff, 0xff, 0xff     ; 3=white
+    db 2        ; xshift
+    dw 256      ; width
+    dw 400      ; height
+    db 4        ; 4-colour palette
+    dw 0x0000   ; 0=black
+    dw 0x0f00   ; 1=red
+    dw 0x00f0   ; 2=green
+    dw 0x0fff   ; 3=white
     align
 
 .mode_4
     ; 256x200, 4-bpp graphics
     db .MODE_4BPP | .HZOOM_2 | .VZOOM_2
-    db 1                    ; xshift
-    dw 256                  ; width
-    dw 200                  ; height
-    db 16                   ; 16-colour palette
-    db 0x00, 0x00, 0x00     ; 0=black
-    db 0x7f, 0x00, 0x00     ; 1=dark-red
-    db 0x00, 0x7f, 0x00     ; 2=dark-green
-    db 0x7f, 0x7f, 0x00     ; 3=dark-yellow
-    db 0x00, 0x00, 0x7f     ; 4=dark-blue
-    db 0x7f, 0x00, 0x7f     ; 5=dark-magenta
-    db 0x00, 0x7f, 0x7f     ; 6=dark-cyan
-    db 0x7f, 0x7f, 0x7f     ; 7=light-grey
-    db 0x55, 0x55, 0x55     ; 8=dark-grey
-    db 0xff, 0x00, 0x00     ; 9=red
-    db 0x00, 0xff, 0x00     ; 10=green
-    db 0xff, 0xff, 0x00     ; 11=yellow
-    db 0x00, 0x00, 0xff     ; 12=blue
-    db 0xff, 0x00, 0xff     ; 13=magenta
-    db 0x00, 0xff, 0xff     ; 14=cyan
-    db 0xff, 0xff, 0xff     ; 15=white
+    db 1        ; xshift
+    dw 256      ; width
+    dw 200      ; height
+    db 16       ; 16-colour palette
+    dw 0x0000   ; 0=black
+    dw 0x0700   ; 1=dark-red
+    dw 0x0070   ; 2=dark-green
+    dw 0x0770   ; 3=dark-yellow
+    dw 0x0007   ; 4=dark-blue
+    dw 0x0707   ; 5=dark-magenta
+    dw 0x0077   ; 6=dark-cyan
+    dw 0x0777   ; 7=light-grey
+    dw 0x0555   ; 8=dark-grey
+    dw 0x0f00   ; 9=red
+    dw 0x00f0   ; 10=green
+    dw 0x0ff0   ; 11=yellow
+    dw 0x000f   ; 12=blue
+    dw 0x0f0f   ; 13=magenta
+    dw 0x00ff   ; 14=cyan
+    dw 0x0fff   ; 15=white
     align
 }
 
