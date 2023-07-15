@@ -70,8 +70,8 @@ module top (
         .din(video_din),
         .reg_clk(clk),
         .reg_wr(video_sel & cpu_en & cpu_wr),
-        .reg_data(cpu_dout[7:0]),
-        .reg_addr(io_addr[5:0])
+        .reg_data(cpu_dout),
+        .reg_addr(io_addr[5:1])
     );
 
     // video output

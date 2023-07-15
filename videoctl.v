@@ -8,8 +8,8 @@ module videoctl
     // registers
     input         reg_clk,
     input         reg_wr,
-    input  [7:0]  reg_data,
-    input  [5:0]  reg_addr,
+    input  [15:0] reg_data,
+    input  [4:0]  reg_addr,
     // vga output
     output reg vsync,
     output reg hsync,
@@ -74,14 +74,14 @@ module videoctl
     localparam CHAR_TOP = 0;
     localparam CHAR_BOTTOM = 7;
 
-    localparam CTL_BASE      = 6'h00;   // address of first byte of video memory
-    localparam CTL_LEFT      = 6'h02;   // h_pos of first pixel, from start of horizontal back porch
-    localparam CTL_RIGHT     = 6'h04;   // h_pos+1 of last pixel, from start of horizontal back porch
-    localparam CTL_TOP       = 6'h06;   // v_pos of first line, from start of vertical back porch
-    localparam CTL_BOTTOM    = 6'h08;   // v_pos+1 of last line, from start of vertical back porch
-    localparam CTL_MODE      = 6'h0A;   // [5:4]=vert zoom-1; [3:2]=horiz zoom-1; [1:0]=display mode 
-                                        // 0B .. 1F unused
-    localparam CTL_PALETTE   = 6'h20;   // base of palette 16 entries x 16-bits = 32 bytes
+    localparam CTL_BASE    = 6'h00>>1; // address of first byte of video memory
+    localparam CTL_LEFT    = 6'h02>>1; // h_pos of first pixel, from start of horizontal back porch
+    localparam CTL_RIGHT   = 6'h04>>1; // h_pos+1 of last pixel, from start of horizontal back porch
+    localparam CTL_TOP     = 6'h06>>1; // v_pos of first line, from start of vertical back porch
+    localparam CTL_BOTTOM  = 6'h08>>1; // v_pos+1 of last line, from start of vertical back porch
+    localparam CTL_MODE    = 6'h0A>>1; // [5:4]=vert zoom-1; [3:2]=horiz zoom-1; [1:0]=display mode 
+                                       // 0B .. 1F unused
+    localparam CTL_PALETTE = 6'h20>>1; // base of palette 16 entries x 16-bits = 32 bytes
 
     localparam MODE_TEXT = 2'd0;
     localparam MODE_1BPP = 2'd1;
@@ -89,23 +89,23 @@ module videoctl
     localparam MODE_4BPP = 2'd3;
 
     // config register interface
-    reg [7:0] control[0:'h3f];
+    reg [15:0] control[0:'h1f];
     initial begin: init_control
         integer i;
-        for(i=0; i<='h3f; i=i+1) control[i] = 8'h00;
+        for(i=0; i<='h1f; i=i+1) control[i] = 16'h0000;
     end
     always @(posedge reg_clk) begin
         if (reg_wr) control[reg_addr] <= reg_data;
     end
 
-    wire [15:0] base_addr = {control[CTL_BASE  ],      control[CTL_BASE+1]};
-    wire [9:0]  vp_left   = {control[CTL_LEFT  ][1:0], control[CTL_LEFT+1]};
-    wire [9:0]  vp_right  = {control[CTL_RIGHT ][1:0], control[CTL_RIGHT+1]};
-    wire [9:0]  vp_top    = {control[CTL_TOP   ][1:0], control[CTL_TOP+1]};
-    wire [9:0]  vp_bottom = {control[CTL_BOTTOM][1:0], control[CTL_BOTTOM+1]};
-    wire [1:0]  mode      = {control[CTL_MODE  ][1:0]};
-    wire [1:0]  hzoom_max = {control[CTL_MODE  ][3:2]};
-    wire [1:0]  vzoom_max = {control[CTL_MODE  ][5:4]};
+    wire [15:0] base_addr = control[CTL_BASE  ];
+    wire [9:0]  vp_left   = control[CTL_LEFT  ][9:0];
+    wire [9:0]  vp_right  = control[CTL_RIGHT ][9:0];
+    wire [9:0]  vp_top    = control[CTL_TOP   ][9:0];
+    wire [9:0]  vp_bottom = control[CTL_BOTTOM][9:0];
+    wire [1:0]  mode      = control[CTL_MODE  ][1:0];
+    wire [1:0]  hzoom_max = control[CTL_MODE  ][3:2];
+    wire [1:0]  vzoom_max = control[CTL_MODE  ][5:4];
     wire [7:0]  hphys_max = 8'd0; // TODO?
 
     // TODO - horizontal zoom has some timing issues:
@@ -287,17 +287,13 @@ module videoctl
         endcase
     end
 
-    // Combine adjacent palette bytes to form ????:RRRR:GGGG:BBBB
-    // where the top 4 bits ???? are (currently) ignored.
-    wire [15:0] u4r4g4b4 = {
-        control[CTL_PALETTE | {1'b0, pixel, 1'b0}],
-        control[CTL_PALETTE | {1'b0, pixel, 1'b1}]
-    };
+    // Retrieve RRRR:GGGG:BBBB - the top 4 bits are (currently) ignored.
+    wire [11:0] r4g4b4 = control[CTL_PALETTE | {1'b0, pixel}];
 
     // Split into 4-bit components
-    wire [3:0] red4 = u4r4g4b4[8+:4];
-    wire [3:0] grn4 = u4r4g4b4[4+:4];
-    wire [3:0] blu4 = u4r4g4b4[0+:4];
+    wire [3:0] red4 = r4g4b4[8+:4];
+    wire [3:0] grn4 = r4g4b4[4+:4];
+    wire [3:0] blu4 = r4g4b4[0+:4];
 
     // Expand to 8 bits by replicating top 4 bits into bottom 4 to ensure
     // we use the full dynamic range (effectively multiplies by 255/15).

@@ -872,7 +872,7 @@ alias r15 pc
     add vreg, #lo(.VREG)
 
     ldb mode, [entry, #.ENTRY_MODE]
-    stb mode, [vreg, #.VREG_MODE]
+    stw mode, [vreg, #.VREG_MODE]
 
     mov tmp, #.MODE_MASK
     tst mode, tmp                       ; text mode?
@@ -900,16 +900,9 @@ alias r15 pc
     asr tmp, #1
     add tmp, #.VGA_HBACK
 
-    stb tmp, [vreg, #.VREG_LEFT+1]
-    ror tmp, #8                         ; move hi byte to bottom 8 bits
-    stb tmp, [vreg, #.VREG_LEFT]
-    ror tmp, #8                         ; restore
-
+    stw tmp, [vreg, #.VREG_LEFT]
     add tmp, width                      ; timing for right pixel
-
-    stb tmp, [vreg, #.VREG_RIGHT+1]
-    ror tmp, #8                         ; move hi byte to bottom 8 bits
-    stb tmp, [vreg, #.VREG_RIGHT]
+    stw tmp, [vreg, #.VREG_RIGHT]
 
     ldw height, [entry, #.ENTRY_HEIGHT]
     stw height, [vinfo, #.VINFO_HEIGHT]
@@ -930,16 +923,9 @@ alias r15 pc
     asr tmp, #1
     add tmp, #.VGA_VBACK
 
-    stb tmp, [vreg, #.VREG_TOP+1]
-    ror tmp, #8
-    stb tmp, [vreg, #.VREG_TOP]
-    ror tmp, #8                         ; restore
-
+    stw tmp, [vreg, #.VREG_TOP]
     add tmp, height                     ; compute timing for bottom line
-
-    stb tmp, [vreg, #.VREG_BOTTOM+1]
-    ror tmp, #8
-    stb tmp, [vreg, #.VREG_BOTTOM]
+    stw tmp, [vreg, #.VREG_BOTTOM]
 
     ldb xshift, [entry, #.ENTRY_XSHIFT]
     stb xshift, [vinfo, #.VINFO_XSHIFT]
@@ -956,10 +942,7 @@ alias r15 pc
     add tmp, #lo(.MEM_TOP)
     sub tmp, height
     stw tmp, [vinfo, #.VINFO_BASE]
-
-    stb tmp, [vreg, #.VREG_BASE+1]
-    ror tmp, #8
-    stb tmp, [vreg, #.VREG_BASE]
+    stw tmp, [vreg, #.VREG_BASE]
 
     mov tmp, #0
     stw tmp, [vinfo, #.VINFO_X]
@@ -992,9 +975,7 @@ alias r15 pc
     add vreg, #.VREG_PALETTE
 .palette_loop
     ldw tmp, [entry]
-    stb tmp, [vreg, #1]
-    ror tmp, #8
-    stb tmp, [vreg]
+    stw tmp, [vreg]
     add entry, #2
     add vreg, #2
     sub count, #1
