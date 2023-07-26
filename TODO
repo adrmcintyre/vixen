@@ -12,6 +12,14 @@ vixen:
 
 
 video:
+    sprites
+        1 - implement BRAM based line-buffer for video output
+        2 - use a double buffer line-buffer
+        3 - alpha blend a square of fixed colour and location into line buffer
+        4 - alpha blend a square with programmable colour and location
+        5 - alpha blend a pixel array (i.e. sprite) as above
+        6 - alpha blend sprite with palette lookup
+        7 - ditto for multiple sprites
 
 clock:
     Right now we're running everything off the ECP5's external 25MHz clock.

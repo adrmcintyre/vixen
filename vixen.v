@@ -497,8 +497,8 @@ module vixen (
                 casez (op_mov8_br)
                     // 1100-nnnn-nnnn-rrrr  ; mov r, #num8          -- IDEA signed?
                     // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8
-                    2'b00: {text, substate, alu_mov_op, alu_out} = {"MVL", SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8
-                    2'b01: {text, substate, alu_mov_op, alu_out} = {"MVH", SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8
+                    2'b00: {text, substate, alu_mov_op, alu_out} = {"MVL ", SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8
+                    2'b01: {text, substate, alu_mov_op, alu_out} = {"MVH ", SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8
 
                     // 1110-oooo-oooo-oooo
                     2'b10: begin
