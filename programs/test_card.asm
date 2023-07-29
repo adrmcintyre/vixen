@@ -41,10 +41,10 @@ alias r15 pc
     mov sp, #hi(.STACK_BASE)
     add sp, #lo(.STACK_BASE)
 
-   ;bl .text_test_card   ; test character rendering
+    bl .text_test_card   ; test character rendering
    ;bl .text_test_card2  ; test text routines
    ;bl .gfx_test_card1   ; test diagonal line
-    bl .gfx_test_card2   ; test graphics colours
+   ;bl .gfx_test_card2   ; test graphics colours
 
     hlt
 

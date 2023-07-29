@@ -114,7 +114,6 @@ module videoctl
     //      zoom=2 2 pixels to left
     //      zoom=3 4 pixels to left
     //      zoom=4 6 pixels to left
-    // TODO - test cards for 2-bpp and 4-bpp
 
     reg [2:0] mode_pre1, mode_pre2;
     reg [2:0] mode_bpp;
@@ -172,6 +171,7 @@ module videoctl
     reg h_valid_in_1 = 0;
     reg h_valid = 0;
     reg v_valid = 0;
+    reg [9:0] vp_hpos = 0;
 
     always @(posedge clk_pixel) begin
         h_valid <= h_valid_in_1;
@@ -179,9 +179,13 @@ module videoctl
 
         if (h_pos == vp_left) begin
             h_valid_in_2 <= 1;
+            vp_hpos <= 0;
         end
         else if (h_pos == vp_right) begin
             h_valid_in_2 <= 0;
+        end
+        else begin
+            vp_hpos <= vp_hpos + 1;
         end
 
         if (v_pos == vp_top) begin
@@ -289,9 +293,52 @@ module videoctl
     end
 
     // Retrieve RRRR:GGGG:BBBB - the top 4 bits are (currently) ignored.
-    wire [15:0] argb4444 = control[CTL_PALETTE[4:0] | {1'b0, pixel}];
+    wire [15:0] fixed_argb4444 = control[CTL_PALETTE[4:0] | {1'b0, pixel}];
+
+    reg [15:0] sprite_argb4444 = 0;
+
+    // double buffer
+    reg [15:0] sprite_buf[0:H_VISIBLE*2-1];
+    reg buf_bit = 1'b0;
+
+    always @(posedge clk_pixel) begin
+        if (h_pos >= 0 && h_pos < 32) begin
+            if (v_pos >= 31 + 170 & v_pos < 31 + 170 + 32) begin
+                sprite_buf[{h_pos-10'd0 + 10'd300, buf_bit}] <= (h_pos==0||h_pos==31||v_pos==31+170||v_pos==31+170+31) ? 16'hff00 : 16'hfaaa;
+            end
+        end
+        else if (h_pos >= 32 && h_pos < 64) begin
+            if (v_pos >= 31 + 180 & v_pos < 31 + 180 + 32) begin
+                // TODO - if partially transparent pixels are to be alpha-blended, this may
+                // require triple buffering:
+                //
+                //      buffer 1 receives pixels from fixed layer
+                //      buffer 2 receives composited sprite pixels
+                //      buffer 3 feeds video out
+                //
+                // Perhaps this is overkill! - looking at 3840 bytes of buffer vs 2560
+                //
+                //sprite_buf[{h_pos-10'd32 + 10'd310, buf_bit}] <= (h_pos-32==0||h_pos-32==31||v_pos==31+180||v_pos==31+180+31) ? 16'hf0f0 : 16'h0fff;
+                if (h_pos-32==0||h_pos-32==31||v_pos==31+180||v_pos==31+180+31) begin
+                    sprite_buf[{h_pos-10'd32 + 10'd310, buf_bit}] <= 16'hf0f0;
+                end
+            end
+        end
+        else if (h_pos >= 64 && h_pos < 96) begin
+            if (v_pos >= 31 + 190 & v_pos < 31 + 190 + 32) begin
+                sprite_buf[{h_pos-10'd64 + 10'd320, buf_bit}] <= (h_pos-64==0||h_pos-64==31||v_pos==31+190||v_pos==31+190+31) ? 16'hf00f : 16'hf444;
+            end
+        end
+        if (h_pos == H_TOTAL-1) begin
+            buf_bit <= ~buf_bit;
+        end
+
+        sprite_argb4444 <= sprite_buf[{h_pos, ~buf_bit}];
+        sprite_buf[{h_pos, ~buf_bit}] <= 16'h0fff;  // transparent white
+    end
 
     // Split into 4-bit components
+    wire [15:0] argb4444 = sprite_argb4444[15] ? sprite_argb4444 : fixed_argb4444;
     wire [3:0] red4 = argb4444[8+:4];
     wire [3:0] grn4 = argb4444[4+:4];
     wire [3:0] blu4 = argb4444[0+:4];
