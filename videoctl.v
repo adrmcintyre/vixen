@@ -9,16 +9,16 @@ module videoctl
     input         reg_clk,
     input         reg_wr,
     input  [15:0] reg_data,
-    input  [4:0]  reg_addr,
+    input  [6:0]  reg_addr,
     // vga output
     output reg vsync,
     output reg hsync,
     output reg blank,
     output     [23:0] rgb,
     // memory access
-    output reg [15:0] addr,
-    output        rd,
-    input  [7:0]  din
+    output [15:0] mem_addr,
+    output        mem_rd,
+    input  [7:0]  mem_din
 );
 
     // Horizontal timings
@@ -37,7 +37,7 @@ module videoctl
     //                           v_total
     // :--------------------------------------------------------->:
     //
-    //   v_back                 v_visible              v_back v_sync
+    //   v_back                 v_visible              v_front v_sync
     // :---------->:------------------------------------>:--->:-->:
     // ________________________________________________________
     //                                                         |___  vsync
@@ -57,9 +57,12 @@ module videoctl
     localparam V_FRONT = 10'd10;
     localparam V_SYNC = 10'd2;
 
-    localparam H_TOTAL = H_BACK + H_VISIBLE + H_FRONT + H_SYNC;
-    localparam V_TOTAL = V_BACK + V_VISIBLE + V_FRONT + V_SYNC;
+    localparam H_SYNC_START = H_BACK + H_VISIBLE + H_FRONT;
+    localparam V_SYNC_START = V_BACK + V_VISIBLE + V_FRONT;
+    localparam H_TOTAL = H_SYNC_START + H_SYNC;
+    localparam V_TOTAL = V_SYNC_START + V_SYNC;
 
+    // TODO make this a control param
     localparam [23:0] RGB_CANARY = 24'hffffaa;
     localparam [23:0] BORDER     = RGB_CANARY;
 
@@ -74,40 +77,81 @@ module videoctl
     localparam CHAR_TOP = 0;
     localparam CHAR_BOTTOM = 7;
 
-    localparam CTL_BASE    = 6'h00>>1; // address of first byte of video memory
-    localparam CTL_LEFT    = 6'h02>>1; // h_pos of first pixel, from start of horizontal back porch
-    localparam CTL_RIGHT   = 6'h04>>1; // h_pos+1 of last pixel, from start of horizontal back porch
-    localparam CTL_TOP     = 6'h06>>1; // v_pos of first line, from start of vertical back porch
-    localparam CTL_BOTTOM  = 6'h08>>1; // v_pos+1 of last line, from start of vertical back porch
-    localparam CTL_MODE    = 6'h0A>>1; // [5:4]=vert zoom-1; [3:2]=horiz zoom-1; [1:0]=display mode 
-                                       // 0B .. 1F unused
-    localparam CTL_PALETTE = 6'h20>>1; // base of palette: 16-bits * 16 entries = 256 bits
+    // external addresses of registers
+    localparam ADDR_CTL         = 8'h00>>1;
+    localparam ADDR_PALETTE     = 8'h20>>1;
+    localparam ADDR_SPRITE_POS  = 8'h40>>1;
+    localparam ADDR_SPRITE_LOOK = 8'h80>>1;
+
+    // control registers
+    localparam CTL_BASE   = 4'h0; // address of first byte of video memory
+    localparam CTL_LEFT   = 4'h1; // h_pos of first pixel, from start of horizontal back porch
+    localparam CTL_RIGHT  = 4'h2; // h_pos+1 of last pixel, from start of horizontal back porch
+    localparam CTL_TOP    = 4'h3; // v_pos of first line, from start of vertical back porch
+    localparam CTL_BOTTOM = 4'h4; // v_pos+1 of last line, from start of vertical back porch
+    localparam CTL_MODE   = 4'h5; // [5:4]=vert zoom-1; [3:2]=horiz zoom-1; [1:0]=display mode 
+    localparam CTL_MAX    = 4'hf;
 
     localparam MODE_TEXT = 2'd0;
     localparam MODE_1BPP = 2'd1;
     localparam MODE_2BPP = 2'd2;
     localparam MODE_4BPP = 2'd3;
 
-    // config register interface
-    // 16-bits * 32 = 512 bits
-    reg [15:0] control[0:'h1f];
+    reg [15:0] reg_control[0:CTL_MAX];
+
+    wire [15:0] base_addr = reg_control[CTL_BASE] [15:0];
+    wire [9:0]  vp_left   = reg_control[CTL_LEFT]  [9:0];
+    wire [9:0]  vp_right  = reg_control[CTL_RIGHT] [9:0];
+    wire [9:0]  vp_top    = reg_control[CTL_TOP]   [9:0];
+    wire [9:0]  vp_bottom = reg_control[CTL_BOTTOM][9:0];
+    wire [1:0]  mode      = reg_control[CTL_MODE]  [1:0];
+    wire [1:0]  hzoom_max = reg_control[CTL_MODE]  [3:2];
+    wire [1:0]  vzoom_max = reg_control[CTL_MODE]  [5:4];
+    wire [7:0]  hphys_max = 8'd0; // TODO?
+
+    // palette registers
+    localparam PALETTE     = 4'h0; // palette: 16-bits * 16 entries = 256 bits
+    localparam PALETTE_MAX = 4'hf;
+
+    reg [15:0] reg_palette[0:PALETTE_MAX];
+
+    // sprite registers
+    // positions:
+    // +00:              [10]=xflip; [9:0]=xpos
+    // +02: [15]=enable; [10]=yflip; [9:0]=ypos
+    localparam SPRITE_POS_MAX = 5'h1f;
+
+    reg [15:0] reg_sprite_pos[0:SPRITE_POS_MAX];
+
+    // looks:
+    // +00=bitmap address
+    // +02=color 1
+    // +04=color 2
+    // +06=color 3
+    localparam SPRITE_LOOK_MAX = 6'h3f;
+
+    reg [15:0] reg_sprite_look[0:SPRITE_LOOK_MAX];
+
+    // all control registers start at zero
     initial begin: init_control
         integer i;
-        for(i=0; i<='h1f; i=i+1) control[i] = 16'h0000;
-    end
-    always @(posedge reg_clk) begin
-        if (reg_wr) control[reg_addr] <= reg_data;
+        for(i=0; i<=CTL_MAX; i=i+1) reg_control[i] = 16'h0000;
+        for(i=0; i<=PALETTE_MAX; i=i+1) reg_palette[i] = 16'h0000;
+        for(i=0; i<=SPRITE_POS_MAX; i=i+1) reg_sprite_pos[i] = 16'h0000;
+        for(i=0; i<=SPRITE_LOOK_MAX; i=i+1) reg_sprite_look[i] = 16'h0000;
     end
 
-    wire [15:0] base_addr = control[CTL_BASE[4:0]  ];
-    wire [9:0]  vp_left   = control[CTL_LEFT[4:0]  ][9:0];
-    wire [9:0]  vp_right  = control[CTL_RIGHT[4:0] ][9:0];
-    wire [9:0]  vp_top    = control[CTL_TOP[4:0]   ][9:0];
-    wire [9:0]  vp_bottom = control[CTL_BOTTOM[4:0]][9:0];
-    wire [1:0]  mode      = control[CTL_MODE[4:0]  ][1:0];
-    wire [1:0]  hzoom_max = control[CTL_MODE[4:0]  ][3:2];
-    wire [1:0]  vzoom_max = control[CTL_MODE[4:0]  ][5:4];
-    wire [7:0]  hphys_max = 8'd0; // TODO?
+    // control registers: external write port
+    always @(posedge reg_clk) begin
+        if (reg_wr) begin
+            casez(reg_addr)
+            7'b000_????: reg_control[reg_addr[3:0]] <= reg_data;
+            7'b001_????: reg_palette[reg_addr[3:0]] <= reg_data;
+            7'b01?_????: reg_sprite_pos[reg_addr[4:0]] <= reg_data;
+            7'b1??_????: reg_sprite_look[reg_addr[5:0]] <= reg_data;
+            endcase
+        end
+    end
 
     // TODO - horizontal zoom has some timing issues:
     //      zoom=1 okay
@@ -196,10 +240,11 @@ module videoctl
         end
     end
 
-    // maintain offsets within char, and init addr at start of each line
-    reg [15:0] addr_left;   // address of left most char of line
-    reg [2:0] char_y = 0;   // y-offset within char
-    reg [2:0] char_x = 0;   // x-offset within char
+    // maintain offsets within char, and init char_addr at start of each line
+    reg [15:0] char_addr = 0;
+    reg [15:0] char_addr_left;  // address of left most char of line
+    reg [2:0] char_y = 0;       // y-offset within char
+    reg [2:0] char_x = 0;       // x-offset within char
 
     reg [7:0] hphys_cnt = 0; // physical pixel counter
     reg [1:0] vzoom_cnt = 0; // vertical zoom countdown
@@ -209,24 +254,24 @@ module videoctl
         if (v_valid) begin
             if (h_pos == vp_left) begin
                 if (v_pos == vp_top) begin
-                    addr <= base_addr;
-                    addr_left <= base_addr;
+                    char_addr <= base_addr;
+                    char_addr_left <= base_addr;
                     char_y <= 0;
                     vzoom_cnt <= vzoom_max;
                 end
                 else begin
                     if (vzoom_cnt != 0) begin
-                        addr <= addr_left;
+                        char_addr <= char_addr_left;
                         vzoom_cnt <= vzoom_cnt - 1;
                     end
                     else begin
                         vzoom_cnt <= vzoom_max;
                         if (!mode_text || {1'b0,char_y} == CHAR_BOTTOM) begin
                             char_y <= 0;
-                            addr_left <= addr;
+                            char_addr_left <= char_addr;
                         end
                         else begin
-                            addr <= addr_left;
+                            char_addr <= char_addr_left;
                             char_y <= char_y + 1;
                         end
                     end
@@ -250,7 +295,7 @@ module videoctl
                     // the issue is perhaps that char_x is counting logical rather than physical pixels
                     hzoom_cnt <= hzoom_max;
                     if (char_x == mode_pre2) begin
-                        addr <= addr+1;
+                        char_addr <= char_addr+1;
                     end
                     if (char_x == mode_pre1) begin
                         char_x <= 0;
@@ -263,85 +308,161 @@ module videoctl
         end
     end
 
+    wire char_rd = h_valid_in_2 && v_valid && (char_x == mode_pre1);
+
     // memory read
-    assign rd = h_valid_in_2 && v_valid && (char_x == mode_pre1);
-    wire [7:0] data = din;
+    assign mem_addr = sprite_rd ? sprite_addr : char_addr;
+    assign mem_rd = char_rd | sprite_rd;
+
+    wire [7:0] char_din = mem_din;
 
     // pixel shift-register
-    reg [CHAR_WIDTH-1:0] pixels = {CHAR_WIDTH{1'b0}};
+    reg [CHAR_WIDTH-1:0] char_pixels = {CHAR_WIDTH{1'b0}};
 
     always @(posedge clk_pixel) begin
         if (hzoom_cnt == 0) begin
             if (char_x == 0) begin
-                pixels <= mode_text ? font_rom[{data,char_y}] : data;
+                char_pixels <= mode_text ? font_rom[{char_din,char_y}] : char_din;
             end
             else begin
-                pixels <= pixels << mode_bpp;
+                char_pixels <= char_pixels << mode_bpp;
             end
         end
     end
 
     // palette lookup
-    reg [3:0] pixel;
+    reg [3:0] char_pixel;
     always @* begin
         case (mode)
             MODE_TEXT,
-            MODE_1BPP: pixel = {3'b0, pixels[CHAR_RIGHT]};
-            MODE_2BPP: pixel = {2'b0, pixels[CHAR_RIGHT-:2]};
-            MODE_4BPP: pixel = pixels[CHAR_RIGHT-:4];
+            MODE_1BPP: char_pixel = {3'b0, char_pixels[CHAR_RIGHT]};
+            MODE_2BPP: char_pixel = {2'b0, char_pixels[CHAR_RIGHT-:2]};
+            MODE_4BPP: char_pixel = char_pixels[CHAR_RIGHT-:4];
         endcase
     end
 
     // Retrieve RRRR:GGGG:BBBB - the top 4 bits are (currently) ignored.
-    wire [15:0] fixed_argb4444 = control[CTL_PALETTE[4:0] | {1'b0, pixel}];
+    wire [11:0] char_rgb444 = reg_palette[char_pixel][11:0];
 
-    reg [15:0] sprite_argb4444 = 0;
 
-    // double buffer
-    reg [15:0] sprite_buf[0:H_VISIBLE*2-1];
-    reg buf_bit = 1'b0;
+    //-------------------------------------------------------------------------
+    // SPRITE COMPOSITION STARTS HERE
+    //-------------------------------------------------------------------------
 
+    localparam
+        SPRITE_WIDTH  = 16,
+        SPRITE_HEIGHT = 16;
+
+
+    reg [3:0] sprite_index;
+    reg [1:0] sprite_byte;
+    reg [3:0] sprite_dx;
+
+    reg [15:0] sprite_addr;
+    reg        sprite_rd = 1'b0;
+    reg [511:0] sprite_fifo;
+
+    wire [15:0] sprite_base = reg_sprite_look[{sprite_index,2'd0}];
+    wire [15:0] sprite_pos_x = reg_sprite_pos[{sprite_index,1'd0}];
+    wire [15:0] sprite_pos_y = reg_sprite_pos[{sprite_index,1'd1}];
+
+    wire [9:0]  sprite_x      = sprite_pos_x[9:0];
+    wire        sprite_flip_x = sprite_pos_x[10];
+    wire [3:0]  sprite_xor_x  = {4{sprite_flip_x}};
+    wire [9:0]  compose_x = sprite_x + {6'b0,sprite_dx^sprite_xor_x};
+
+    wire [9:0] sprite_y      = sprite_pos_y[9:0];
+    wire       sprite_flip_y = sprite_pos_y[10];
+    wire       sprite_enable = sprite_pos_y[15];
+    wire [3:0] sprite_xor_y  = {4{sprite_flip_y}};
+
+    wire [9:0] sprite_dy10 = v_pos - sprite_y;
+    wire [3:0] sprite_dy   = sprite_dy10[3:0] ^ sprite_xor_y;
+    wire       sprite_visible = sprite_dy10[9:4] == 6'd0;   // i.e. sprite_dy is in range [0..15]
+
+    wire [7:0] sprite_din = {mem_din[1:0], mem_din[3:2], mem_din[5:4], mem_din[7:6]};
+    wire [7:0] sprite_fifo_in = (sprite_enable && sprite_visible) ? sprite_din : {4{2'b00}};
+    wire [1:0] sprite_fifo_out = sprite_fifo[1:0];
+
+    localparam [2:0] SPRITE_IDLE  = 3'd0;
+    localparam [2:0] SPRITE_FETCH = 3'd1;
+    localparam [2:0] SPRITE_WAIT  = 3'd2;
+    localparam [2:0] SPRITE_READ  = 3'd3;
+    localparam [2:0] SPRITE_WRITE = 3'd4;
+
+    reg [2:0] sprite_state = SPRITE_IDLE;
+
+    // TODO - pipeline FETCH/WAIT/READ to get 1 read per cycle
+    // currently we need 192 cycles to refresh sprite_fifo,
+    // but we really only have H_SYNC+H_BACK=140 - we're saved
+    // for now by only using a 512 pixel screen width.
     always @(posedge clk_pixel) begin
-        if (h_pos >= 0 && h_pos < 32) begin
-            if (v_pos >= 31 + 170 & v_pos < 31 + 170 + 32) begin
-                sprite_buf[{h_pos-10'd0 + 10'd300, buf_bit}] <= (h_pos==0||h_pos==31||v_pos==31+170||v_pos==31+170+31) ? 16'hff00 : 16'hfaaa;
+        case (sprite_state)
+        SPRITE_IDLE: begin
+            if (v_valid && h_pos == H_SYNC_START) begin
+                sprite_index <= 4'd0;
+                sprite_byte <= 2'd0;
+                sprite_dx <= 4'd0;
+                sprite_rd <= 1'b0;
+                sprite_state <= SPRITE_FETCH;
+                compose_swap <= ~compose_swap;
             end
-        end
-        else if (h_pos >= 32 && h_pos < 64) begin
-            if (v_pos >= 31 + 180 & v_pos < 31 + 180 + 32) begin
-                // TODO - if partially transparent pixels are to be alpha-blended, this may
-                // require triple buffering:
-                //
-                //      buffer 1 receives pixels from fixed layer
-                //      buffer 2 receives composited sprite pixels
-                //      buffer 3 feeds video out
-                //
-                // Perhaps this is overkill! - looking at 3840 bytes of buffer vs 2560
-                //
-                //sprite_buf[{h_pos-10'd32 + 10'd310, buf_bit}] <= (h_pos-32==0||h_pos-32==31||v_pos==31+180||v_pos==31+180+31) ? 16'hf0f0 : 16'h0fff;
-                if (h_pos-32==0||h_pos-32==31||v_pos==31+180||v_pos==31+180+31) begin
-                    sprite_buf[{h_pos-10'd32 + 10'd310, buf_bit}] <= 16'hf0f0;
-                end
-            end
-        end
-        else if (h_pos >= 64 && h_pos < 96) begin
-            if (v_pos >= 31 + 190 & v_pos < 31 + 190 + 32) begin
-                sprite_buf[{h_pos-10'd64 + 10'd320, buf_bit}] <= (h_pos-64==0||h_pos-64==31||v_pos==31+190||v_pos==31+190+31) ? 16'hf00f : 16'hf444;
-            end
-        end
-        if (h_pos == H_TOTAL-1) begin
-            buf_bit <= ~buf_bit;
         end
 
-        sprite_argb4444 <= sprite_buf[{h_pos, ~buf_bit}];
-        sprite_buf[{h_pos, ~buf_bit}] <= 16'h0fff;  // transparent white
+        SPRITE_FETCH: begin
+            sprite_rd <= 1'b1;
+            sprite_addr <= sprite_base + {10'b0,sprite_dy,sprite_byte};
+            sprite_state <= SPRITE_WAIT;
+        end
+
+        SPRITE_WAIT: begin
+            sprite_state <= SPRITE_READ;
+        end
+
+        SPRITE_READ: begin
+            sprite_rd <= 1'b0;
+            sprite_fifo <= {sprite_fifo_in, sprite_fifo[511:8]};
+            sprite_state <= ({sprite_index,sprite_byte} == {4'd15,2'd3}) ? SPRITE_WRITE : SPRITE_FETCH;
+            {sprite_index,sprite_byte} <= {sprite_index,sprite_byte} + 6'd1;
+        end
+
+        SPRITE_WRITE: begin
+            if (sprite_fifo_out != 2'b00) begin
+                compose_buf[{compose_x,~compose_swap}] <= {sprite_index,sprite_fifo_out};
+            end
+            sprite_fifo <= {2'b00,sprite_fifo[511:2]};
+            {sprite_index,sprite_dx} <= {sprite_index,sprite_dx} + 8'd1;
+            if ({sprite_index,sprite_dx} == {4'd15,4'd15}) begin
+                sprite_state <= SPRITE_IDLE;
+            end
+        end
+
+        default: begin
+            sprite_state <= SPRITE_IDLE;
+        end
+        endcase
     end
 
+    // double buffer [5:2]=index [1:0]=color
+    reg [5:0] compose_buf[0:H_VISIBLE*2-1];
+
+    reg compose_swap = 1'b0;
+
+    reg [3:0] compose_sprite = 0;
+    reg [1:0] compose_color = 0;
+    always @(posedge clk_pixel) begin
+        // this is read-before-write
+        {compose_sprite,compose_color} <= compose_buf[{h_pos, ~compose_swap}];
+        compose_buf[{h_pos, ~compose_swap}] <= {4'd0, 2'b00}; // set transparent color
+    end
+
+    wire [11:0] sprite_rgb444 = reg_sprite_look[{compose_sprite,compose_color}][11:0];
+
     // Split into 4-bit components
-    wire [15:0] argb4444 = sprite_argb4444[15] ? sprite_argb4444 : fixed_argb4444;
-    wire [3:0] red4 = argb4444[8+:4];
-    wire [3:0] grn4 = argb4444[4+:4];
-    wire [3:0] blu4 = argb4444[0+:4];
+    wire [11:0] rgb444 = (compose_color == 0) ? char_rgb444 : sprite_rgb444;
+    wire [3:0] red4 = rgb444[8+:4];
+    wire [3:0] grn4 = rgb444[4+:4];
+    wire [3:0] blu4 = rgb444[0+:4];
 
     // Expand to 8 bits by replicating top 4 bits into bottom 4 to ensure
     // we use the full dynamic range (effectively multiplies by 255/15).

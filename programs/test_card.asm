@@ -36,10 +36,49 @@ alias r13 sp
 alias r14 link
 alias r15 pc
 
+    ; sprite data
+    org 0x3000
+    db 0xff, 0xff, 0xff, 0xff
+    db 0xff, 0xff, 0xff, 0xff
+    db 0xf0, 0x00, 0x00, 0x0f
+    db 0xf0, 0x00, 0x00, 0x0f
+    db 0xf0, 0xaa, 0x00, 0x0f
+    db 0xf0, 0xaa, 0x00, 0x0f
+    db 0xf0, 0xaa, 0x00, 0x0f
+    db 0xf0, 0xaa, 0x00, 0x0f
+    db 0xf0, 0x00, 0x55, 0x0f
+    db 0xf0, 0x00, 0x55, 0x0f
+    db 0xf0, 0x00, 0x55, 0x0f
+    db 0xf0, 0x00, 0x55, 0x0f
+    db 0xf0, 0x00, 0x00, 0x0f
+    db 0xf0, 0x00, 0x00, 0x0f
+    db 0xff, 0xff, 0xff, 0xff
+    db 0xff, 0xff, 0xff, 0xff
+
+    org 0x3400
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+    dw 0xaaaa, 0xaaaa
+
     org 0x0000
 .init
     mov sp, #hi(.STACK_BASE)
     add sp, #lo(.STACK_BASE)
+
+    bl .sprite_test
 
     bl .text_test_card   ; test character rendering
    ;bl .text_test_card2  ; test text routines
@@ -47,6 +86,68 @@ alias r15 pc
    ;bl .gfx_test_card2   ; test graphics colours
 
     hlt
+
+.sprite_test {
+    mov r0, #hi(0xfc40) ; point to sprite pos #0
+    add r0, #lo(0xfc40)
+
+    mov r1, #hi(44+320)    ; xpos
+    add r1, #lo(44+320)
+    stw r1, [r0,#0]
+    mov r1, #hi(31+240)    ; ypos
+    add r1, #lo(31+240)
+    orr r1, #bit 15        ; enable
+    stw r1, [r0,#2]
+    add r0, #4
+
+    mov r1, #hi(44+320+24)    ; xpos
+    add r1, #lo(44+320+24)
+    stw r1, [r0,#0]
+    mov r1, #hi(31+240+8)    ; ypos
+    add r1, #lo(31+240+8)
+    orr r1, #bit 15        ; enable
+    stw r1, [r0,#2]
+    add r0, #4
+
+    ; disable sprites #2-15
+    mov r1, #0
+    mov r2, #14
+.lp1
+    stw r1, [r0,#0]
+    stw r1, [r0,#2]
+    add r0, #4
+    sub r2, #1
+    prne
+    bra .lp1
+
+    ; r0 will now be pointing at sprite look #0
+    
+    ; set address and colors
+    mov r1, #0x3000 ; address
+    stw r1, [r0,#0]
+    mov r1, #0x0f00 ; red
+    stw r1, [r0,#2]
+    mov r1, #0x00f0 ; green
+    stw r1, [r0,#4]
+    mov r1, #0x000f ; blue
+    stw r1, [r0,#6]
+    add r0, #8
+
+    mov r1, #0x3400 ; address
+    stw r1, [r0,#0]
+    mov r1, #hi(0x0ff0) ; yellow
+    add r1, #lo(0x0ff0) ; yellow
+    stw r1, [r0,#2]
+    mov r1, #0x00ff ; cyan
+    stw r1, [r0,#4]
+    mov r1, #hi(0x0f0f) ; magenta
+    add r1, #lo(0x0f0f) ; magenta
+    stw r1, [r0,#6]
+    add r0, #8
+
+    mov pc, link
+}
+
 
 .text_test_card {
     stw link, [sp]
@@ -970,6 +1071,8 @@ alias r15 pc
     mov tmp, #0xff00
     add tmp, #0x00ff
     stw tmp, [vinfo, #.VINFO_PATTERN]
+
+    ldb count, [entry, #.ENTRY_COLORS]
 
     add entry, #.ENTRY_PALETTE
     add vreg, #.VREG_PALETTE

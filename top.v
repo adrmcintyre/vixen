@@ -47,8 +47,8 @@ module top (
             .addr2(video_addr),
             .dout2(video_din));
 
-    // video registers at fc00-fc3f
-    wire video_sel = io_sel && (io_addr <= 10'h03f);
+    // video registers at fc00-fcff
+    wire video_sel = io_sel && (io_addr <= 10'h0ff);
 
     // video controller
     wire vga_vsync;
@@ -65,13 +65,13 @@ module top (
         .hsync(vga_hsync),
         .blank(vga_blank),
         .rgb(video_rgb),
-        .addr(video_addr),
-        .rd(video_rd),
-        .din(video_din),
+        .mem_addr(video_addr),
+        .mem_rd(video_rd),
+        .mem_din(video_din),
         .reg_clk(clk),
         .reg_wr(video_sel & cpu_en & cpu_wr),
         .reg_data(cpu_dout),
-        .reg_addr(io_addr[5:1])
+        .reg_addr(io_addr[7:1])
     );
 
     // video output
