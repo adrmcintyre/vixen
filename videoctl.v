@@ -353,6 +353,13 @@ module videoctl
         SPRITE_WIDTH  = 16,
         SPRITE_HEIGHT = 16;
 
+    localparam [2:0] SPRITE_IDLE  = 3'd0;
+    localparam [2:0] SPRITE_FETCH = 3'd1;
+    localparam [2:0] SPRITE_WAIT  = 3'd2;
+    localparam [2:0] SPRITE_READ  = 3'd3;
+    localparam [2:0] SPRITE_WRITE = 3'd4;
+
+    reg [2:0] sprite_state = SPRITE_IDLE;
 
     reg [3:0] sprite_index;
     reg [1:0] sprite_byte;
@@ -381,31 +388,33 @@ module videoctl
     wire       sprite_visible = sprite_dy10[9:4] == 6'd0;   // i.e. sprite_dy is in range [0..15]
 
     wire [7:0] sprite_din = {mem_din[1:0], mem_din[3:2], mem_din[5:4], mem_din[7:6]};
-    wire [7:0] sprite_fifo_in = (sprite_enable && sprite_visible) ? sprite_din : {4{2'b00}};
+    wire       sprite_valid = sprite_enable & sprite_visible;
+    wire [7:0] sprite_fifo_in = sprite_valid ? sprite_din : {4{2'b00}};
     wire [1:0] sprite_fifo_out = sprite_fifo[1:0];
 
-    localparam [2:0] SPRITE_IDLE  = 3'd0;
-    localparam [2:0] SPRITE_FETCH = 3'd1;
-    localparam [2:0] SPRITE_WAIT  = 3'd2;
-    localparam [2:0] SPRITE_READ  = 3'd3;
-    localparam [2:0] SPRITE_WRITE = 3'd4;
+    wire [3:0] sprite_index_next;
+    wire [1:0] sprite_byte_next;
+    assign {sprite_index_next,sprite_byte_next} = {sprite_index,sprite_byte} + {4'd0,2'd1};
+    wire [15:0] sprite_base_next = reg_sprite_look[{sprite_index_next,2'd0}];
 
-    reg [2:0] sprite_state = SPRITE_IDLE;
+    wire [15:0] sprite_pos_y_next = reg_sprite_pos[{sprite_index_next,1'd1}];
+    wire [9:0] sprite_y_next      = sprite_pos_y_next[9:0];
+    wire [9:0] sprite_dy10_next = v_pos - sprite_y_next;
+    wire       sprite_flip_y_next = sprite_pos_y_next[10];
+    wire [3:0] sprite_xor_y_next  = {4{sprite_flip_y_next}};
+    wire [3:0] sprite_dy_next   = sprite_dy10_next[3:0] ^ sprite_xor_y_next;
 
-    // TODO - pipeline FETCH/WAIT/READ to get 1 read per cycle
-    // currently we need 192 cycles to refresh sprite_fifo,
-    // but we really only have H_SYNC+H_BACK=140 - we're saved
-    // for now by only using a 512 pixel screen width.
+    // TODO - pipeline further to get down to 1 read per clock
     always @(posedge clk_pixel) begin
         case (sprite_state)
         SPRITE_IDLE: begin
             if (v_valid && h_pos == H_SYNC_START) begin
+                compose_swap <= ~compose_swap;
                 sprite_index <= 4'd0;
                 sprite_byte <= 2'd0;
                 sprite_dx <= 4'd0;
                 sprite_rd <= 1'b0;
                 sprite_state <= SPRITE_FETCH;
-                compose_swap <= ~compose_swap;
             end
         end
 
@@ -420,18 +429,20 @@ module videoctl
         end
 
         SPRITE_READ: begin
-            sprite_rd <= 1'b0;
-            sprite_fifo <= {sprite_fifo_in, sprite_fifo[511:8]};
-            sprite_state <= ({sprite_index,sprite_byte} == {4'd15,2'd3}) ? SPRITE_WRITE : SPRITE_FETCH;
-            {sprite_index,sprite_byte} <= {sprite_index,sprite_byte} + 6'd1;
+            sprite_fifo  <= {sprite_fifo_in, sprite_fifo[511:8]};
+            sprite_state <= ({sprite_index,sprite_byte} == {4'd15,2'd3}) ? SPRITE_WRITE : SPRITE_WAIT;
+            sprite_index <= sprite_index_next;
+            sprite_byte  <= sprite_byte_next;
+            sprite_addr  <= sprite_base_next + {10'b0,sprite_dy_next,sprite_byte_next};
         end
 
         SPRITE_WRITE: begin
+            sprite_rd <= 1'b0;
             if (sprite_fifo_out != 2'b00) begin
                 compose_buf[{compose_x,~compose_swap}] <= {sprite_index,sprite_fifo_out};
             end
             sprite_fifo <= {2'b00,sprite_fifo[511:2]};
-            {sprite_index,sprite_dx} <= {sprite_index,sprite_dx} + 8'd1;
+            {sprite_index,sprite_dx} <= {sprite_index,sprite_dx} + {4'd0,4'd1};
             if ({sprite_index,sprite_dx} == {4'd15,4'd15}) begin
                 sprite_state <= SPRITE_IDLE;
             end
