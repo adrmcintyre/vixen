@@ -62,10 +62,6 @@ module videoctl
     localparam H_TOTAL = H_SYNC_START + H_SYNC;
     localparam V_TOTAL = V_SYNC_START + V_SYNC;
 
-    // TODO make this a control param
-    localparam [23:0] RGB_CANARY = 24'hffffaa;
-    localparam [23:0] BORDER     = RGB_CANARY;
-
     localparam FONT_FILE = "out/font.bin";
 
     localparam CHAR_WIDTH = 8;
@@ -90,6 +86,7 @@ module videoctl
     localparam CTL_TOP    = 4'h3; // v_pos of first line, from start of vertical back porch
     localparam CTL_BOTTOM = 4'h4; // v_pos+1 of last line, from start of vertical back porch
     localparam CTL_MODE   = 4'h5; // [5:4]=vert zoom-1; [3:2]=horiz zoom-1; [1:0]=display mode 
+    localparam CTL_BORDER = 4'hf; // border color
     localparam CTL_MAX    = 4'hf;
 
     localparam MODE_TEXT = 2'd0;
@@ -107,6 +104,7 @@ module videoctl
     wire [1:0]  mode      = reg_control[CTL_MODE]  [1:0];
     wire [1:0]  hzoom_max = reg_control[CTL_MODE]  [3:2];
     wire [1:0]  vzoom_max = reg_control[CTL_MODE]  [5:4];
+    wire [11:0] border_rgb444 = reg_control[CTL_BORDER][11:0];
     wire [7:0]  hphys_max = 8'd0; // TODO?
 
     // palette registers
@@ -396,15 +394,14 @@ module videoctl
     wire [1:0] sprite_byte_next;
     assign {sprite_index_next,sprite_byte_next} = {sprite_index,sprite_byte} + {4'd0,2'd1};
     wire [15:0] sprite_base_next = reg_sprite_look[{sprite_index_next,2'd0}];
-
     wire [15:0] sprite_pos_y_next = reg_sprite_pos[{sprite_index_next,1'd1}];
+
     wire [9:0] sprite_y_next      = sprite_pos_y_next[9:0];
-    wire [9:0] sprite_dy10_next = v_pos - sprite_y_next;
     wire       sprite_flip_y_next = sprite_pos_y_next[10];
     wire [3:0] sprite_xor_y_next  = {4{sprite_flip_y_next}};
+    wire [9:0] sprite_dy10_next = v_pos - sprite_y_next;
     wire [3:0] sprite_dy_next   = sprite_dy10_next[3:0] ^ sprite_xor_y_next;
 
-    // TODO - pipeline further to get down to 1 read per clock
     always @(posedge clk_pixel) begin
         case (sprite_state)
         SPRITE_IDLE: begin
@@ -470,7 +467,11 @@ module videoctl
     wire [11:0] sprite_rgb444 = reg_sprite_look[{compose_sprite,compose_color}][11:0];
 
     // Split into 4-bit components
-    wire [11:0] rgb444 = (compose_color == 0) ? char_rgb444 : sprite_rgb444;
+    wire [11:0] rgb444 =
+        (!h_valid || !v_valid) ? border_rgb444 :
+        (compose_color == 0)   ? char_rgb444 :
+                                 sprite_rgb444;
+
     wire [3:0] red4 = rgb444[8+:4];
     wire [3:0] grn4 = rgb444[4+:4];
     wire [3:0] blu4 = rgb444[0+:4];
@@ -482,7 +483,7 @@ module videoctl
     wire [7:0] blu8 = {blu4, blu4};
 
     // output
-    assign rgb = (h_valid && v_valid) ? {red8, grn8, blu8} : BORDER;
+    assign rgb = {red8, grn8, blu8};
 
 endmodule
 

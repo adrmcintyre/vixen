@@ -91,8 +91,8 @@ alias r15 pc
     mov r0, #hi(0xfc40) ; point to sprite pos #0
     add r0, #lo(0xfc40)
 
-    mov r1, #hi(44+320)    ; xpos
-    add r1, #lo(44+320)
+    mov r1, #hi(44+320-256+2)    ; xpos
+    add r1, #lo(44+320-256+2)
     stw r1, [r0,#0]
     mov r1, #hi(31+240)    ; ypos
     add r1, #lo(31+240)
@@ -940,6 +940,7 @@ alias r15 pc
     def VREG_TOP     0x06
     def VREG_BOTTOM  0x08
     def VREG_MODE    0x0A
+    def VREG_BORDER  0x1E
     def VREG_PALETTE 0x20
 
     ; search for mode
@@ -1073,6 +1074,10 @@ alias r15 pc
     stw tmp, [vinfo, #.VINFO_PATTERN]
 
     ldb count, [entry, #.ENTRY_COLORS]
+
+    mov tmp, #hi(0x0ffa)                ; set border to canary yellow
+    add tmp, #lo(0x0ffa)
+    stw tmp, [vreg, #.VREG_BORDER]
 
     add entry, #.ENTRY_PALETTE
     add vreg, #.VREG_PALETTE
