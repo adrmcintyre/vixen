@@ -452,6 +452,7 @@ module videoctl
     end
 
     // double buffer [5:2]=index [1:0]=color
+    (* no_rw_check *)
     reg [5:0] compose_buf[0:H_VISIBLE*2-1];
 
     reg compose_swap = 1'b0;
