@@ -9,9 +9,9 @@
     ; VERIFY READ / WRITE FLAGS
 
     mov r1, #.N|.Z|.C|.V
-    wrf r1
+    msr flags, r1
     mov r2, #0
-    rdf r2
+    mrs r2, flags
     cmp r1, r2
     prne
     bl .fail
@@ -21,7 +21,7 @@
 
     ; First check with all flags clear
     mov r1, #0
-    wrf r1
+    msr flags, r1
     prmi
     bl .fail
     preq
@@ -33,19 +33,19 @@
 
     ; Check with each flag set in turn
     mov r1, #.N
-    wrf r1
+    msr flags, r1
     prpl
     bl .fail
     mov r1, #.Z
-    wrf r1
+    msr flags, r1
     prne
     bl .fail
     mov r1, #.C
-    wrf r1
+    msr flags, r1
     prcc
     bl .fail
     mov r1, #.V
-    wrf r1
+    msr flags, r1
     prvc
     bl .fail
 
@@ -75,7 +75,7 @@
     mov r1, #0x1900
     mov r2, #0xff00
     mov r4, #.C
-    wrf r4
+    msr flags, r4
     add r0, r1
     prcs
     bl .fail
@@ -88,7 +88,7 @@
     mov r1, #0x1a00
     mov r2, #0x0000
     mov r4, #.C      ; set carry - add should ignore it
-    wrf r4
+    msr flags, r4
     add r0, r1      ; 32 bit add
     prcc
     bl .fail
@@ -103,7 +103,7 @@
     mov r2, #0
     mvn r2, r2      ; ffff
     mov r4, #0       ; clear carry
-    wrf r4
+    msr flags, r4
     adc r0, r1      ; 32 bit add
     prcs
     bl .fail
@@ -117,7 +117,7 @@
     add r1, #0x00ff
     mov r2, #0
     mov r4, #.C      ; set carry
-    wrf r4
+    msr flags, r4
     adc r0, r1      ; 32 bit add
     prcc
     bl .fail
@@ -131,7 +131,7 @@
     mov r2, #0x0003  ; r2,r3 = 0x00035000
     mov r3, #0x5000
     mov r4, #0       ; clear carry (i.e. set borrow) - sub should ignore it
-    wrf r4
+    msr flags, r4
     sub r1, r3      ; 32 bit subtract
     sbc r0, r2
     mov r2, #0x0002  ; should equal 0x0002e000
@@ -149,7 +149,7 @@
     ; flags are .Z.. after 0+0
     mov r1, #0
     add r1, #0
-    rdf r2
+    mrs r2, flags
     mov r3, #.Z
     cmp r2, r3
     prne
@@ -158,7 +158,7 @@
     ; flags are .... after 0x7f00 + 0x80
     mov r1, #0x7f00
     add r1, #0x80
-    rdf r2
+    mrs r2, flags
     mov r3, #0
     cmp r2, r3
     prne
@@ -168,7 +168,7 @@
     mov r1, #0x7f00
     add r1, #0x80
     add r1, #0x80
-    rdf r2
+    mrs r2, flags
     mov r3, #.N|.V
     cmp r2, r3
     prne
@@ -178,7 +178,7 @@
     mov r0, #0
     mvn r1, r0
     add r0, r1
-    rdf r2
+    mrs r2, flags
     mov r3, #.N
     cmp r2, r3
     prne
@@ -189,7 +189,7 @@
     mov r1, #1
     nop
     sub r0, r1
-    rdf r2
+    mrs r2, flags
     mov r3, #.N
     cmp r2, r3
     prne
@@ -337,7 +337,7 @@
     ; FAILURE!
     ; Halts with r14=address of failed test on failure
 .fail       
-    rdf r13
+    mrs r13, flags
     sub r14, #2
-    wrf r13
+    msr flags, r13
     hlt

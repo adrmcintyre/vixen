@@ -14,10 +14,35 @@ module vixen (
     // register file
     reg  [15:0] r[0:15];
     wire [15:0] pc = {r[15][15:1], 1'b0};
-    reg flag_n;
-    reg flag_z;
-    reg flag_c;
-    reg flag_v;
+    reg  supervisor_mode;
+
+    localparam
+        FLAGS      = 2'd0,
+        USER_FLAGS = 2'd1,
+        USER_R13   = 2'd2,
+        USER_R14   = 2'd3;
+
+    reg [15:0] special_reg[0:3];
+
+    wire [15:0] flags = special_reg[FLAGS];
+
+    localparam RESET_VECTOR = 16'h0000;
+    localparam TRAP_VECTOR  = 16'h0004;
+    localparam SWI_VECTOR   = 16'h0008;
+    localparam IRQ_VECTOR   = 16'h000c;
+    wire irq_assert = pc == 16'h0104;
+
+    localparam FLAG_N = 4'd15;
+    localparam FLAG_Z = 4'd14;
+    localparam FLAG_C = 4'd13;
+    localparam FLAG_V = 4'd12;
+    localparam FLAG_I = 4'd0;
+
+    wire flag_n = flags[FLAG_N];     // negative
+    wire flag_z = flags[FLAG_Z];     // zero
+    wire flag_c = flags[FLAG_C];     // carry
+    wire flag_v = flags[FLAG_V];     // overflow
+    wire flag_i = flags[FLAG_I];     // interrupts
 
     wire [15:0] op = mem_dout;          // last instruction fetched
     wire [15:0] ld_value = mem_wide ? mem_dout : {8'b0, mem_dout[15:8]};
@@ -43,7 +68,8 @@ module vixen (
 
     wire [11:0] op_br_offset    = op[11:0];     // signed branch offset
 
-    wire [3:0] op_flags_target  = op[7:4];
+    wire [3:0] op_special_reg = op[7:4];
+    reg  [1:0] op_special_special;
 
     // CPU state
     localparam
@@ -55,47 +81,48 @@ module vixen (
         LOAD2     = 3'd5;
 
     localparam
-        SS_NOP      = 4'd0,
-        SS_ALU      = 4'd1,
-        SS_LOAD     = 4'd2,
-        SS_STORE    = 4'd3,
-        SS_RD_FLAGS = 4'd4,
-        SS_WR_FLAGS = 4'd5,
-        SS_BRANCH   = 4'd6,
-        SS_PRED     = 4'd7,
-        SS_HALT     = 4'd8,
-        SS_TRAP     = 4'd9;
+        SS_NOP        = 4'd0,
+        SS_ALU        = 4'd1,
+        SS_LOAD       = 4'd2,
+        SS_STORE      = 4'd3,
+        SS_RD_FLAGS   = 4'd4,
+        SS_WR_FLAGS   = 4'd5,
+        SS_RD_SPECIAL = 4'd6,
+        SS_WR_SPECIAL = 4'd7,
+        SS_SWI        = 4'd8,
+        SS_RTU        = 4'd9,
+        SS_BRANCH     = 4'd10,
+        SS_PRED       = 4'd11,
+        SS_HALT       = 4'd12,
+        SS_TRAP       = 4'd13;
 
     reg [2:0] state = RESET;
     reg [3:0] substate = SS_NOP;
     reg [4*8-1:0] text;
-    reg [15:0] next_pc;
     reg predicated;
     reg [3:0] reg_target;
 
     integer i;
 
-//  reg [14:0] cycle = 0;
     assign led = {substate==SS_HALT,state,substate};
 
     always @(posedge clk) begin
-  //    cycle <= cycle + 1;
-  //    if (cycle == 0)
         case (state)
             RESET: begin
-                flag_n <= 1'b0;
-                flag_z <= 1'b0;
-                flag_c <= 1'b0;
-                flag_v <= 1'b0;
+                special_reg[FLAGS]      <= 16'h0;
+                special_reg[USER_FLAGS] <= 16'h0;
+                special_reg[USER_R13]   <= 16'h0;
+                special_reg[USER_R14]   <= 16'h0;
 
-                for(i=0; i<=15; i=i+1) begin
-                    r[i] <= 16'h0000;
+                for(i=0; i<=14; i=i+1) begin
+                    r[i] <= 16'h0;
                 end
-                next_pc <= 16'h0000;
+                r[15] <= RESET_VECTOR;
+                supervisor_mode <= 1'b1;
                 predicated <= 1;
 
                 mem_en   <= 0;
-                mem_addr <= pc;
+                mem_addr <= 0;
                 mem_din  <= 0;
                 mem_wr   <= 0;
                 mem_wide <= 0;
@@ -113,39 +140,46 @@ module vixen (
             end
 
             FETCH2: begin
-                mem_en <= 0;
-                predicated <= 1;
-                r[15] <= pc+2;
-                state <= predicated ? EXECUTE : FETCH;
+                if (flag_i && irq_assert) begin
+                    supervisor_mode <= 1'b1;
+                    special_reg[FLAGS][FLAG_I] <= 1'b0;     // disable interrupts
+                    special_reg[USER_FLAGS] <= flags;
+                    special_reg[USER_R13]  <= r[13];
+                    special_reg[USER_R14]  <= r[14];
+                    r[14] <= pc;
+                    r[15] <= IRQ_VECTOR;
+                    state <= FETCH;
+                end
+                else begin
+                    mem_en <= 0;
+                    predicated <= 1;
+                    r[15] <= pc+2;
+                    state <= predicated ? EXECUTE : FETCH;
+                end
             end
 
             EXECUTE: begin
+                mem_addr <= pc;
+                mem_wr   <= 0;
+                mem_wide <= 1;
+                mem_en   <= 1;
+
                 case (substate)
                     SS_NOP: begin
-                        mem_addr <= pc;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 1;
-
                         state <= FETCH2;
                     end
 
                     SS_ALU: begin
-                        mem_addr <= pc;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 1;
-
                         if (alu_wr_reg) begin
                             r[dst] <= alu_out;
                             if (dst == 15) begin
                                 mem_addr <= alu_out;
                             end
                         end
-                        if (alu_wr_nz) flag_n <= alu_n;
-                        if (alu_wr_nz) flag_z <= alu_z;
-                        if (alu_wr_c)  flag_c <= alu_c;
-                        if (alu_wr_v)  flag_v <= alu_v;
+                        if (alu_wr_nz) special_reg[FLAGS][FLAG_N] <= alu_n;
+                        if (alu_wr_nz) special_reg[FLAGS][FLAG_Z] <= alu_z;
+                        if (alu_wr_c)  special_reg[FLAGS][FLAG_C] <= alu_c;
+                        if (alu_wr_v)  special_reg[FLAGS][FLAG_V] <= alu_v;
 
                         state <= FETCH2;
                     end
@@ -171,23 +205,64 @@ module vixen (
                         state <= FETCH;
                     end
 
-                    SS_RD_FLAGS: begin
-                        r[flags_target] <= {flag_n, flag_z, flag_c, flag_v, 12'b0};
-                        mem_addr <= pc;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 1;
+                    SS_SWI: begin
+                        supervisor_mode <= 1'b1;
+                        special_reg[FLAGS][FLAG_I] <= 1'b0;     // disable interrupts
+                        special_reg[USER_FLAGS] <= flags;
+                        special_reg[USER_R13]   <= r[13];
+                        special_reg[USER_R14]   <= r[14];
+                        r[14] <= pc;
+                        r[15] <= SWI_VECTOR;
+                        state <= FETCH;
+                    end
 
+                    SS_TRAP: begin
+                        supervisor_mode <= 1'b1;
+                        special_reg[FLAGS][FLAG_I] <= 1'b0;     // disable interrupts
+                        special_reg[USER_FLAGS] <= flags;
+                        special_reg[USER_R13]   <= r[13];
+                        special_reg[USER_R14]   <= r[14];
+                        r[14] <= pc;
+                        r[15] <= TRAP_VECTOR;
+                        state <= FETCH;
+                    end
+
+                    SS_RD_FLAGS: begin
+                        r[op_special_reg] <= special_reg[FLAGS];
                         state <= FETCH2;
                     end
 
                     SS_WR_FLAGS: begin
-                        {flag_n, flag_z, flag_c, flag_v} <= r[flags_target][15:12];
-                        mem_addr <= pc;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 1;
+                        special_reg[FLAGS] <= r[op_special_reg];
+                        state <= FETCH2;
+                    end
 
+                    SS_RD_SPECIAL: begin
+                        // TODO - trap when not in supervisor_mode?
+                        if (supervisor_mode) begin
+                            r[op_special_reg] <= special_reg[op_special_special];
+                        end
+                        state <= FETCH2;
+                    end
+
+                    SS_WR_SPECIAL: begin
+                        // TODO - trap when not in supervisor_mode?
+                        if (supervisor_mode) begin
+                            special_reg[op_special_special] <= r[op_special_reg];
+                        end
+                        state <= FETCH2;
+                    end
+
+                    // return from supervisor mode
+                    SS_RTU: begin
+                        if (supervisor_mode) begin
+                            supervisor_mode <= 1'b0;
+                            r[13] <= special_reg[USER_R13];
+                            r[14] <= special_reg[USER_R14];
+                            r[15] <= r_src;
+                            special_reg[FLAGS] <= special_reg[USER_FLAGS];
+                            mem_addr <= r_src;
+                        end
                         state <= FETCH2;
                     end
 
@@ -197,36 +272,17 @@ module vixen (
                         end
                         r[15] <= br_addr;
                         mem_addr <= br_addr;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 1;
-
                         state <= FETCH2;
                     end
 
                     SS_PRED: begin
                         predicated <= pred_true;
-                        mem_addr <= pc;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 1;
-
                         state <= FETCH2;
                     end
-
+                    
                     SS_HALT: begin
                         // enter a loop, no memory access
                         mem_addr <= pc-2;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 0;
-
-                        state <= EXECUTE;
-                    end
-
-                    SS_TRAP: begin
-                        // unknown instruction - treat like SS_HALT for now
-                        mem_addr <= pc;
                         mem_wr   <= 0;
                         mem_wide <= 1;
                         mem_en   <= 0;
@@ -457,10 +513,24 @@ module vixen (
                             endcase
                         end
                         else begin
-                            //001x-xxxx-yyyy-1111 : x-xxxx != 1_1111    (494 encodings unused)
+                            //001x-xxxx-yyyy-1111 : x-xxxx != 1_1111
                             casez (op)
-                                16'b0011_0000_????_1111: {text, substate, flags_target} = {"RDF ", SS_RD_FLAGS, op_flags_target}; // rdf r
-                                16'b0011_0001_????_1111: {text, substate, flags_target} = {"WRF ", SS_WR_FLAGS, op_flags_target}; // wrf r
+                                16'b0010_????_????_1111: {text, substate} = {"SWI ", SS_SWI};   // swi #num8
+
+                                16'b0011_0000_????_1111: {text, substate} = {"MRS ", SS_RD_FLAGS};  // mrs r, flags
+                                16'b0011_0001_????_1111: {text, substate} = {"MSR ", SS_WR_FLAGS};  // msr flags, r
+
+                                16'b0011_0010_????_1111: {text, substate, op_special_special} = {"MRS ", SS_RD_SPECIAL, USER_FLAGS}; // mrs r, uflags
+                                16'b0011_0011_????_1111: {text, substate, op_special_special} = {"MSR ", SS_WR_SPECIAL, USER_FLAGS}; // msr uflags, r
+
+                                16'b0011_0100_????_1111: {text, substate, op_special_special} = {"MRS ", SS_RD_SPECIAL, USER_R13};   // mrs r, u13
+                                16'b0011_0101_????_1111: {text, substate, op_special_special} = {"MSR ", SS_WR_SPECIAL, USER_R13};   // msr u13, r
+
+                                16'b0011_0110_????_1111: {text, substate, op_special_special} = {"MRS ", SS_RD_SPECIAL, USER_R14};   // mrs r, u14
+                                16'b0011_0111_????_1111: {text, substate, op_special_special} = {"MSR ", SS_WR_SPECIAL, USER_R14};   // msr u14, r
+
+                                16'b0011_1000_????_1111: {text, substate} = {"RTU ", SS_RTU};   // rtu r
+
                                 default: begin
                                     substate = SS_TRAP;
                                 end

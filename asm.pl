@@ -138,8 +138,10 @@ def_op('stw' => {mode => '[', pat => '101n:nnnn:ssss:rrrr'});
 #def_op('ldi' => {mode => '#', special => \&ldi});  # TODO - pseudo-op
 def_op('mov' => {mode => '#', pat => '110m:mmmm:mmmm:rrrr'});
 
-def_op('rdf' => {mode => '1', pat => '0011:0000:rrrr:1111'});
-def_op('wrf' => {mode => '1', pat => '0011:0001:rrrr:1111'});
+def_op('swi' => {mode => '@', pat => '0010:nnnn:nnnn:1111'});
+def_op('mrs' => {mode => '<', pat => '0011:0ss0:rrrr:1111'});
+def_op('msr' => {mode => '>', pat => '0011:0ss1:rrrr:1111'});
+def_op('rtu' => {mode => '1', pat => '0011:1000:rrrr:1111'});
 
 def_op('preq' => {mode => '0', pat => '0011:1111:0000:1111'});
 def_op('prne' => {mode => '0', pat => '0011:1111:0001:1111'});
@@ -170,14 +172,18 @@ my $re_reg2 = qr{(?<reg2> [a-z_]\w*)}xi;
 my $re_expr = qr{ (?<expr> .*?) }xi;
 my $re_imm  = qr{ \# s* $re_expr }xi;
 my $re_comma = qr{ \s* , \s* }xi;
+my $re_special = qr{(?<special> flags|uflags|u13|u14)}xi;
 
 our $mode_regex = {
     '0' => qr{ }xi,
     '1' => qr{ $re_reg1 }xi,
     '2' => qr{ $re_reg1 $re_comma $re_reg2 }xi,
     '[' => qr{ $re_reg1 $re_comma \[ $re_reg2 (?: $re_comma $re_imm )? \s* \] }xi,
+    '@' => qr{ $re_imm }xi,
     '#' => qr{ $re_reg1 $re_comma $re_imm }xi,
     '.' => qr{ $re_expr }xi,
+    '<' => qr{ $re_reg1 $re_comma $re_special }xi,
+    '>' => qr{ $re_special $re_comma $re_reg1 }xi,
 };
 
 # [arity, map[op -> sub]]
@@ -216,6 +222,7 @@ sub decode_op {
     my $reg1 = undef;
     my $reg2 = undef;
     my $num = 0;
+    my $special = undef;
 
     my $infos = $::ops->{$op};
     foreach my $info (@$infos) {
@@ -226,6 +233,7 @@ sub decode_op {
             $template = $info->{pat};
             $reg1 = get_reg($match{reg1})   if defined $match{reg1};
             $reg2 = get_reg($match{reg2})   if defined $match{reg2};
+            $reg2 = get_special($match{special}) if defined $match{special};
             $num  = get_value($match{expr}) if defined $match{expr};
             last;
         }
@@ -367,6 +375,15 @@ sub get_reg {
         }
     }
     abort("unknown register: $word");
+}
+
+sub get_special {
+    my $word = lc(shift);
+    return 0 if $word eq 'flags';
+    return 1 if $word eq 'uflags';
+    return 2 if $word eq 'u13';
+    return 3 if $word eq 'u14';
+    abort("unknown special register: $word");
 }
 
 sub bitpos {

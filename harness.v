@@ -34,13 +34,16 @@ module harness ();
             if (!halted && TRACE_CPU) begin: trace_cpu
                 integer r;
                 
-                $write("%x %x EXECUTE %-s [%s%s%s%s]",
+                $write("%x %x EXECUTE %-s [%s%s%s%s%s%s]",
                         uat.cpu.pc-16'd2, uat.cpu.op,
                         uat.cpu.text,
                         uat.cpu.flag_n ? "N" : ".",
                         uat.cpu.flag_z ? "Z" : ".",
                         uat.cpu.flag_c ? "C" : ".",
-                        uat.cpu.flag_v ? "V" : ".");
+                        uat.cpu.flag_v ? "V" : ".",
+                        uat.cpu.flag_i ? "I" : ".",
+                        uat.cpu.supervisor_mode ? "S" : "."
+                );
 
                 for(r=0; r<=TRACE_MAX_REG && r<=14; r=r+1) begin
                     $write(" r%0d=%x", r, uat.cpu.r[r]);
