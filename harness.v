@@ -17,12 +17,12 @@ module harness ();
             .btn(7'b0),
             .wifi_gpio0());
 
-    wire        cpu_mem_en   = uat.cpu.mem_en;
-    wire        cpu_mem_wr   = uat.cpu.mem_wr;
-    wire        cpu_mem_wide = uat.cpu.mem_wide;
-    wire [15:0] cpu_mem_addr = uat.cpu.mem_addr;
-    wire [15:0] cpu_mem_din  = uat.cpu.mem_din;
-    wire [15:0] mem_dout     = uat.cpu.mem_dout;
+    wire        cpu_mem_en   = uat.cpu.en;
+    wire        cpu_mem_wr   = uat.cpu.wr;
+    wire        cpu_mem_wide = uat.cpu.wide;
+    wire [15:0] cpu_mem_addr = uat.cpu.addr;
+    wire [15:0] cpu_mem_din  = uat.cpu.din;
+    wire [15:0] mem_dout     = uat.cpu.dout;
 
     reg halted = 0;
     integer cycles = 0;

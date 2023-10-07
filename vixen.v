@@ -2,12 +2,13 @@
 
 module vixen (
         input      clk,
-        output reg mem_en,
-        output reg mem_wr,
-        output reg mem_wide,
-        output reg [15:0] mem_addr,
-        output reg [15:0] mem_din,
-        input      [15:0] mem_dout,
+        input      irq,
+        output reg en,
+        output reg wr,
+        output reg wide,
+        output reg [15:0] addr,
+        output reg [15:0] dout,
+        input      [15:0] din,
 
         output [7:0] led
 );
@@ -30,7 +31,6 @@ module vixen (
     localparam TRAP_VECTOR  = 16'h0004;
     localparam SWI_VECTOR   = 16'h0008;
     localparam IRQ_VECTOR   = 16'h000c;
-    wire irq_assert = pc == 16'h0104;
 
     localparam FLAG_N = 4'd15;
     localparam FLAG_Z = 4'd14;
@@ -44,8 +44,8 @@ module vixen (
     wire flag_v = flags[FLAG_V];     // overflow
     wire flag_i = flags[FLAG_I];     // interrupts
 
-    wire [15:0] op = mem_dout;          // last instruction fetched
-    wire [15:0] ld_value = mem_wide ? mem_dout : {8'b0, mem_dout[15:8]};
+    wire [15:0] op = din;          // last instruction fetched
+    wire [15:0] ld_value = wide ? din : {8'b0, din[15:8]};
 
     // instruction decoding
     wire [3:0] dst              = op[3:0];      // alu dst reg
@@ -121,26 +121,26 @@ module vixen (
                 supervisor_mode <= 1'b1;
                 predicated <= 1;
 
-                mem_en   <= 0;
-                mem_addr <= 0;
-                mem_din  <= 0;
-                mem_wr   <= 0;
-                mem_wide <= 0;
+                en   <= 0;
+                addr <= 0;
+                dout <= 0;
+                wr   <= 0;
+                wide <= 0;
 
                 state <= FETCH;
             end
 
             FETCH: begin
-                mem_addr <= pc;
-                mem_wr   <= 0;
-                mem_wide <= 1;
-                mem_en   <= 1;
+                addr <= pc;
+                wr   <= 0;
+                wide <= 1;
+                en   <= 1;
 
                 state <= FETCH2;
             end
 
             FETCH2: begin
-                if (flag_i && irq_assert) begin
+                if (flag_i && irq) begin
                     supervisor_mode <= 1'b1;
                     special_reg[FLAGS][FLAG_I] <= 1'b0;     // disable interrupts
                     special_reg[USER_FLAGS] <= flags;
@@ -151,7 +151,7 @@ module vixen (
                     state <= FETCH;
                 end
                 else begin
-                    mem_en <= 0;
+                    en <= 0;
                     predicated <= 1;
                     r[15] <= pc+2;
                     state <= predicated ? EXECUTE : FETCH;
@@ -159,10 +159,10 @@ module vixen (
             end
 
             EXECUTE: begin
-                mem_addr <= pc;
-                mem_wr   <= 0;
-                mem_wide <= 1;
-                mem_en   <= 1;
+                addr <= pc;
+                wr   <= 0;
+                wide <= 1;
+                en   <= 1;
 
                 case (substate)
                     SS_NOP: begin
@@ -173,7 +173,7 @@ module vixen (
                         if (alu_wr_reg) begin
                             r[dst] <= alu_out;
                             if (dst == 15) begin
-                                mem_addr <= alu_out;
+                                addr <= alu_out;
                             end
                         end
                         if (alu_wr_nz) special_reg[FLAGS][FLAG_N] <= alu_n;
@@ -187,20 +187,20 @@ module vixen (
                     SS_LOAD: begin
                         reg_target <= ld_st_target;
 
-                        mem_addr <= ld_st_addr;
-                        mem_wr <= 0;
-                        mem_wide <= ld_st_wide;
-                        mem_en <= 1;
+                        addr <= ld_st_addr;
+                        wr <= 0;
+                        wide <= ld_st_wide;
+                        en <= 1;
 
                         state <= LOAD;
                     end
 
                     SS_STORE: begin
-                        mem_din <= r_target;
-                        mem_addr <= ld_st_addr;
-                        mem_wr <= 1;
-                        mem_wide <= ld_st_wide;
-                        mem_en <= 1;
+                        dout <= r_target;
+                        addr <= ld_st_addr;
+                        wr <= 1;
+                        wide <= ld_st_wide;
+                        en <= 1;
 
                         state <= FETCH;
                     end
@@ -261,7 +261,7 @@ module vixen (
                             r[14] <= special_reg[USER_R14];
                             r[15] <= r_src;
                             special_reg[FLAGS] <= special_reg[USER_FLAGS];
-                            mem_addr <= r_src;
+                            addr <= r_src;
                         end
                         state <= FETCH2;
                     end
@@ -271,7 +271,7 @@ module vixen (
                             r[14] <= pc;
                         end
                         r[15] <= br_addr;
-                        mem_addr <= br_addr;
+                        addr <= br_addr;
                         state <= FETCH2;
                     end
 
@@ -282,10 +282,10 @@ module vixen (
                     
                     SS_HALT: begin
                         // enter a loop, no memory access
-                        mem_addr <= pc-2;
-                        mem_wr   <= 0;
-                        mem_wide <= 1;
-                        mem_en   <= 0;
+                        addr <= pc-2;
+                        wr   <= 0;
+                        wide <= 1;
+                        en   <= 0;
 
                         state <= EXECUTE;
                     end
@@ -299,19 +299,19 @@ module vixen (
             end
 
             LOAD: begin
-                mem_en <= 0;
+                en <= 0;
                 state <= LOAD2;
             end
 
             LOAD2: begin
-                mem_addr <= pc;
-                mem_wr   <= 0;
-                mem_wide <= 1;
-                mem_en   <= 1;
+                addr <= pc;
+                wr   <= 0;
+                wide <= 1;
+                en   <= 1;
 
                 r[reg_target] <= ld_value;
                 if (reg_target == 15) begin
-                    mem_addr <= ld_value;
+                    addr <= ld_value;
                 end
 
                 state <= FETCH2;

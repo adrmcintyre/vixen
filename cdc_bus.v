@@ -1,3 +1,5 @@
+`default_nettype none
+
 module cdc_bus #(
         parameter WIDTH = 0,
         parameter DEPTH = 3

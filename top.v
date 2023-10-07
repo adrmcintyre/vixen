@@ -15,53 +15,85 @@ module top (
     // CPU
     wire cpu_en, cpu_wr, cpu_wide;
     wire [15:0] cpu_addr;
-    wire [15:0] cpu_din;
     wire [15:0] cpu_dout;
+    wire [15:0] cpu_din = irqctl_rd ? irqctl_dout : mem_dout1;
     vixen cpu(
             .clk(clk),
-            .mem_en(cpu_en),
-            .mem_wr(cpu_wr),
-            .mem_wide(cpu_wide),
-            .mem_addr(cpu_addr),
-            .mem_din(cpu_dout),
-            .mem_dout(cpu_din),
+            .irq(irq_assert),
+            .en(cpu_en),
+            .wr(cpu_wr),
+            .wide(cpu_wide),
+            .addr(cpu_addr),
+            .dout(cpu_dout),
+            .din(cpu_din),
             .led(led));
 
     // memory map i/o at fc00-ffff
     wire io_sel = (cpu_addr[15:10] == 6'h3f);
     wire [9:0] io_addr = cpu_addr[9:0];
+    wire io_en = cpu_en & io_sel;
+    wire io_wr = io_en & cpu_wr;
+    wire io_rd = io_en & ~cpu_wr;
 
     wire mem_sel = ~io_sel;
+    wire mem_en = cpu_en & mem_sel;
+    wire mem_wr = mem_en & cpu_wr;
+    wire mem_rd = mem_en & ~cpu_wr;
+
+    wire        mem_en2   = sprite_rd | video_rd;
+    wire [15:0] mem_addr2 = sprite_rd ? sprite_addr : video_addr;
 
     // memory
+    wire [15:0] mem_dout1;
+    wire [7:0]  mem_dout2;
     memory mem(
             .clk1(clk),
-            .en1(cpu_en & mem_sel),
-            .wr1(cpu_wr),
+            .en1(mem_en),
+            .wr1(mem_wr),
             .wide1(cpu_wide),
             .addr1(cpu_addr),
             .din1(cpu_dout),
-            .dout1(cpu_din),
+            .dout1(mem_dout1),
             .clk2(clk_pixel),
-            .en2(video_rd | sprite_rd),
-            .addr2(sprite_rd ? sprite_addr : video_addr),
-            .dout2(video_din));
+            .en2(mem_en2),
+            .addr2(mem_addr2),
+            .dout2(mem_dout2));
+
+    wire irqctl_sel = io_sel && (io_addr >= 10'h100 && io_addr <= 10'h103);
+    wire irqctl_en = irqctl_sel & cpu_en;
+    wire irqctl_wr = irqctl_en & cpu_wr;
+    wire irqctl_rd = irqctl_en & ~cpu_wr;
+    wire [0:0] irqctl_addr = io_addr[1:1];
+    wire [15:0] irqctl_dout;
+    wire irq_assert;
+    irq_controller irq_ctl(
+            .reset(1'b0),
+            .clk(clk),
+            .irqs_in({14'b0,vga_vsync}),
+            .wr(irqctl_wr),
+            .addr(irqctl_addr),
+            .din(cpu_dout),
+            .dout(irqctl_dout),
+            .irq_assert(irq_assert));
 
     // video registers at fc00-fcff
-    wire video_sel = io_sel && (io_addr <= 10'h0ff);
+    wire video_io_sel = io_sel && (io_addr <= 10'h0ff);
+    wire video_io_en = video_io_sel & cpu_en;
+    wire video_io_wr = video_io_en & cpu_wr;
+    wire video_io_rd = video_io_en & ~cpu_wr;
 
     // these are in clk_pixel clock domain
-    wire video_reg_wr;
-    wire [7:0] video_reg_addr;
-    wire [15:0] video_reg_data;
+    wire        synced_video_io_wr;
+    wire [7:0]  synced_video_io_addr;
+    wire [15:0] synced_video_io_data;
 
     cdc_bus #(.WIDTH(8+16), .DEPTH(3)) cdc(
             .src_clk(clk),
-            .src_en(video_sel & cpu_en & cpu_wr),
+            .src_en(video_io_wr),
             .src_bus({io_addr[7:0], cpu_dout}),
             .dst_clk(clk_pixel),
-            .dst_en(video_reg_wr),
-            .dst_bus({video_reg_addr, video_reg_data}));
+            .dst_en(synced_video_io_wr),
+            .dst_bus({synced_video_io_addr, synced_video_io_data}));
 
     // video controller
     wire vga_vsync;
@@ -74,7 +106,6 @@ module top (
     wire [11:0] video_rgb444;
     wire [15:0] video_addr;
     wire video_rd;
-    wire [7:0] video_din;
     videoctl video(
         .clk_pixel(clk_pixel),
         .nreset(clk_locked),
@@ -85,15 +116,18 @@ module top (
         .hvalid(video_h_valid),
         .hpos(video_hpos),
         .vpos(video_vpos),
-//      .vsync_irq(vga_vsync_irq),  // TODO
         .rgb444(video_rgb444),
         .mem_addr(video_addr),
         .mem_rd(video_rd),
-        .mem_din(video_din),
-        .reg_wr(video_reg_wr && (video_reg_addr[7:6] == 2'b0)),
-        .reg_data(video_reg_data),
-        .reg_addr(video_reg_addr)
+        .mem_din(mem_dout2),
+        .reg_wr(synced_video_io_wr && (synced_video_io_addr[7:6] == 2'b0)),
+        .reg_data(synced_video_io_data),
+        .reg_addr(synced_video_io_addr)
     );
+
+    // TODO - when vsync goes low we want to generate an irq
+    // also need some way to record the source of the irq
+    // and be able to clear it / mask it.
     
     wire sprite_rd;
     wire [15:0] sprite_addr;
@@ -107,10 +141,10 @@ module top (
             .h_pos(video_hpos),
             .mem_addr(sprite_addr),
             .mem_rd(sprite_rd),
-            .mem_din(video_din),
-            .reg_wr(video_reg_wr && (video_reg_addr[7:6] != 2'b0)),
-            .reg_data(video_reg_data),
-            .reg_addr(video_reg_addr),
+            .mem_din(mem_dout2),
+            .reg_wr(synced_video_io_wr && (synced_video_io_addr[7:6] != 2'b0)),
+            .reg_data(synced_video_io_data),
+            .reg_addr(synced_video_io_addr),
             .active(sprite_active),
             .rgb444(sprite_rgb444));
 
