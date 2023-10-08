@@ -40,16 +40,14 @@ module irq_controller (
         ENABLED = 0,
         PENDING = 1;
         
-    reg [14:0] enabled;
-    reg [14:0] pending;
+    reg [14:0] enabled = 0;
+    reg [14:0] pending = 0;
 
     wire wr_enabled = wr && (addr == ENABLED);
     wire wr_pending = wr && (addr == PENDING);
     wire clear_enabled = wr_enabled & ~din[15];
     wire set_enabled   = wr_enabled & din[15];
     wire [14:0] mask   = din[14:0];
-
-    // TODO - register reads!
 
     always @(posedge clk) begin
         if (reset) begin
@@ -63,7 +61,7 @@ module irq_controller (
         end
     end
 
-    reg  [14:0] irqs_in_prev;
+    reg  [14:0] irqs_in_prev = 0;
     wire [14:0] irq_edges = irqs_in & ~irqs_in_prev;
 
     always @(posedge clk) begin
@@ -77,6 +75,23 @@ module irq_controller (
         end
     end
 
+    wire rd_enabled = (~wr) && (addr == ENABLED);
+    wire rd_pending = (~wr) && (addr == PENDING);
+    reg [15:0] reg_dout = 0;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            reg_dout <= 0;
+        end
+        else if (rd_enabled) begin
+            reg_dout <= {1'b0,enabled};
+        end
+        else if (rd_pending) begin
+            reg_dout <= {1'b0,pending};
+        end
+    end
+
     assign irq_assert = |(pending & enabled);
+    assign dout = reg_dout;
 
 endmodule

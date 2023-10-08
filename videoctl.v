@@ -10,9 +10,9 @@ module videoctl
     input  [15:0] reg_data,
     input  [7:0]  reg_addr,
     // vga output
-    output reg vsync,
-    output reg hsync,
-    output reg blank,
+    output reg vsync = 1'b1,
+    output reg hsync = 1'b1,
+    output reg blank = 1'b0,
     output [9:0] hpos,
     output [9:0] vpos,
     output     hvalid,

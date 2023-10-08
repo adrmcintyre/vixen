@@ -3,11 +3,11 @@
 module vixen (
         input      clk,
         input      irq,
-        output reg en,
-        output reg wr,
-        output reg wide,
-        output reg [15:0] addr,
-        output reg [15:0] dout,
+        output reg en = 0,
+        output reg wr = 0,
+        output reg wide = 0,
+        output reg [15:0] addr = 0,
+        output reg [15:0] dout = 0,
         input      [15:0] din,
 
         output [7:0] led
@@ -256,6 +256,8 @@ module vixen (
                     // return from supervisor mode
                     SS_RTU: begin
                         if (supervisor_mode) begin
+                            // TODO - too many register accesses - either split across
+                            // multiple cycles, or mux their access instead of using temps
                             supervisor_mode <= 1'b0;
                             r[13] <= special_reg[USER_R13];
                             r[14] <= special_reg[USER_R14];

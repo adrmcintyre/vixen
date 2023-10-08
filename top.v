@@ -16,7 +16,7 @@ module top (
     wire cpu_en, cpu_wr, cpu_wide;
     wire [15:0] cpu_addr;
     wire [15:0] cpu_dout;
-    wire [15:0] cpu_din = irqctl_rd ? irqctl_dout : mem_dout1;
+    wire [15:0] cpu_din = irqctl_rd_delayed ? irqctl_dout : mem_dout1;
     vixen cpu(
             .clk(clk),
             .irq(irq_assert),
@@ -63,13 +63,16 @@ module top (
     wire irqctl_en = irqctl_sel & cpu_en;
     wire irqctl_wr = irqctl_en & cpu_wr;
     wire irqctl_rd = irqctl_en & ~cpu_wr;
+    reg irqctl_rd_delayed = 0;
+    always @(posedge clk) irqctl_rd_delayed <= irqctl_rd;
+
     wire [0:0] irqctl_addr = io_addr[1:1];
     wire [15:0] irqctl_dout;
     wire irq_assert;
     irq_controller irq_ctl(
             .reset(1'b0),
             .clk(clk),
-            .irqs_in({14'b0,vga_vsync}),
+            .irqs_in({14'b0,~vga_vsync}),       // TODO vga_vsync is in clk_pixel's domain - do we need a synchroniser?
             .wr(irqctl_wr),
             .addr(irqctl_addr),
             .din(cpu_dout),
@@ -125,10 +128,6 @@ module top (
         .reg_addr(synced_video_io_addr)
     );
 
-    // TODO - when vsync goes low we want to generate an irq
-    // also need some way to record the source of the irq
-    // and be able to clear it / mask it.
-    
     wire sprite_rd;
     wire [15:0] sprite_addr;
     wire sprite_active;
