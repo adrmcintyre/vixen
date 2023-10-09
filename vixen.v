@@ -400,6 +400,8 @@ module vixen (
 
         flags_target = 4'b0;
 
+        op_special_special = 2'b0;  // YUCK - decode direct from op instead?
+
         substate = SS_TRAP;
         text = "----";
 
