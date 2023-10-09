@@ -1,9 +1,20 @@
-def MEM_TOP 0xfc00
-def IO_BASE 0xfc00
+def RESET_VECTOR 0x0000
+def TRAP_VECTOR  0x0004
+def SWI_VECTOR   0x0008
+def IRQ_VECTOR   0x000c
 
-; video workspace
-def WS_VINFO 0x1000
+; 0x0400 in size
+def IO_BASE     0xfc00
+def IO_VREG     .IO_BASE + 0x000    ; 0x100 in size
+def IO_IOCTL    .IO_BASE + 0x100    ; 0x04  in size
+def IOCTL_ENABLED 0x00              ; irq-enabled register
+def IOCTL_PENDING 0x02              ; irq-pending register
 
+; 0x0800 in size
+def SPRITE_BASE 0xf400      ; room for 32 x 64-byte sprites
+
+; 0x0040 in size
+def WS_VINFO    0xf3c0      ; video workspace
 ; mode related data
 def VINFO_BASE      0x00    ; 2 - base mem address
 def VINFO_LEN       0x02    ; 2 - base mem address
@@ -21,14 +32,21 @@ def VINFO_PATTERN   0x14    ; 2 - dot pattern   (initial: 0xffff)
 def VINFO_COLOR     0x16    ; 1 - current color (initial: 1<<bpp)-1
 def VINFO_MASK      0x17    ; 1 - current mask  (initial: 1<<bpp)-1
 
-def VREG .IO_BASE + 0x000
+; 0x0040 in size
+def SUPER_TOS   0xf3c0-2    ; 64 byte stack (descending)
+; 0x03c0 unassigned
+def WS_XXX      0xf000      ; reserved for other workspaces
+
+; 0x0400 in size
+def USER_TOS    0xf000-2    ; 1K user stack (descending)
+
+; variable sized, depending on selected video mode
+def VIDEO_HWM   0xec00      ; end of video
+
 
 def TEXT_COLS 64
 def TEXT_ROWS 40
-def TEXT_BASE .MEM_TOP - .TEXT_COLS*.TEXT_ROWS
-
-; well below video for safety
-def STACK_BASE 0x2000-2
+def TEXT_BASE .VIDEO_HWM - .TEXT_COLS*.TEXT_ROWS
 
 ; global aliases
 alias r12 tmp
@@ -37,7 +55,8 @@ alias r14 link
 alias r15 pc
 
     ; sprite data
-    org 0x3000
+    org .SPRITE_BASE
+.sprite_0
     db 0xff, 0xff, 0xff, 0xff
     db 0xff, 0xff, 0xff, 0xff
     db 0xf0, 0x00, 0x00, 0x0f
@@ -55,7 +74,7 @@ alias r15 pc
     db 0xff, 0xff, 0xff, 0xff
     db 0xff, 0xff, 0xff, 0xff
 
-    org 0x3400
+.sprite_1
     dw 0xaaaa, 0xaaaa
     dw 0xaaaa, 0xaaaa
     dw 0xaaaa, 0xaaaa
@@ -73,11 +92,75 @@ alias r15 pc
     dw 0xaaaa, 0xaaaa
     dw 0xaaaa, 0xaaaa
 
-    org 0x0000
-.init
-    mov sp, #hi(.STACK_BASE)
-    add sp, #lo(.STACK_BASE)
+    org .RESET_VECTOR
+    ldw pc, [pc]
+    dw .reset_handler
 
+    org .TRAP_VECTOR
+    hlt                 ; unimplemented
+    hlt
+
+    org .SWI_VECTOR
+    hlt                 ; unimplemented
+    hlt
+
+    org .IRQ_VECTOR
+{
+    mov r13, #hi(.SUPER_TOS)
+    add r13, #lo(.SUPER_TOS)
+    sub r13, #4
+    stw r0, [r13, #0]
+    stw r1, [r13, #2]
+
+    mov r0, #hi(.IO_IOCTL)
+    add r0, #lo(.IO_IOCTL)
+    ldw r1, [r0, #.IOCTL_PENDING]
+    tst r1, #bit 0                  ; was it vsync?
+    preq
+    bra .done
+
+.vsync
+    mov r1, #bit 0
+    stw r1, [r0, #.IOCTL_PENDING]   ; clear the interrupt
+    ;
+    ; TODO - act on vsync
+    ;
+
+.done
+    ldw r0, [r13, #0]
+    ldw r1, [r13, #2]
+    add r13, #4                     ; redundant as r13 is not preserved between supervisor switches
+    rtu r14
+}
+
+.reset_handler
+    ; enable VSYNC interrupt
+    mov r0, #hi(.IO_IOCTL)
+    add r0, #lo(.IO_IOCTL)
+    mov r1, #bit 0                  ; vsync
+    orr r1, #bit 15                 ; enable bit
+    stw r1, [r0, #.IOCTL_ENABLED]
+
+    ; enable processor interrupts
+    mrs r0, uflags
+    orr r0, #bit 0
+    msr uflags, r0
+
+    ; setup user stack
+    mov r0, #hi(.USER_TOS)
+    add r0, #lo(.USER_TOS)
+    msr u13, r0
+
+    ; clear user registers
+    mov r0, #0
+    mov r1, #0
+
+    ; enter user mode
+    mov r14, #hi(.user_program)
+    add r14, #lo(.user_program)
+    rtu r14
+
+.user_program
     bl .sprite_test
 
     bl .text_test_card   ; test character rendering
@@ -123,7 +206,8 @@ alias r15 pc
     ; r0 will now be pointing at sprite look #0
     
     ; set address and colors
-    mov r1, #0x3000 ; address
+    mov r1, #hi(.sprite_0)
+    add r1, #lo(.sprite_0)
     stw r1, [r0,#0]
     mov r1, #0x0f00 ; red
     stw r1, [r0,#2]
@@ -133,7 +217,8 @@ alias r15 pc
     stw r1, [r0,#6]
     add r0, #8
 
-    mov r1, #0x3400 ; address
+    mov r1, #hi(.sprite_1)
+    add r1, #lo(.sprite_1)
     stw r1, [r0,#0]
     mov r1, #hi(0x0ff0) ; yellow
     add r1, #lo(0x0ff0) ; yellow
@@ -970,8 +1055,8 @@ alias r15 pc
     mov vinfo, #hi(.WS_VINFO)           ; in-memory info
     add vinfo, #lo(.WS_VINFO)
 
-    mov vreg, #hi(.VREG)                ; display registers
-    add vreg, #lo(.VREG)
+    mov vreg, #hi(.IO_VREG)           ; display registers
+    add vreg, #lo(.IO_VREG)
 
     ldb mode, [entry, #.ENTRY_MODE]
     stw mode, [vreg, #.VREG_MODE]
@@ -1040,8 +1125,8 @@ alias r15 pc
     mul height, tmp                     ; height = stride*height = bytes
     stw height, [vinfo, #.VINFO_LEN]
 
-    mov tmp, #hi(.MEM_TOP)
-    add tmp, #lo(.MEM_TOP)
+    mov tmp, #hi(.VIDEO_HWM)
+    add tmp, #lo(.VIDEO_HWM)
     sub tmp, height
     stw tmp, [vinfo, #.VINFO_BASE]
     stw tmp, [vreg, #.VREG_BASE]
@@ -1689,7 +1774,6 @@ alias r15 pc
     mov pc, link
 
     ldw tmp, [addr, #.VINFO_WIDTH]
-    mov tmp, #.TEXT_COLS
     cmp x, tmp
     prhs
     mov pc, link
