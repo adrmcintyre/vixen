@@ -1,20 +1,68 @@
+; Global register aliases
+alias r12 tmp
+alias r13 sp
+alias r14 link
+alias r15 pc
+
+; Status flag bits
+def FLAG_N 15   ; negative
+def FLAG_Z 14   ; zero
+def FLAG_C 13   ; carry
+def FLAG_V 12   ; overflow
+def FLAG_I 0    ; interrupt enable
+
+;;
+;; CPU vectors
+;;
 def RESET_VECTOR 0x0000
 def TRAP_VECTOR  0x0004
 def SWI_VECTOR   0x0008
 def IRQ_VECTOR   0x000c
 
+;;
+;; Memory mapped I/O at top of memory
+;;
+
 ; 0x0400 in size
 def IO_BASE     0xfc00
-def IO_VREG     .IO_BASE + 0x000    ; 0x100 in size
-def IO_IOCTL    .IO_BASE + 0x100    ; 0x04  in size
-def IOCTL_ENABLED 0x00              ; irq-enabled register
-def IOCTL_PENDING 0x02              ; irq-pending register
 
-; 0x0800 in size
-def SPRITE_BASE 0xf400      ; room for 32 x 64-byte sprites
+;; Video registers
+
+def IO_VREG     .IO_BASE + 0x000    ; 0x040 in size
+
+;; Sprite registers
+
+; 16 * 2-word entries:
+;   +00:              [10]=xflip; [9:0]=xpos
+;   +02: [15]=enable; [10]=yflip; [9:0]=ypos
+def IO_SPRITE_POS   .IO_BASE + 0x040    ; 0x040 in size
+
+; 16 * 4-word entries:
+;   +00: bitmap address
+;   +02: color 1: 0000:rrrr:gggg:bbbb
+;   +04: color 2: -"-
+;   +06: color 3: -"-
+def IO_SPRITE_LOOK  .IO_BASE + 0x080    ; 0x080 in size
+
+;; IRQ Controller
+def IO_IRQ      .IO_BASE + 0x100    ; 0x04  in size
+def IRQ_ENABLED 0x00              ; irq-enabled register
+def IRQ_PENDING 0x02              ; irq-pending register
+def IRQ_VSYNC_BIT   0
+def IRQ_ENABLE_BIT 15
+
+;;
+;; O/S Workspaces
+;;
+
+;; Supervisor mode stack - full descending
+; 0x0040 in size = 64 bytes
+def SUPER_TOS   0xfc00
+def SUPER_BOS   0xfbc0
 
 ; 0x0040 in size
-def WS_VINFO    0xf3c0      ; video workspace
+def WS_VINFO    0xfb80      ; video workspace
+
 ; mode related data
 def VINFO_BASE      0x00    ; 2 - base mem address
 def VINFO_LEN       0x02    ; 2 - base mem address
@@ -31,31 +79,223 @@ def VINFO_Y         0x12    ; 2 - current y co-ord
 def VINFO_PATTERN   0x14    ; 2 - dot pattern   (initial: 0xffff)
 def VINFO_COLOR     0x16    ; 1 - current color (initial: 1<<bpp)-1
 def VINFO_MASK      0x17    ; 1 - current mask  (initial: 1<<bpp)-1
+; +0x18 .. +0x3f unallocated
 
-; 0x0040 in size
-def SUPER_TOS   0xf3c0-2    ; 64 byte stack (descending)
-; 0x03c0 unassigned
-def WS_XXX      0xf000      ; reserved for other workspaces
 
-; 0x0400 in size
-def USER_TOS    0xf000-2    ; 1K user stack (descending)
+;; Unassigned workspace area: 0x03c0 in size
+def WS_XXX      0xf800      ; reserved for other workspaces
+
+;; --------------------------------------------------------------------------
+;; Everything below here is user data.
+;; We could potentially memory protect 0xf800-0xffff in user mode (TODO)
+;; --------------------------------------------------------------------------
+
+;; User Mode Stack - empty descending - 0x0400 in size = 1K
+def USER_TOS    0xf800-2
+
+;;
+;; Video Buffer
+;;
 
 ; variable sized, depending on selected video mode
-def VIDEO_HWM   0xec00      ; end of video
+def VIDEO_HWM   0xf400      ; end of video
 
-
+; TODO - get rid of these (used by text test card routines)
 def TEXT_COLS 64
 def TEXT_ROWS 40
-def TEXT_BASE .VIDEO_HWM - .TEXT_COLS*.TEXT_ROWS
 
-; global aliases
-alias r12 tmp
-alias r13 sp
-alias r14 link
-alias r15 pc
+._zero_
+    org .RESET_VECTOR
+    ldw pc, [pc]
+    dw .reset_handler
+
+    org .TRAP_VECTOR
+    hlt                 ; unimplemented
+    hlt
+
+    org .SWI_VECTOR
+    ldw pc, [pc]
+    dw .swi_handler
+
+    org .IRQ_VECTOR
+.irq_handler {
+    mov sp, #hi(.SUPER_TOS)
+    add sp, #lo(.SUPER_TOS)
+    sub sp, #4
+    stw r0, [sp, #0]
+    stw r1, [sp, #2]
+
+    mov r0, #hi(.IO_IRQ)
+    add r0, #lo(.IO_IRQ)
+    ldw r1, [r0, #.IRQ_PENDING]
+    tst r1, #bit .IRQ_VSYNC_BIT
+    preq
+    bra .done
+
+.vsync
+    mov r1, #bit .IRQ_VSYNC_BIT
+    stw r1, [r0, #.IRQ_PENDING]   ; clear the interrupt
+    ;
+    ; TODO - act on vsync
+    ;
+
+.done
+    ldw r0, [sp, #0]
+    ldw r1, [sp, #2]
+    rtu link
+}
+
+.reset_handler
+    ; enable VSYNC interrupt
+    mov r0, #hi(.IO_IRQ)
+    add r0, #lo(.IO_IRQ)
+    mov r1, #bit .IRQ_VSYNC_BIT
+    orr r1, #bit .IRQ_ENABLE_BIT
+    stw r1, [r0, #.IRQ_ENABLED]
+
+    ; enable processor interrupts
+    mrs r0, uflags
+    orr r0, #bit .FLAG_I
+    msr uflags, r0
+
+    ; setup user stack
+    mov r0, #hi(.USER_TOS)
+    add r0, #lo(.USER_TOS)
+    msr u13, r0
+
+    ; clear user registers
+    mov r0, #0
+    mov r1, #0
+
+    ; enter user mode
+    mov link, #hi(.user_program)
+    add link, #lo(.user_program)
+    rtu link
+
+.swi_handler {
+    mov sp, #hi(.SUPER_TOS)
+    add sp, #lo(.SUPER_TOS)
+    sub sp, #6
+    stw r11,  [sp, #0]
+    stw r12,  [sp, #2]
+    stw link, [sp, #4]
+
+    sub link, #2        ;; point to SWI opcode
+    ldw r12, [link]     ;; fetch it - swi number is in bits 11..4
+    lsl r12, #4
+    lsr r12, #8         ;; extract SWI number
+    mov r11, #.SWI_MAX
+    cmp r12, r11
+    prhi
+    bra .undefined
+    lsl r12, #1         ;; convert to offset
+    mov r11, #hi(.table)
+    add r11, #lo(.table)
+    add r12, r11
+    ldw r11, [sp, #0]
+    mov link, #hi(.done)
+    add link, #lo(.done)
+    ldw pc, [r12]
+.done
+    ldw r11,  [sp, #0]
+    ldw r12,  [sp, #2]
+    ldw link, [sp, #4]
+    rtu link
+.undefined
+    hlt         ;; TODO - dump to system monitor / screen of death / etc?
+.table
+    dw  .swi_0
+    dw  .swi_1
+.table_end
+    def SWI_MAX (.table_end - .table) >> 1
+}
+
+; 32 bit add: (r0,r1) += (r2,r3)
+.swi_0 {
+    add r1, r3
+    adc r0, r2
+    mov pc, link
+}
+
+; nop
+.swi_1 {
+    mov pc, link 
+}
+
+.user_program
+    bl .sprite_test
+
+    bl .text_test_card   ; test character rendering
+   ;bl .text_test_card2  ; test text routines
+   ;bl .gfx_test_card1   ; test diagonal line
+   ;bl .gfx_test_card2   ; test graphics colours
+
+    hlt
+
+.sprite_test {
+    mov r0, #hi(.IO_SPRITE_POS) ; point to sprite pos #0
+    add r0, #lo(.IO_SPRITE_POS)
+
+    mov r1, #hi(44+320-256+2)    ; xpos
+    add r1, #lo(44+320-256+2)
+    stw r1, [r0,#0]
+    mov r1, #hi(31+240)    ; ypos
+    add r1, #lo(31+240)
+    orr r1, #bit 15        ; enable
+    stw r1, [r0,#2]
+    add r0, #4
+
+    mov r1, #hi(44+320+24)    ; xpos
+    add r1, #lo(44+320+24)
+    stw r1, [r0,#0]
+    mov r1, #hi(31+240+8)    ; ypos
+    add r1, #lo(31+240+8)
+    orr r1, #bit 15        ; enable
+    stw r1, [r0,#2]
+    add r0, #4
+
+    ; disable sprites #2-15
+    mov r1, #0
+    mov r2, #14
+.lp1
+    stw r1, [r0,#0]
+    stw r1, [r0,#2]
+    add r0, #4
+    sub r2, #1
+    prne
+    bra .lp1
+
+    mov r0, #hi(.IO_SPRITE_LOOK)
+    add r0, #lo(.IO_SPRITE_LOOK)
+    
+    ; set address and colors
+    mov r1, #hi(.sprite_0)
+    add r1, #lo(.sprite_0)
+    stw r1, [r0,#0]
+    mov r1, #0x0f00 ; red
+    stw r1, [r0,#2]
+    mov r1, #0x00f0 ; green
+    stw r1, [r0,#4]
+    mov r1, #0x000f ; blue
+    stw r1, [r0,#6]
+    add r0, #8
+
+    mov r1, #hi(.sprite_1)
+    add r1, #lo(.sprite_1)
+    stw r1, [r0,#0]
+    mov r1, #hi(0x0ff0) ; yellow
+    add r1, #lo(0x0ff0) ; yellow
+    stw r1, [r0,#2]
+    mov r1, #0x00ff ; cyan
+    stw r1, [r0,#4]
+    mov r1, #hi(0x0f0f) ; magenta
+    add r1, #lo(0x0f0f) ; magenta
+    stw r1, [r0,#6]
+    add r0, #8
+
+    mov pc, link
 
     ; sprite data
-    org .SPRITE_BASE
 .sprite_0
     db 0xff, 0xff, 0xff, 0xff
     db 0xff, 0xff, 0xff, 0xff
@@ -91,146 +331,6 @@ alias r15 pc
     dw 0xaaaa, 0xaaaa
     dw 0xaaaa, 0xaaaa
     dw 0xaaaa, 0xaaaa
-
-    org .RESET_VECTOR
-    ldw pc, [pc]
-    dw .reset_handler
-
-    org .TRAP_VECTOR
-    hlt                 ; unimplemented
-    hlt
-
-    org .SWI_VECTOR
-    hlt                 ; unimplemented
-    hlt
-
-    org .IRQ_VECTOR
-{
-    mov r13, #hi(.SUPER_TOS)
-    add r13, #lo(.SUPER_TOS)
-    sub r13, #4
-    stw r0, [r13, #0]
-    stw r1, [r13, #2]
-
-    mov r0, #hi(.IO_IOCTL)
-    add r0, #lo(.IO_IOCTL)
-    ldw r1, [r0, #.IOCTL_PENDING]
-    tst r1, #bit 0                  ; was it vsync?
-    preq
-    bra .done
-
-.vsync
-    mov r1, #bit 0
-    stw r1, [r0, #.IOCTL_PENDING]   ; clear the interrupt
-    ;
-    ; TODO - act on vsync
-    ;
-
-.done
-    ldw r0, [r13, #0]
-    ldw r1, [r13, #2]
-    add r13, #4                     ; redundant as r13 is not preserved between supervisor switches
-    rtu r14
-}
-
-.reset_handler
-    ; enable VSYNC interrupt
-    mov r0, #hi(.IO_IOCTL)
-    add r0, #lo(.IO_IOCTL)
-    mov r1, #bit 0                  ; vsync
-    orr r1, #bit 15                 ; enable bit
-    stw r1, [r0, #.IOCTL_ENABLED]
-
-    ; enable processor interrupts
-    mrs r0, uflags
-    orr r0, #bit 0
-    msr uflags, r0
-
-    ; setup user stack
-    mov r0, #hi(.USER_TOS)
-    add r0, #lo(.USER_TOS)
-    msr u13, r0
-
-    ; clear user registers
-    mov r0, #0
-    mov r1, #0
-
-    ; enter user mode
-    mov r14, #hi(.user_program)
-    add r14, #lo(.user_program)
-    rtu r14
-
-.user_program
-    bl .sprite_test
-
-    bl .text_test_card   ; test character rendering
-   ;bl .text_test_card2  ; test text routines
-   ;bl .gfx_test_card1   ; test diagonal line
-   ;bl .gfx_test_card2   ; test graphics colours
-
-    hlt
-
-.sprite_test {
-    mov r0, #hi(0xfc40) ; point to sprite pos #0
-    add r0, #lo(0xfc40)
-
-    mov r1, #hi(44+320-256+2)    ; xpos
-    add r1, #lo(44+320-256+2)
-    stw r1, [r0,#0]
-    mov r1, #hi(31+240)    ; ypos
-    add r1, #lo(31+240)
-    orr r1, #bit 15        ; enable
-    stw r1, [r0,#2]
-    add r0, #4
-
-    mov r1, #hi(44+320+24)    ; xpos
-    add r1, #lo(44+320+24)
-    stw r1, [r0,#0]
-    mov r1, #hi(31+240+8)    ; ypos
-    add r1, #lo(31+240+8)
-    orr r1, #bit 15        ; enable
-    stw r1, [r0,#2]
-    add r0, #4
-
-    ; disable sprites #2-15
-    mov r1, #0
-    mov r2, #14
-.lp1
-    stw r1, [r0,#0]
-    stw r1, [r0,#2]
-    add r0, #4
-    sub r2, #1
-    prne
-    bra .lp1
-
-    ; r0 will now be pointing at sprite look #0
-    
-    ; set address and colors
-    mov r1, #hi(.sprite_0)
-    add r1, #lo(.sprite_0)
-    stw r1, [r0,#0]
-    mov r1, #0x0f00 ; red
-    stw r1, [r0,#2]
-    mov r1, #0x00f0 ; green
-    stw r1, [r0,#4]
-    mov r1, #0x000f ; blue
-    stw r1, [r0,#6]
-    add r0, #8
-
-    mov r1, #hi(.sprite_1)
-    add r1, #lo(.sprite_1)
-    stw r1, [r0,#0]
-    mov r1, #hi(0x0ff0) ; yellow
-    add r1, #lo(0x0ff0) ; yellow
-    stw r1, [r0,#2]
-    mov r1, #0x00ff ; cyan
-    stw r1, [r0,#4]
-    mov r1, #hi(0x0f0f) ; magenta
-    add r1, #lo(0x0f0f) ; magenta
-    stw r1, [r0,#6]
-    add r0, #8
-
-    mov pc, link
 }
 
 
