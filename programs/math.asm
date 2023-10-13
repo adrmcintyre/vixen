@@ -3,84 +3,31 @@ alias r15 pc
 
 org 0x0000
 .user_program
-    ; result should be (r2,r0) = (0x016d, 0x0030)
-    mov r0, #hi(53703)
-    add r0, #lo(53703)
-    mov r1, #hi(147)
-    add r1, #lo(147)
-    bl .math_udiv16fast
-    hlt
+;   ; result should be (r2,r0) = (0x016d, 0x0030)
+;   mov r0, #hi(53703)
+;   add r0, #lo(53703)
+;   mov r1, #hi(147)
+;   add r1, #lo(147)
+;   bl .math_udiv16fast
+;   hlt
 
-;.here
-;    ldw r0, [pc,#.args-.here-2]
-;    ldw r1, [pc,#.args-.here-2]
-;    ldw r2, [pc,#.args-.here-2]
-;    ldw r3, [pc,#.args-.here-2]
-;    bl .math_mul32x32
-;    bra .verify
-;.args
-;    dw 0x7f1a,0x38dd, 0x5693,0xb08c
-;.verify
-;    ldw r0, [pc,#.expect-.verify-2]
-;    ldw r1, [pc,#.expect-.verify-2]
-;    sub r3, r1
-;    sbc r2, r0
-;    hlt
-;.expect
-;    dw 0x6e56,0x08dc
-
-; 16 bit division
-;   - 127 instructions
-;   - 163 for non-unrolled version
-;   - fully unrolled would be 115
-.math_udiv16 {
-    alias r0 den
-    alias r1 num
-    alias r2 rem
-    alias r3 i
-
-    mov rem, #0
-    mov i, #16
-    ; unroll loop 4 times
-.loop
-    asl den, #1
-    adc rem, rem
-    cmp rem, num
-    prhs
-    sub rem, num
-    prhs
-    orr den, #1
-
-    asl den, #1
-    adc rem, rem
-    cmp rem, num
-    prhs
-    sub rem, num
-    prhs
-    orr den, #1
-
-    asl den, #1
-    adc rem, rem
-    cmp rem, num
-    prhs
-    sub rem, num
-    prhs
-    orr den, #1
-
-    asl den, #1
-    adc rem, rem
-    cmp rem, num
-    prhs
-    sub rem, num
-    prhs
-    orr den, #1
-
-    sub i, #4
-    prne
-    bra .loop
-
-    mov pc, link
-}
+ .here
+     ldw r0, [pc,#.args-.here-2]
+     ldw r1, [pc,#.args-.here-2]
+     ldw r2, [pc,#.args-.here-2]
+     ldw r3, [pc,#.args-.here-2]
+     bl .math_mul32x32
+     bra .verify
+ .args
+     dw 0x7f1a,0x38dd, 0x5693,0xb08c
+ .verify
+     ldw r0, [pc,#.expect-.verify-2]
+     ldw r1, [pc,#.expect-.verify-2]
+     sub r5, r1
+     sbc r4, r0
+     hlt
+ .expect
+     dw 0x6e56,0x08dc
 
 ; 32 bit division
 ; worst case: 412 instrs
@@ -158,72 +105,49 @@ org 0x0000
 }
 
 ; 32 bit x 32 bit multiply with 32 bit result
-; 30 instructions
+; 8 instructions
 .math_mul32x32 {
     alias r0 uh
     alias r1 ul
-    alias r2 vh     ; qh
-    alias r3 vl     ; ql
-    alias r6 tmp
-    alias r7 link_save
+    alias r2 vh
+    alias r3 vl
+    alias r4 qh
+    alias r5 ql
 
-    mov link_save, link
-    mul vh, ul  ; vh = ul*vh
-    mul uh, vl  ; uh = uh*vl
-    add uh, vh  ; uh = ul*vh + uh*vl
-    mov tmp, uh ; tmp  = (ul*vh + uh*vl) << 16
+    mul vh, ul      ; vh = ul*vh
+    mul uh, vl      ; uh = uh*vl
+    add uh, vh      ; uh = ul*vh + uh*vl
 
-    mov r0, vl          ; r0=vl, r1=ul
-    bl .math_mul16x16   ; (vh,vl) = ul*vl
-    add r2, tmp         ; (vh,vl) = (ul*vh + uh*vl) << 16 + ul*vl
+    mov ql, vl
+    mov qh, vl
+    mul ql, r1      ; ql = lo(ul*vl)
+    muh qh, r1      ; qh = hi(ul*vl)
 
-    mov pc, link_save
+    add qh, uh      ; (qh,ql) = (ul*vh + uh*vl) << 16 + ul*vl
+
+    mov pc, link
 }
 
 ; 16-bit by 16-bit multiply with 32-bit result
-; 22 instructions - any real point in this? we're only saving 6 instructions
+; 4 instructions
 .math_mul16x16 {
     alias r0 u
     alias r1 v
-    alias r2 q
+    alias r2 q_hi
     alias r3 q_lo
-    alias r4 u_lo
-    alias r5 v_lo
 
-    mov u_lo, #0xff
-    and u_lo, u         ; u_lo = u[7:0]
-    lsr u, #8           ; u    = u[15:8]
-
-    mov v_lo, #0xff
-    and v_lo, v         ; v_lo = v[7:0]
-    lsr v, #8           ; v    = v[15:8]
-
-    mov q, u
-    mul q, v            ; q = uh*rh
-    mov q_lo, u_lo
-    mul q_lo, v_lo      ; q_lo = ul*rl
-
-    mul u, v_lo         ; u = uh*rl
-    mul u_lo, v         ; u_lo = ul*rh
-    mov v, #0x0100      ; tmp
-    add u, u_lo         ; u = uh*rl + ul*rh
-    prcs
-    add q, v            ; carry in to bit 24
-
-    ror u, #8           ; u = lo(uh*rl + ul*rh) : hi(uh*rl + ul*rh)
-    mov u_lo, #0xff     ; u_lo = 0x00              : 0xff
-    and u_lo, u         ; u_lo = 0x00              : hi(uh*rl + ul*rh)
-    eor u, u_lo         ; u = lo(uh*rl + ul*rh) : 0x00
-    add q_lo, u
-    adc q, u_lo
+    mov q_lo, u
+    mov q_hi, u
+    mul q_lo, v
+    muh q_hi, v
 
     mov pc, link
 }
 
 ; TODO - 32 bit version of this (gulp)
 ; 16-bit by 16-bit division with 16-bit quotient and remainder
-; Instruction count: 52-63
-.math_udiv16fast {
+; Instruction count: 22-30
+.math_udiv16 {
     ; TODO - some of these registers can surely be dual purposed
     alias r0 u
     alias r1 v
@@ -231,11 +155,7 @@ org 0x0000
     alias r2 v1
     alias r3 q_lo
     alias r4 r
-    alias r5 m1
-    alias r6 m2
-    alias r7 m3
-    alias r8 m4
-    alias r9 n
+    alias r5 n
 
     ; Calculate estimate of quotient using lookup table.
 
@@ -251,40 +171,8 @@ org 0x0000
     add r, v1
     ldw r, [r]
     
-    ; TODO call mul16x16 instead of inlining
-
-    ; q = (uint32_t)u * r;           // Q16.16 = U16 * Q16
-    mov m1, u
-    lsr m1, #8          ; m1 = 0x00:u_hi
-    mov m2, #0xff
-    and m2, u           ; m2 = 0x00:u_lo
-
-    mov m3, r
-    lsr m3, #8          ; m3 = 0x00:r_hi
-    mov m4, #0xff
-    and m4, r           ; m4 = 0x00:r_lo
-
-    mov q, m1
-    mul q, m3           ; q = uh*rh
-    mov q_lo, m2
-    mul q_lo, m4        ; q_lo = ul*rl
-
-    mul m1, m4          ; m1 = uh*rl
-    mul m2, m3          ; m2 = ul*rh
-    mov m3, #0x0100     ; tmp
-    add m1, m2          ; m1 = uh*rl + ul*rh
-    prcs
-    add q, m3           ; carry in to bit 24
-
-    ror m1, #8          ; m1 = lo(uh*rl + ul*rh) : hi(uh*rl + ul*rh)
-    mov m2, #0xff       ; m2 = 0x00              : 0xff
-    and m2, m1          ; m2 = 0x00              : hi(uh*rl + ul*rh)
-    eor m1, m2          ; m1 = lo(uh*rl + ul*rh) : 0x00
-    add q_lo, m1
-    adc q, m2
-
-    ; q  = (uint16_t)(qx >> 16);      // U16 = trunc(Q16.16)
-    ; qx is (q:q_lo) above, so we already have q
+    mov q, u
+    muh q, r ; q = ((uint32_t)u * r) >> 16;
     
     mov q_lo, #15
     sub q_lo, n

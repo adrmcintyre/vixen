@@ -95,15 +95,13 @@ def_op('rsc' => {mode => 2, pat => '0000:0110:ssss:rrrr'});
 def_op('rsb' => {mode => 2, pat => '0000:0111:ssss:rrrr'});
 
 def_op('clz' => {mode => 2, pat => '0000:1000:ssss:rrrr'});
-
-# '0000:1001:____:____', # |
-# '0000:1010:____:____', #  }- 768 encodings
-# '0000:1011:____:____', # |
-
+# '0000:1001:____:____', # 256 encodings
+def_op('mul' => {mode => '2', pat => '0000:1010:ssss:rrrr'});
+def_op('muh' => {mode => '2', pat => '0000:1011:ssss:rrrr'});
 def_op('and' => {mode => '2', pat => '0000:1100:ssss:rrrr'});
 def_op('cmp' => {mode => '2', pat => '0000:1101:ssss:rrrr'});
 def_op('cmn' => {mode => '2', pat => '0000:1110:ssss:rrrr'});
-def_op('mul' => {mode => '2', pat => '0000:1111:ssss:rrrr'});
+# '0000:1111:____:____', # 256 encodings
 
 def_op('ror' => {mode => '2', pat => '0001:0000:ssss:rrrr'});
 def_op('lsl' => {mode => '2', pat => '0001:0001:ssss:rrrr'});

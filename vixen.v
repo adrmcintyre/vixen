@@ -379,6 +379,8 @@ module vixen (
     wire [4:0] clz16_cnt;
     clz16 clz16(.din(r_src), .cnt(clz16_cnt));
 
+    wire [31:0] mul32 = {16'b0,r_dst} * {16'b0,r_src};
+
     always @* begin
         alu_mov_op   = 1'b0;
         alu_add_op   = 1'b0;
@@ -435,15 +437,15 @@ module vixen (
                     6'b00_0111: {text, alu_sub_op, alu_c, alu_out} = {"RSB ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,1'b1}};     // rsb r_dst, r_src
 
                     6'b00_1000: {text, alu_mov_op, alu_out} = {"CLZ ", 1'b1, {11'b0, clz16_cnt}};                                       // clz r_dst, r_src
-                    6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits)
-                    6'b00_1010: substate = SS_TRAP;                                                                 // unused (8 bits)
-                    6'b00_1011: substate = SS_TRAP;                                                                 // unused (8 bits)
+                    6'b00_1001: substate = SS_TRAP;                                                                               // unused (8 bits)
+                    6'b00_1010: {text, alu_logic_op, alu_out} = {"MUL ", 1'b1, mul32[15:0]};                                      // mul r_dst, r_src
+                    6'b00_1011: {text, alu_logic_op, alu_out} = {"MUH ", 1'b1, mul32[31:16]};                                     // muh r_dst, r_src
 
                     6'b00_1100: {text, alu_logic_op, alu_out}      = {"AND ", 1'b1, r_dst & r_src};                               // and r_dst, r_src
                     6'b00_1101: {text, alu_cmp_op, alu_c, alu_out} = {"CMP ", 1'b1, ({1'b0,r_dst} + {1'b0,~r_src}) + 1'b1};       // cmp r_dst, r_src
                     6'b00_1110: {text, alu_cmp_op, alu_c, alu_out} = {"CMN ", 1'b1, ({1'b0,r_dst} + {1'b0,r_src})};               // cmn r_dst, r_src
 
-                    6'b00_1111: {text, alu_logic_op, alu_out} = {"MUL ", 1'b1, r_dst * r_src};                                    // mul r_dst, r_src 
+                    6'b00_1111: substate = SS_TRAP;                                                                               // unused (8 bits)
 
                     6'b01_0000:                                                                             // ror r_dst, r_src
                         begin
