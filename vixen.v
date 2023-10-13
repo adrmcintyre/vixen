@@ -376,6 +376,9 @@ module vixen (
     // predication
     reg pred_true;
 
+    wire [4:0] clz16_cnt;
+    clz16 clz16(.din(r_src), .cnt(clz16_cnt));
+
     always @* begin
         alu_mov_op   = 1'b0;
         alu_add_op   = 1'b0;
@@ -431,7 +434,7 @@ module vixen (
                     6'b00_0110: {text, alu_sub_op, alu_c, alu_out} = {"RSC ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,flag_c}};   // rsc r_dst, r_src
                     6'b00_0111: {text, alu_sub_op, alu_c, alu_out} = {"RSB ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,1'b1}};     // rsb r_dst, r_src
 
-                    6'b00_1000: substate = SS_TRAP;  //IDEA clz : count leading zeros                               // unused (8 bits)
+                    6'b00_1000: {text, alu_mov_op, alu_out} = {"CLZ ", 1'b1, {11'b0, clz16_cnt}};                                       // clz r_dst, r_src
                     6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1010: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1011: substate = SS_TRAP;                                                                 // unused (8 bits)
@@ -609,3 +612,4 @@ module vixen (
         endcase
     end
 endmodule
+

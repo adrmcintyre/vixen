@@ -3,30 +3,31 @@ alias r15 pc
 
 org 0x0000
 .user_program
-;   ; result should be (r2,r0) = (0x016d, 0x0030)
-;   mov r0, #hi(53703)
-;   add r0, #lo(53703)
-;   mov r1, #hi(147)
-;   add r1, #lo(147)
-;   bl .math_udiv16fast
-
-.here
-    ldw r0, [pc,#.args-.here-2]
-    ldw r1, [pc,#.args-.here-2]
-    ldw r2, [pc,#.args-.here-2]
-    ldw r3, [pc,#.args-.here-2]
-    bl .math_mul32x32
-    bra .verify
-.args
-    dw 0x7f1a,0x38dd, 0x5693,0xb08c
-.verify
-    ldw r0, [pc,#.expect-.verify-2]
-    ldw r1, [pc,#.expect-.verify-2]
-    sub r3, r1
-    sbc r2, r0
+    ; result should be (r2,r0) = (0x016d, 0x0030)
+    mov r0, #hi(53703)
+    add r0, #lo(53703)
+    mov r1, #hi(147)
+    add r1, #lo(147)
+    bl .math_udiv16fast
     hlt
-.expect
-    dw 0x6e56,0x08dc
+
+;.here
+;    ldw r0, [pc,#.args-.here-2]
+;    ldw r1, [pc,#.args-.here-2]
+;    ldw r2, [pc,#.args-.here-2]
+;    ldw r3, [pc,#.args-.here-2]
+;    bl .math_mul32x32
+;    bra .verify
+;.args
+;    dw 0x7f1a,0x38dd, 0x5693,0xb08c
+;.verify
+;    ldw r0, [pc,#.expect-.verify-2]
+;    ldw r1, [pc,#.expect-.verify-2]
+;    sub r3, r1
+;    sbc r2, r0
+;    hlt
+;.expect
+;    dw 0x6e56,0x08dc
 
 ; 16 bit division
 ;   - 127 instructions
@@ -238,34 +239,8 @@ org 0x0000
 
     ; Calculate estimate of quotient using lookup table.
 
-    ; TODO call subroutine version of clz instead
-
-    ; count leading zeros in v - takes 9-13 instructions
-    mov r, #hi(.clz6)
-    add r, #lo(.clz6)
-    mov n, v
-    lsr n, #10
-    preq
-    bra .clz_mid6
-    add n, r
-    ldb n, [n]
-    bra .clz_done
-.clz_mid6
-    mov n, v
-    lsr n, #4
-    preq
-    bra .clz_low4
-    add n, r
-    ldb n, [n]
-    add n, #6
-    bra .clz_done
-.clz_low4
-    add r, v
-    ldb n, [r]
-    add n, #10
-.clz_done
-
     ; shift v1 up until top bit set
+    clz n, v                        ; count leading zeros
     mov v1, v
     lsl v1, n
 
@@ -339,16 +314,6 @@ org 0x0000
     sub u, v
     mov pc, link
 
-.clz6
-    db 6, 5, 4, 4, 3, 3, 3, 3
-    db 2, 2, 2, 2, 2, 2, 2, 2
-    db 1, 1, 1, 1, 1, 1, 1, 1
-    db 1, 1, 1, 1, 1, 1, 1, 1
-    db 0, 0, 0, 0, 0, 0, 0, 0
-    db 0, 0, 0, 0, 0, 0, 0, 0
-    db 0, 0, 0, 0, 0, 0, 0, 0
-    db 0, 0, 0, 0, 0, 0, 0, 0
-
 .reciprocal
     ; 256 bytes
     ; reciprocal[i] = 0x007fffff / (0x80+i)
@@ -369,46 +334,4 @@ org 0x0000
     dw 0x8888, 0x87F7, 0x8767, 0x86D9, 0x864B, 0x85BF, 0x8534, 0x84A9
     dw 0x8421, 0x8399, 0x8312, 0x828C, 0x8208, 0x8184, 0x8102, 0x8080
 }
-
-.math_clz {
-    ; worst case 20 instructions
-    alias r0 x
-    alias r1 cnt
-    alias r2 ptr
-
-    mov ptr, #hi(.table)
-    add ptr, #lo(.table)
-    mov cnt, x
-    lsr cnt, #10
-    preq
-    bra .mid6
-    add cnt, ptr
-    ldb cnt, [cnt]
-    mov pc, link
-.mid6
-    mov cnt, x
-    lsr cnt, #4
-    preq
-    bra .low4
-    add cnt, ptr
-    ldb cnt, [cnt]
-    add cnt, #6
-    mov pc, link
-.low4
-    add ptr, x
-    ldb cnt, [ptr]
-    add cnt, #10
-    mov pc, link
-.table
-    ; 64 bytes
-    db 6, 5, 4, 4, 3, 3, 3, 3
-    db 2, 2, 2, 2, 2, 2, 2, 2
-    db 1, 1, 1, 1, 1, 1, 1, 1
-    db 1, 1, 1, 1, 1, 1, 1, 1
-    db 0, 0, 0, 0, 0, 0, 0, 0
-    db 0, 0, 0, 0, 0, 0, 0, 0
-    db 0, 0, 0, 0, 0, 0, 0, 0
-    db 0, 0, 0, 0, 0, 0, 0, 0
-}
-
 
