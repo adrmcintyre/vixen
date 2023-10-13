@@ -205,23 +205,13 @@ def TEXT_ROWS 40
     hlt         ;; TODO - dump to system monitor / screen of death / etc?
 .table
     dw  .swi_0
-    dw  .swi_1
 .table_end
     def SWI_MAX (.table_end - .table) >> 1
 }
 
-; 32 bit add: (r0,r1) += (r2,r3)
 .swi_0 {
-    add r1, r3
-    adc r0, r2
-    mov pc, link
+    hlt
 }
-
-; nop
-.swi_1 {
-    mov pc, link 
-}
-
 .user_program
     bl .sprite_test
 
