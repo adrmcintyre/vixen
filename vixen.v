@@ -431,7 +431,7 @@ module vixen (
                     6'b00_0110: {text, alu_sub_op, alu_c, alu_out} = {"RSC ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,flag_c}};   // rsc r_dst, r_src
                     6'b00_0111: {text, alu_sub_op, alu_c, alu_out} = {"RSB ", 1'b1, ({1'b0,r_src} + {1'b0,~r_dst}) + {16'b0,1'b1}};     // rsb r_dst, r_src
 
-                    6'b00_1000: substate = SS_TRAP;                                                                 // unused (8 bits)
+                    6'b00_1000: substate = SS_TRAP;  //IDEA clz : count leading zeros                               // unused (8 bits)
                     6'b00_1001: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1010: substate = SS_TRAP;                                                                 // unused (8 bits)
                     6'b00_1011: substate = SS_TRAP;                                                                 // unused (8 bits)
@@ -484,7 +484,12 @@ module vixen (
 
                     // 001n-nnnn-nnnn-rrrr
                     6'b1?_????: begin
-                        // 001n-nnnn-nnnn-rrrr                                      // add r_dst, #signed_num9 ; r_dst != r15 - IDEA: do not set flags; IDEA steal num==0 - 16 encodings
+                        // 001n-nnnn-nnnn-rrrr                                      // add r_dst, #signed_num9 ; r_dst != r15
+                        //                                                          // IDEA: do not set flags (rename to INC/DEC to distinguish from normal ADDs)
+                        //                                                          //       - but then how do we clear carry?
+                        //                                                          // IDEA: signed_num9==0 could mean 0x0100 (but how do we clear carry then?)
+                        //                                                          // NOTE: we already can't set carry, because "sub r, #0" is really "add r, #0"
+                        //                                                          // IDEA: or steal signed_num==0 for 16 encodings
                         if (dst != 4'b1111) begin
                             text = "ADD#";
                             alu_add_op = 1'b1;
@@ -519,7 +524,7 @@ module vixen (
                         else begin
                             //001x-xxxx-yyyy-1111 : x-xxxx != 1_1111
                             casez (op)
-                                16'b0010_????_????_1111: {text, substate} = {"SWI ", SS_SWI};   // swi #num8
+                                16'b0010_????_????_1111: {text, substate} = {"SWI ", SS_SWI};   // swi #num8 - IDEA br<cc> [-16..14]
 
                                 16'b0011_0000_????_1111: {text, substate} = {"MRS ", SS_RD_FLAGS};  // mrs r, flags
                                 16'b0011_0001_????_1111: {text, substate} = {"MSR ", SS_WR_FLAGS};  // msr flags, r
@@ -543,6 +548,10 @@ module vixen (
                     end
                 endcase
             end
+
+            // IDEA: [ld,st]b target, [base,#num4]
+            //       [ld,st]w target, [base,#num4<<1]
+            //       [ld,st][b,w] target, [base,reg_off]
 
             // 01wn-nnnn-bbbb-tttt:
             // 010n-nnnn-bbbb-tttt      ldb target, [base,#num5] ; alias "ldb target, [base]" when n == 0
@@ -569,12 +578,12 @@ module vixen (
             // 11??-????-????-????
             2'b11: begin
                 casez (op_mov8_br)
-                    // 1100-nnnn-nnnn-rrrr  ; mov r, #num8          -- IDEA signed?
-                    // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8
+                    // 1100-nnnn-nnnn-rrrr  ; mov r, #num8          -- IDEA r_dst==15 : SWI #num8
+                    // 1101-nnnn-nnnn-rrrr  ; mov r, #num8<<8       -- IDEA num8==0 : 16 encodings ; r_dst==15 : 256 encodings
                     2'b00: {text, substate, alu_mov_op, alu_out} = {"MVL ", SS_ALU, 1'b1, {8'b0, op_num8}};    // mov r, #num8
                     2'b01: {text, substate, alu_mov_op, alu_out} = {"MVH ", SS_ALU, 1'b1, {op_num8, 8'b0}};    // mov r, #num8<<8
 
-                    // 1110-oooo-oooo-oooo
+                    // 1110-oooo-oooo-oooo -- this is +-4K
                     2'b10: begin
                         text = "B   ";
                         substate = SS_BRANCH;
@@ -582,7 +591,13 @@ module vixen (
                         br_addr = pc + {{3{op_br_offset[11]}}, op_br_offset, 1'b0};
                     end
 
-                    // 1111-oooo-oooo-oooo
+                    // 1111-oooo-oooo-oooo -- this is +-4K
+                    //
+                    // IDEA - would be nice to have a simpler way to support long distance BL than the following sequence:
+                    //      mov link, pc
+                    //      add link, #6
+                    //      ldw pc, [pc]
+                    //      dw .target
                     2'b11: begin
                         text = "BL  ";
                         substate = SS_BRANCH;
