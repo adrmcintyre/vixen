@@ -1,27 +1,18 @@
+;; Adapted from the softfloat library by John R Hauser.
+;; See https://github.com/ucb-bar/berkeley-softfloat-3
+
+; Requires f16_internal.asm
 
 .f16_add
 {
-    alias r0 a
-    alias r1 b
-    alias r2 z
-    alias r3 a_exp
-    alias r4 b_exp
-    alias r5 z_exp
+    ; working regs
+    alias r5 a_exp
     alias r6 a_sign
-    alias r7 z_sign
+    alias r7 b_exp
     alias r8 exp_diff
-    alias r9 x
-    alias r10 y
+    alias r9 x_hi
+    alias r10 y_hi
     alias r11 y_lo
-    alias r12 tmp
-    alias r14 link
-    alias r15 pc
-
-    def f16_sign_mask 0x8000
-    def f16_exp_mask  0x7c00
-    def f16_qnan      0x7e00
-    def f16_inf       0x7c00
-
 
     ;; TODO - branch for add vs sub
     mov tmp, #.f16_sign_mask
@@ -38,6 +29,7 @@
     mov a, tmp
 
 .ordered
+    mov z_sign, a_sign      ; prepare return sign
     mov tmp, #.f16_exp_mask
     mov a_exp, a
     mov b_exp, b
@@ -51,7 +43,7 @@
     prne
     bra .exp_a_greater_b
 
-    ; from here we know exponents are equal, so we have one of:
+    ; From here we know exponents are equal, so we have one of:
     ;   both are zero or subnormal,
     ;   both are inf or nan
     ;   both are normal
@@ -60,11 +52,11 @@
     prne
     bra .both_not_sub
 
-    ; at this point we know a_exp=b_exp=0, so we can add both as subnormals
-    mov z_exp, #0
+    ; At this point we know a_exp=b_exp=0, so we can add both as subnormals
     mov z, a
     add z, b    ; if we overflow into bit 10, that's okay as it's then treated as exp=1
-    bra .return_uiz
+    orr z, a_sign
+    mov pc, link
 
 .both_not_sub
     ;  TODO could do >30 instead, so we can reuse for <30 comparison in both_normal
@@ -78,22 +70,12 @@
     preq
     bra .both_inf
 
-.return_nan
-    mov z, #.f16_qnan
-    mov pc, link
-
-.return_inf
-    mov z, #.f16_inf
-    orr z, a_sign
-    mov pc, link
-
 .both_inf
     mov z, #.f16_inf    ; both must be inf, so inf result
     orr z, a_sign
     mov pc, link
 
 .both_normal
-    mov z_sign, a_sign
     mov z_exp, a_exp
     mov z, #0x400 * 2
     add z, a
@@ -113,9 +95,9 @@
 
 .drop3
     lsr z, #3
-    bra .round_pack_to_f16
+    bra .f16_round_pack
 
-    ;;; At this point we know exp_a > exp_b
+    ; At this point we know exp_a > exp_b
 
 .exp_a_greater_b
     mov tmp, #31
@@ -125,8 +107,8 @@
 
     and a, a
     preq
-    bra .return_inf
-    bra .return_nan
+    bra .f16_return_inf
+    bra .f16_return_nan
 
 .a_finite
     mov tmp, #13
@@ -142,84 +124,81 @@
 
 .a_non_huge
     mov z_exp, a_exp
-    mov x, a
-    orr x, #0x400
-    mov y, b
+    mov x_hi, a
+    orr x_hi, #0x400
+    mov y_hi, b
     and b_exp, b_exp
     preq
     bra .y_is_double_b
 
-    orr y, #0x400
+    orr y_hi, #0x400
     bra .y_done
 
 .y_is_double_b
-    add y, b
+    add y_hi, b
 
 .y_done
     mov tmp, #19
     rsb exp_diff, tmp
 
-    ;; align and add
+    ; Now we align and add
 
     ; 0 < a_exp - b_exp < 13
     ; therefore 19 > exp_diff > 6
 
-    lsl x, #3
+    lsl x_hi, #3
 
     mov tmp, #16
     cmp exp_diff, tmp
     prhs
     bra .align_ge16
 
-    mov y_lo, y
+    mov y_lo, y_hi
     lsl y_lo, exp_diff
     rsb exp_diff, tmp
-    lsr y, tmp
+    lsr y_hi, tmp
     bra .aligned
 
 .align_ge16
     sub exp_diff, #16
-    lsl y, exp_diff
+    lsl y_hi, exp_diff
     mov y_lo, #0
 
-.aligned
-
     ; addition looks like this:
-    ; 00xxxxxx:xxxxx000 : 00000000:00000000
-    ; 000yyyyy:yyyyyy00 : 00000000:00000000, after << 18 : expDiff=1
-    ; 00000000:000000yy : yyyyyyyy:y0000000, after << 7  : expDiff=12
-
-    ; z32 = [y:y_lo]
-    add y, x
+    ; x : 00xxxxxx:xxxxx000 : 00000000:00000000
+    ; y : 000yyyyy:yyyyyy00 : 00000000:00000000, (after << 18 when exp_diff=1)
+    ; ... 00000000:000000yy : yyyyyyyy:y0000000, (after << 7  when exp_diff=12)
+.aligned
+    ; z32 = [y_hi:y_lo]
+    add y_hi, x_hi
     mov tmp, #0x4000
-    cmp y, tmp
+    cmp y_hi, tmp
     prhs
     bra .scaled
     sub z_exp, #1
-    lsl y_lo, #1    ; [y:y_lo] <<= 1
-    adc y, y
+    lsl y_lo, #1        ; [y_hi:y_lo] <<= 1
+    adc y_hi, y_hi
 
 .scaled
-    mov z, y        ; TODO possibility to fuse register usage?
+    mov z, y_hi
     and y_lo, y_lo
     preq
     bra .else
     orr z, #bit 0
-    bra .round_pack_to_f16
+    bra .f16_round_pack
 
 .else
     mov tmp, #0xf
     tst z, tmp
     prne
-    bra .round_pack_to_f16
+    bra .f16_round_pack
     mov tmp, #30
     cmp z_exp, tmp
     prhs
-    bra .round_pack_to_f16
+    bra .f16_round_pack
     lsr z, #4
     bra .pack
 
-.round_pack_to_f16  ; TODO
 .return_uiz         ; TODO
 .pack               ; TODO
 }

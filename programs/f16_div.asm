@@ -1,45 +1,18 @@
-;;
-;; This code is based on the softfloat library by John R Hauser
-;; at https://github.com/ucb-bar/berkeley-softfloat-3
-;;
+;; Adapted from the softfloat library by John R Hauser.
+;; See https://github.com/ucb-bar/berkeley-softfloat-3
+
+; Requires f16_internal.asm
 
 .f16_div
 {
-    ; TODO reduce register usage
-    alias r0 a
-    alias r1 b
-    alias r2 z
-    alias r3 rem
-    alias r4 a_exp
-    alias r5 b_exp
-    alias r6 z_exp
-    alias r7 z_sign
+    ; working registers
+    alias r5 rem
+    alias r6 a_exp
+    alias r7 b_exp
     alias r8 index
     alias r9 recip
     alias r10 deriv_lo
     alias r11 deriv_hi
-    alias r12 tmp
-    alias r13 sp
-    alias r14 link
-    alias r15 pc
-
-    def f16_zero      0x0000
-    def f16_min_sub   0x0001
-    def f16_max_sub   0x03ff
-    def f16_min_norm  0x0400
-    def f16_one       0x3c00
-    def f16_one_eps   0x3c01
-    def f16_two       0x4000
-    def f16_three     0x4200
-    def f16_max       0x7bff
-    def f16_inf       0x7c00
-    def f16_min_nan   0x7c01
-    def f16_qnan      0x7e00
-    def f16_max_nan   0x7fff
-    def f16_neg       0x8000
-
-    def f16_sign_mask 0x8000
-    def f16_exp_mask  0x7c00
 
     mov tmp, #.f16_sign_mask
     mov z_sign, a
@@ -64,15 +37,11 @@
 
     and a, a
     prne
-    bra .invalid            ; isNan(a) => NaN
+    bra .f16_return_nan     ; isNan(a) => NaN
     cmp b_exp, tmp
     preq
-    bra .invalid            ; isInfOrNan(b) => NaN
-                            ;          else => inf
-.infinity
-    mov z, #.f16_inf
-    orr z, z_sign
-    mov pc, link
+    bra .f16_return_nan     ; isInfOrNan(b) => NaN
+    bra .f16_return_inf     ;          else => inf
 
 .a_finite
     cmp b_exp, tmp          ; isInfOrNan(b) ?
@@ -80,11 +49,8 @@
     bra .b_finite
     and b, b
     prne
-    bra .invalid            ; isNan(b) => NaN
-                            ; else     => 0
-.zero
-    mov z, z_sign
-    mov pc, link
+    bra .f16_return_nan     ; isNan(b) => NaN
+    bra .f16_return_zero    ; else     => 0
 
 .b_finite
     and b_exp, b_exp        ; isSubOrZero(b) ?
@@ -95,11 +61,8 @@
     bra .b_subnormal
     orr a_exp, a
     prne
-    bra .infinity           ; !isZero(a) => inf
-                            ;       else => NaN
-.invalid
-    mov z, #.f16_qnan
-    mov pc, link
+    bra .f16_return_inf     ; !isZero(a) => inf
+    bra .f16_return_nan     ;       else => NaN
 
 .b_subnormal
     clz tmp, b              ; normalise b
@@ -112,9 +75,10 @@
     and a_exp, a_exp        ; isSubOrZero(a) ?
     prne
     bra .a_normal
+
     and a, a                ; !isZero(a)
     preq
-    bra .zero
+    bra .f16_return_zero
 
     clz tmp, a              ; normalise a - max(tmp) = 15
     sub tmp, #5             ;               max(tmp) = 10
@@ -135,8 +99,10 @@
     cmp a, b                ; a < b ?
     prhs                
     bra .no_double_a
+
     sub z_exp, #1           ; double a to ensure result >= 1    min(z_exp) = -25-1 = -26
     lsl a, #1
+
 .no_double_a
     lsl a, #4               ; pad a with 4 trailing 0s for accurate rounding
 
@@ -192,7 +158,7 @@
     mov tmp, #7
     tst z, tmp
     prne
-    bra .round_pack_to_f16
+    bra .f16_round_pack
 
 ;;  bic z, #bit 0                   ; redundant as bits 2..0 are known to be 000 here
 
@@ -204,82 +170,14 @@
 
     prpl                            ; if rem < 0 z must be too large
     bra .adjust_elseif
+
     sub z, #2                       ; so adjust down
-    bra .adjust_endif
+    bra .f16_round_pack
+
 .adjust_elseif
     prne                            ; elseif rem > 0, z is too small
     orr z, #bit 0                   ; so adjust up
-.adjust_endif
-
-    ; apply "round nearest, ties to even" rule
-.round_pack_to_f16
-    mov tmp, #0x1d
-    cmp z_exp, tmp
-    prlo
-    bra .round_unspecial            ; z_exp >= 0x1d || z_exp < 0 (unsigned cmp) ?
-
-    and z_exp, z_exp                ; z_exp < 0 ?
-    prpl
-    bra .round_maybe_huge
-
-    ; subnormal case - at this point -26 <= z_exp <= -1
-
-    ; z = shr_sticky32(z, -z_exp)
-
-    mvn z_exp, z_exp
-    add z_exp, #1                   ;   z_exp = -z_exp
-
-    tst z_exp, #16                  ;   (this bit test is only valid because we know z_exp < 32)
-    prne                            ;   if (z_exp >= 16)
-    mov z_exp, #15                  ;       z_exp = 15
-
-    mov tmp, z                      ;   tmp = z
-    lsr z, z_exp                    ;   z >>= z_exp
-    mvn z_exp, z_exp
-    add z_exp, #17                  ;   z_exp = 16-z_exp
-    lsl tmp, z_exp
-    prne                            ;   if (tmp << (16-z_exp) != 0)
-    orr z, #1                       ;       z |= 1
-
-    mov z_exp, #0                   ; z_exp = 0
-
-    bra .round_unspecial
-
-.round_maybe_huge
-    prle                            ; z_exp > 0x1D ?
-    bra .round_unspecial
-
-    mov tmp, #8         ; z + roundIncrement >= 0x8000
-    add tmp, z
-    prmi
-    bra .infinity       ; return signed-infinity
-
-.round_unspecial
-    
-    ; repurpose rem to hold rounding bits
-    mov rem, #0xf       ; bottom 4 bits for rounding
-    and rem, z
-
-    add z, #8           ; round up
-    lsr z, #4           ; lose extra precision bits
-
-    mov tmp, #8
-    cmp rem, tmp        ; round to even when roundBits == 0x8 by clearing bit 0
-    preq
-    bic z, #bit 0
-
-    and z, z            ; did we hit zero?
-    preq
-    mov z_exp, #0       ; ensure correct zero representation
-
-.pack_result
-    lsl z_exp, #10      ; shift exponent into place
-
-    ; note: orr would be incorrect here, as bit 10 of z is
-    ; used to indicate an increment to the exponent is wanted
-    add z, z_exp        ; combine with fraction
-    orr z, z_sign       ; set sign
-    mov pc, link
+    bra .f16_round_pack
 
 ; These constants can be generated by the following code.
 ; (See https://stackoverflow.com/a/32640889):
