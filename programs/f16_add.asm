@@ -3,23 +3,31 @@
 
 ; Requires f16_internal.asm
 
+; external routine
 .f16_add
+    mov tmp, a
+    eor tmp, b
+    prmi
+    bra .f16_internal_sub_mags  ; subtract instead if signs are opposite
+    ; fall through
+
+; Internal helper
+.f16_internal_add_mags
 {
     ; working regs
     alias r5 a_exp
-    alias r6 a_sign
-    alias r7 b_exp
+    alias r6 b_exp
+    alias r7 a_sign
     alias r8 exp_diff
     alias r9 x_hi
     alias r10 y_hi
     alias r11 y_lo
 
-    ;; TODO - branch for add vs sub
-    mov tmp, #.f16_sign_mask
+    mov z_sign, #.f16_sign_mask
+    and z_sign, a
+
     bic a, #.f16_sign_mask
     bic b, #.f16_sign_mask
-
-    ; ...
 
     cmp a, b
     prhs
@@ -29,7 +37,6 @@
     mov a, tmp
 
 .ordered
-    mov z_sign, a_sign      ; prepare return sign
     mov tmp, #.f16_exp_mask
     mov a_exp, a
     mov b_exp, b
@@ -41,7 +48,7 @@
     mov exp_diff, a_exp
     sub exp_diff, b_exp
     prne
-    bra .exp_a_greater_b
+    bra .exp_a_gt_b
 
     ; From here we know exponents are equal, so we have one of:
     ;   both are zero or subnormal,
@@ -50,15 +57,15 @@
     ;
     and a_exp, a_exp
     prne
-    bra .both_not_sub
+    bra .neither_subnormal
 
     ; At this point we know a_exp=b_exp=0, so we can add both as subnormals
     mov z, a
     add z, b    ; if we overflow into bit 10, that's okay as it's then treated as exp=1
-    orr z, a_sign
+    orr z, z_sign
     mov pc, link
 
-.both_not_sub
+.neither_subnormal
     ;  TODO could do >30 instead, so we can reuse for <30 comparison in both_normal
     mov tmp, #0x1f      ; inf or nan?
     cmp a_exp, tmp
@@ -68,12 +75,8 @@
     mov tmp, a          ; any nan bits set in either arg?
     orr tmp, b
     preq
-    bra .both_inf
-
-.both_inf
-    mov z, #.f16_inf    ; both must be inf, so inf result
-    orr z, a_sign
-    mov pc, link
+    bra .f16_return_inf ; both must be inf, so inf result
+    bra .f16_return_nan
 
 .both_normal
     mov z_exp, a_exp
@@ -91,7 +94,7 @@
     bra .drop3
 
     lsr z, #1
-    bra .pack
+    bra .f16_return
 
 .drop3
     lsr z, #3
@@ -99,7 +102,7 @@
 
     ; At this point we know exp_a > exp_b
 
-.exp_a_greater_b
+.exp_a_gt_b
     mov tmp, #31
     cmp a_exp, tmp
     prne
@@ -116,10 +119,10 @@
     prlo
     bra .a_non_huge
 
-    mov z, a_exp    ; just return a
-    lsl z, #10
-    add z, a
-    orr z, a_sign
+    lsl a_exp, #10      ; just return a
+    mov z, a
+    add z, a_exp
+    orr z, z_sign
     mov pc, link
 
 .a_non_huge
@@ -197,10 +200,6 @@
     prhs
     bra .f16_round_pack
     lsr z, #4
-    bra .pack
-
-.return_uiz         ; TODO
-.pack               ; TODO
+    bra .f16_return
 }
-
 

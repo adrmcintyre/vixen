@@ -4,10 +4,9 @@
 ; common fp regs
 alias r0 a
 alias r1 b
-alias r3 z
 alias r2 z
-alias r4 z_exp
-alias r5 z_sign
+alias r3 z_exp
+alias r4 z_sign
 
 alias r12 tmp
 alias r13 sp
@@ -100,7 +99,7 @@ def f16_exp_mask  0x7c00    ; mask for exponent
     mov z_exp, #0       ; ensure correct zero representation
 }
 
-.f16_pack_result
+.f16_return
     lsl z_exp, #10      ; shift exponent into place
 
     ; note: orr would be incorrect here, as bit 10 of z is
@@ -120,5 +119,9 @@ def f16_exp_mask  0x7c00    ; mask for exponent
 
 .f16_return_zero
     mov z, z_sign
+    mov pc, link
+
+.f16_return_pos_zero
+    mov z, #0
     mov pc, link
 

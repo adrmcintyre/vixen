@@ -6,13 +6,13 @@
 .f16_div
 {
     ; working registers
-    alias r5 rem
-    alias r6 a_exp
-    alias r7 b_exp
+    alias r5 a_exp
+    alias r6 b_exp
+    alias r7 rem
     alias r8 index
     alias r9 recip
-    alias r10 deriv_lo
-    alias r11 deriv_hi
+    alias r10 deriv_hi
+    alias r11 deriv_lo
 
     mov tmp, #.f16_sign_mask
     mov z_sign, a
