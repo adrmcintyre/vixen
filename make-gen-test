@@ -1,0 +1,7 @@
+#!/bin/bash
+
+gcc -o ./out/gen_test \
+        -I../../source/include \
+        gen_test.c \
+        softfloat.a &&
+./out/gen_test > programs/f16/sub_testdata.asm

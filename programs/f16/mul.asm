@@ -101,9 +101,9 @@
 
     mov z, a
     muh z, b
-    mul a, b    ; lo bits of product
-    prne
-    orr z, #bit 0
+    mul a, b                ; lo bits of product, which we discard, but...
+    prne                    ; if any of the discarded bits are non-zero
+    orr z, #bit 0           ; set a sticky bit at the end of the retained bits
     mov tmp, #0x4000
     cmp z, tmp
     prhs

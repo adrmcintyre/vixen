@@ -37,8 +37,6 @@ def f16_exp_mask  0x7c00    ; mask for exponent
     ; working register
     alias r6 round_bits
 
-    def f16_inf  0x7c00
-
     ; apply "round nearest, ties to even" rule
     mov tmp, #0x1d
     cmp z_exp, tmp
@@ -49,32 +47,40 @@ def f16_exp_mask  0x7c00    ; mask for exponent
     prpl
     bra .round_maybe_huge
 
-    ; subnormal case - at this point -26 <= z_exp <= -1
-
-    ; z = shr_sticky32(z, -z_exp)
-
     mvn z_exp, z_exp
     add z_exp, #1                   ;   z_exp = -z_exp
 
-    tst z_exp, #16                  ;   (this bit test is only valid because we know z_exp < 32)
-    prne                            ;   if (z_exp >= 16)
-    mov z_exp, #15                  ;       z_exp = 15
+    ; z = (u16) shiftRightJam32(z, z_exp)
+    ; which expands to:
+    ; (dist < 31) ? a>>dist | ((uint32_t) (a<<(-dist & 31)) != 0) : (a != 0);
 
-    mov tmp, z                      ;   tmp = z
-    lsr z, z_exp                    ;   z >>= z_exp
+.shift_right_jam {
+    mov tmp, #15
+    cmp z_exp, tmp
+    prhs
+    bra .big_shift
+    mov tmp, z
+    lsr z, z_exp
     mvn z_exp, z_exp
-    add z_exp, #17                  ;   z_exp = 16-z_exp
+    add z_exp, #17
     lsl tmp, z_exp
-    prne                            ;   if (tmp << (16-z_exp) != 0)
-    orr z, #1                       ;       z |= 1
+    prne
+    orr z, #bit 0
+    bra .endif
+.big_shift
+    and z, z
+    prne
+    mov z, #1
+.endif
+}
 
     mov z_exp, #0                   ; z_exp = 0
-
     bra .round_unspecial
 
 .round_maybe_huge
-    prle                            ; z_exp > 0x1D ?
-    bra .round_unspecial
+    cmp z_exp, tmp
+    prgt                            ; z_exp > 0x1D ?
+    bra .f16_return_inf
 
     mov tmp, #8         ; z + roundIncrement >= 0x8000
     add tmp, z
@@ -82,7 +88,6 @@ def f16_exp_mask  0x7c00    ; mask for exponent
     bra .f16_return_inf ; return signed-infinity
 
 .round_unspecial
-    
     mov round_bits, #0xf ; bottom 4 bits for rounding
     and round_bits, z
 

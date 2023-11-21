@@ -53,7 +53,7 @@ static inline char *attr(u8 code) {
     return res ? res : mk_attr(code);
 }
 
-const char* attr_reset = "\033[0m";
+#define attr_reset (enable_color ? "\033[0m" : "")
 
 bool trace_mem = 0;
 int header_counter = 0;
