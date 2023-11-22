@@ -90,7 +90,7 @@ int main()
         do s = (uint16_t) random(); while((s & ~f16_neg) >= f16_inf);
         a.v = r;
         b.v = s;
-        z = f16_mul(a, b);
+        z = OPERATION(a, b);
         if (!f16_eq(z, z)) z.v = f16_qnan;    // convert any NaN to lowest quiet NaN
         printf("    dw 0x%04x, 0x%04x, 0x%04x, 0x%04x\n", label++, a.v, b.v, z.v);
     }
