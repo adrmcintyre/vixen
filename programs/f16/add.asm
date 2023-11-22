@@ -86,18 +86,18 @@
 
     tst z, #bit 0
     prne
-    bra .drop3
+    bra .pad
 
     mov tmp, #30
     cmp z_exp, tmp
     prhs
-    bra .drop3
+    bra .pad
 
     lsr z, #1
     bra .f16_return
 
-.drop3
-    lsr z, #3
+.pad
+    lsl z, #3
     bra .f16_round_pack
 
     ; At this point we know exp_a > exp_b
