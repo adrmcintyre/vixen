@@ -11,14 +11,15 @@
     bra .f16_internal_add_mags  ; add instead if signs are opposite
     ; fall through
 
+; Internal helper
 .f16_internal_sub_mags
 {
+    ; working regs
     alias r5 a_exp
     alias r6 b_exp
-    alias r7 fra_diff
+    alias r7 z_lo
     alias r8 exp_diff
-    alias r9 z_lo
-    alias r10 y_lo
+    alias r9 y_lo
 
     mov z_sign, #.f16_sign_mask
     and z_sign, a
@@ -29,6 +30,7 @@
     cmp a, b
     prhs
     bra .ordered
+
     mov tmp, b
     mov b, a
     mov a, tmp
@@ -45,16 +47,16 @@
 
     mov exp_diff, a_exp
     sub exp_diff, b_exp
-    preq
+    prne
     bra .exp_a_gt_b
 
-    mov tmp, #0x1f
+    mov tmp, #31            ; check if args are both inf or NaN
     cmp a_exp, tmp
     preq
-    bra .f16_return_nan
+    bra .f16_return_nan     ; inf-inf => NaN; either arg is NaN => NaN
 
-    mov fra_diff, a
-    sub fra_diff, b
+    mov z, a
+    sub z, b
     preq
     bra .f16_return_pos_zero
 
@@ -62,42 +64,40 @@
     prne
     sub a_exp, #1
 
-    and fra_diff, fra_diff
+    and z, z
     prpl
-    bra .pos_fra_diff
+    bra .pos_diff
 
     eor z_sign, #.f16_sign_mask
-    mov fra_diff, b
-    sub fra_diff, a
+    mov z, b
+    sub z, a
 
-.pos_fra_diff
-    clz exp_diff, fra_diff
+.pos_diff
+    clz exp_diff, z
     sub exp_diff, #5
     mov z_exp, a_exp
     sub z_exp, exp_diff
     prmi
-    bra .subnormal
+    bra .both_subnorm
 
-    mov z, fra_diff
     lsl z, exp_diff
     bra .f16_return
 
-.subnormal
-    mov z, fra_diff
+.both_subnorm
     lsl z, a_exp
     orr z, z_sign
     mov pc, link
     
 .exp_a_gt_b
-    mov tmp, #0x1f
+    mov tmp, #31
     cmp a_exp, tmp
     prne
     bra .a_finite
 
     and a, a
-    prne
+    preq
+    bra .f16_return_inf
     bra .f16_return_nan
-    bra .f16_return_inf     ;; TODO - check return sign is correct
 
 .a_finite
     mov tmp, #13
@@ -105,9 +105,11 @@
     prlo
     bra .a_non_huge
 
+    lsl a_exp, #10      ; just return a
     mov z, a
-    mov z_exp, a_exp
-    bra .f16_return         ;; TODO - check return sign is correct
+    add z, a_exp
+    orr z, z_sign
+    mov pc, link
 
 .a_non_huge
     mov z_exp, b_exp
@@ -119,16 +121,15 @@
     mov y_lo, b
     and b_exp, b_exp
     preq
-    bra .y_is_double_b
+    bra .b_subnorm
 
     orr y_lo, #0x400
-    bra .y_done
+    bra .b_normalised
 
-.y_is_double_b
+.b_subnorm
     add y_lo, b
 
-.y_done
-
+.b_normalised
     ;; 1 <= exp_diff <= 12
     ;; [z:z_lo] = [0:z_lo] <<= exp_diff
     mov z, z_lo
@@ -145,15 +146,17 @@
     tst exp_diff, #16
     preq
     bra .done_clz
+
     clz exp_diff, z_lo
     add exp_diff, #16
+
 .done_clz
     sub exp_diff, #1
-    sub z_exp, exp_diff;
+    sub z_exp, exp_diff
 
     tst exp_diff, #16
     prne
-    bra .big_shift
+    bra .big_align
     mov y_lo, z_lo
     lsl z_lo, exp_diff
     lsl z, exp_diff
@@ -161,23 +164,23 @@
     sub tmp, exp_diff
     lsr y_lo, tmp
     orr z, y_lo
-    bra .shifted
+    bra .aligned
 
-.big_shift
+.big_align
     mov z, z_lo
     sub exp_diff, #16
     lsl z, exp_diff
     mov z_lo, #0
 
-.shifted
+.aligned
     and z_lo, z_lo
     preq
-    bra .else
+    bra .z_lo_zero
 
     orr z, #bit 0
     bra .f16_round_pack
 
-.else
+.z_lo_zero
     mov tmp, #0xf
     tst z, tmp
     prne
@@ -189,9 +192,6 @@
     bra .f16_round_pack
 
     lsr z, #4
-
-    add z, z_exp
-    orr z, z_sign
-    mov pc, link
+    bra .f16_return
 }
 

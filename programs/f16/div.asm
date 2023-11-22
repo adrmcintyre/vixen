@@ -38,6 +38,7 @@
     and a, a
     prne
     bra .f16_return_nan     ; isNan(a) => NaN
+
     cmp b_exp, tmp
     preq
     bra .f16_return_nan     ; isInfOrNan(b) => NaN
@@ -47,6 +48,7 @@
     cmp b_exp, tmp          ; isInfOrNan(b) ?
     prne
     bra .b_finite
+
     and b, b
     prne
     bra .f16_return_nan     ; isNan(b) => NaN
@@ -56,9 +58,11 @@
     and b_exp, b_exp        ; isSubOrZero(b) ?
     prne
     bra .b_normal
+
     and b, b                ; isZero(b) ?
     prne
     bra .b_subnormal
+
     orr a_exp, a
     prne
     bra .f16_return_inf     ; !isZero(a) => inf
@@ -124,11 +128,11 @@
     mul deriv_lo, tmp
     muh deriv_hi, tmp
 
-    lsl deriv_hi, #6                ; align prior to subtraction
-    lsr deriv_lo, #10
-    orr deriv_hi, deriv_lo
+    lsr deriv_lo, #10               ; align prior to subtraction
+    lsl deriv_hi, #6
+    orr deriv_lo, deriv_hi
 
-    sub recip, deriv_hi             ; adjust recip by scaled deriv
+    sub recip, deriv_lo             ; adjust recip by scaled deriv
 
     mov z, a                        ; initial quotient
     muh z, recip
@@ -160,12 +164,10 @@
     prne
     bra .f16_round_pack
 
-;;  bic z, #bit 0                   ; redundant as bits 2..0 are known to be 000 here
-
     mov rem, a                      ; recompute remainder
     lsl rem, #10
     mov tmp, z
-    mul tmp, a
+    mul tmp, b
     sub rem, tmp                    ; rem = a - z'*b
 
     prpl                            ; if rem < 0 z must be too large

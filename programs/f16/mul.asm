@@ -36,6 +36,7 @@
     cmp b_exp, tmp
     prne
     bra .a_inf_b_not_nan
+
     and b, b
     prne
     bra .f16_return_nan
@@ -104,10 +105,12 @@
     mul a, b                ; lo bits of product, which we discard, but...
     prne                    ; if any of the discarded bits are non-zero
     orr z, #bit 0           ; set a sticky bit at the end of the retained bits
+
     mov tmp, #0x4000
     cmp z, tmp
     prhs
     bra .f16_round_pack
+
     sub z_exp, #1
     lsl z, #1
     bra .f16_round_pack

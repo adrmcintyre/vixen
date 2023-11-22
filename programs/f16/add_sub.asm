@@ -4,22 +4,30 @@
 ; Requires f16_internal.asm
 
 ; external routine
-.f16_add
-    mov tmp, a
-    eor tmp, b
-    prmi
-    bra .f16_internal_sub_mags  ; subtract instead if signs are opposite
-    ; fall through
 
-; Internal helper
-.f16_internal_add_mags
-{
     ; working regs
+.f16_add {
+    mov subtract, a
+    eor subtract, b
+    lsr subtract, #15
+    bra .f16_add_sub
+}
+
+.f16_sub {
+    mov subtract, a
+    eor subtract, b
+    mvn subtract, subtract
+    lsr subtract, #15
+    bra .f16_add_sub
+}
+
+.f16_add_sub {
     alias r5 a_exp
     alias r6 b_exp
     alias r7 z_lo
     alias r8 exp_diff
-    alias r9 x_hi
+    alias r9 aux
+    alias r10 subtract
 
     mov z_sign, #.f16_sign_mask
     and z_sign, a
@@ -34,6 +42,9 @@
     mov tmp, b
     mov b, a
     mov a, tmp
+    tst subtract, #bit 0
+    prne
+    eor z_sign, #.f16_sign_mask
 
 .ordered
     mov tmp, #.f16_exp_mask
@@ -48,6 +59,10 @@
     sub exp_diff, b_exp
     prne
     bra .exp_a_gt_b
+
+    and subtract, subtract
+    prne
+    bra .subtract_kernel
 
     ; From here we know exponents are equal, so we have one of:
     ;   both are zero or subnormal,
@@ -100,6 +115,47 @@
     bra .f16_round_pack
 
     ; At this point we know exp_a > exp_b
+
+.subtract_kernel
+    mov tmp, #31            ; check if args are both inf or NaN
+    cmp a_exp, tmp
+    preq
+    bra .f16_return_nan     ; inf-inf => NaN; either arg is NaN => NaN
+
+    mov z, a
+    sub z, b
+    preq
+    bra .f16_return_pos_zero
+
+    and a_exp, a_exp
+    prne
+    sub a_exp, #1
+
+    and z, z
+    prpl
+    bra .pos_diff
+
+    eor z_sign, #.f16_sign_mask
+    mov z, b
+    sub z, a
+
+.pos_diff
+    clz exp_diff, z
+    sub exp_diff, #5
+    mov z_exp, a_exp
+    sub z_exp, exp_diff
+    prmi
+    bra .both_subnorm
+
+    lsl z, exp_diff
+    bra .f16_return
+
+.both_subnorm
+    lsl z, a_exp
+    orr z, z_sign
+    mov pc, link
+    
+
 
 .exp_a_gt_b
     mov tmp, #31
@@ -204,4 +260,5 @@
     lsr z, #4
     bra .f16_return
 }
+
 
