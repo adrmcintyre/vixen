@@ -786,11 +786,11 @@ f16 f16_from_ascii(char *buf)
 
         // Positive powers are shifted left to get leading bit in bit 31,
         // with an adjusted shift value to compensate.
-        {0x80000000, 16 +15 +46 -31}, // 0
-        {0xa0000000, 16 +15 +46 -28}, // 1
-        {0xc8000000, 16 +15 +46 -25}, // 2
-        {0x7d000000, 16 +15 +46 -21}, // 3
-        {0x9c400000, 16 +15 +46 -18}  // 4
+        {0x80000000, 16 +15 +45 -31}, // 0
+        {0xa0000000, 16 +15 +45 -28}, // 1
+        {0xc8000000, 16 +15 +45 -25}, // 2
+        {0x7d000000, 16 +15 +45 -21}, // 3
+        {0x9c400000, 16 +15 +45 -18}  // 4
     };
 
     char ch;
@@ -912,73 +912,62 @@ f16 f16_from_ascii(char *buf)
     bin_mantissa64 += 1<<31;
     u16 bin_mantissa = bin_mantissa64 >> 32;
 
-
     // normalise
     if ((bin_mantissa & (1<<14)) == 0) {
         bin_mantissa <<= 1;
         bin_exponent--;
     }
 
-    // denorm handling
-    if (bin_exponent <= 0) {
-        bin_mantissa >>= 1-bin_exponent;
+    // Rest of this code corresponds to f16_round_pack
+    if (bin_exponent >= 0 && bin_exponent < 29) {
+    }
+    else if (bin_exponent >= 0) {
+        // round_maybe_huge
+        if (bin_exponent > 29 || bin_mantissa + 8 >= 0x8000) {
+            // TODO - should be an error instead
+            f16 r; r.bits = sign ? neg_inf : pos_inf; return r;
+        }
+    }
+    else {
+        u16 dist = -bin_exponent;
+        u32 a = bin_exponent;
+        bin_mantissa = (dist<31) ? a>>dist | ((u32) (a<<(-dist & 31)) != 0) : (a != 0);
         bin_exponent = 0;
     }
-    // TODO - zero check
 
-    // round (TODO beware of overflowing mantissa)
+    // round_unspecial
     u16 round_bits = bin_mantissa & 0xf;
     bin_mantissa += 1<<3;
     bin_mantissa >>= 4;
     if (round_bits == 8) bin_mantissa &= ~1;
 
-    // TODO overflow check
+    // f16_return
     f16 r;
+    if (bin_mantissa == 0) {
+        bin_exponent = 0;
+    }
     r.sign = sign;
-    r.exp = bin_exponent;
+    r.exp = bin_exponent + ((bin_mantissa & 0x400) ? 1 : 0);
     r.fra = bin_mantissa & 0x3ff;
-
     return r;
 }
 
 int main() {
     char buf[100];
 
-    float f1 = 123e-8;
+    float f1 = 1.2e3;
     u32 f1u = (*(u32*)&f1);
     f1u = (f1u + 0x1000) & 0xffffe000;
-    u32 f2u = f1u + 0x2000;
-    u32 f0u = f1u - 0x2000;
+
     *(u32*) &f1 = f1u;
-    float f0 = *(float*)&f0u;
-    float f2 = *(float*)&f2u;
-    printf("f0=%.15f mant_bits=%x\n", f0, (f0u>>13) & 0x3ff);
-    printf("f1=%.15f mant_bits=%x\n", f1, (f1u>>13) & 0x3ff);
-    printf("f2=%.15f mant_bits=%x\n", f2, (f2u>>13) & 0x3ff);
+    printf("f=%.15f mant_bits=%x\n", f1, (f1u>>13) & 0x3ff);
 
+    f16 u = f16_from_ascii("1.2e3");
 
-    f16 u = f16_from_ascii("123e-8");
-
-    u.bits-=1;
-    f16_to_ascii(u, buf); printf("-- %04x => %s ... ", u.bits, buf); f16_print(u); printf("\n");
-    u.bits+=1;
-    f16_to_ascii(u, buf); printf("== %04x => %s ... ", u.bits, buf); f16_print(u); printf("\n");
-    u.bits+=1;
-    f16_to_ascii(u, buf); printf("++ %04x => %s ... ", u.bits, buf); f16_print(u); printf("\n");
-    return 0;
-
-    for(int exp=0; exp<=14; ++exp) {
-        for(u16 i=0; i<0x3ff; i++) {
-            f16 u;
-            u.sign = 0; 
-            u.exp = exp;
-            u.fra = i;
-            f16_to_ascii(u, buf);
-            printf("%04x => %s ... ", u.bits, buf); f16_print(u); printf("\n");
-        }
-    }
-
-    return 0;
+    f16_to_ascii(u, buf);
+    printf("== %04x => %s ... ", u.bits, buf);
+    f16_print(u);
+    printf("\n");
 }
 
 
