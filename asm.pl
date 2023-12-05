@@ -29,7 +29,8 @@ our $org;
 #   org expr        - set current memory position
 #   def label expr  - define a constant, referenced as .label
 #   db expr, ...    - insert 1 or more bytes
-#   dw expr, ...    - insert 1 or more words
+#   dw expr, ...    - insert 1 or more 16-bit words
+#   dl expr, ...    - insert 1 or more 32-bit double words 
 #   ds "string"     - insert a string (not \0 delimited)
 #   align           - align current memory position to word boundary
 #   alias rN name   - create a register alias
@@ -411,10 +412,22 @@ sub emit_word {
     my $word = shift;
     if ($::pass == 2) {
         printf("%04x %04x ; %s\n", $::org, $word & 0xffff, $::line);
-        $::image->[$::org]   = $word >> 8;
+        $::image->[$::org+0] = $word >> 8;
         $::image->[$::org+1] = $word & 0xff;
     }
     $::org += 2;
+}
+
+sub emit_long {
+    my $word = shift;
+    if ($::pass == 2) {
+        printf("%04x %08x ; %s\n", $::org, $word & 0xffff_ffff, $::line);
+        $::image->[$::org+0] = ($word >> 24) & 0xff;
+        $::image->[$::org+1] = ($word >> 16) & 0xff;
+        $::image->[$::org+2] = ($word >> 8)  & 0xff;
+        $::image->[$::org+3] = ($word >> 0)  & 0xff;
+    }
+    $::org += 4;
 }
 
 sub emit_string {
@@ -746,6 +759,11 @@ sub main {
             elsif ($::line =~ m{^ dw \s+ (.*) $}xi) {
                 foreach my $value (get_list($1)) {
                     emit_word($value);
+                }
+            }
+            elsif ($::line =~ m{^ dl \s+ (.*) $}xi) {
+                foreach my $value (get_list($1)) {
+                    emit_long($value);
                 }
             }
             elsif ($::line =~ m{^ ds \s+ (.*) $}xi) {
