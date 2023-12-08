@@ -1,89 +1,133 @@
-
-;; TODO - stack discipline
-;; check *buf++ now we have refactored NaN / Inf parse
+;;; test case
+.test
+    mov r0, #hi(.test_str)
+    add r0, #lo(.test_str)
+    bl .f16_parse
+    hlt
+.test_str
+    ds "12e1"
+    db 0
+    align
 
 .f16_parse
 {
     alias r0 buf
+    alias r0 pow10_mul_hi
+
     alias r1 ch
-    alias r2 buf2
-    alias r2 mantissa
-    alias r3 exponent
-    alias r4 sign
+    alias r1 pow10_mul_lo
 
-    alias r5 mantissa_lo
-    alias r6 full
-    alias r7 seen_dp
-    alias r8 tmp2
-    alias r9 shift
+    alias r2 cmp_buf
+    alias r2 z
 
-    mov buf2, #hi(nan_name)
-    add buf2, #lo(nan_name)
-    bl .no_case_cmp3
+    alias r3 z_exp
+    alias r4 z_sign
+
+    alias r5 z_lo
+    alias r6 flags
+    alias r7 tmp2
+    alias r8 shift
+    alias r9 exp_value
+
+    alias r12 tmp
+    alias r13 sp
+    alias r14 link
+    alias r15 pc
+
+    def flag_seen_dp       0
+    def flag_saturated     1
+    def flag_exp_sign      2
+    def flag_missing_exp   3
+    def flag_missing_value 4
+
+    ;; TODO - stack the correct registers!
+
+    stw link, [sp]
+    sub sp, #2
+;;  sub sp, #8
+;;  stw r2, [sp, #2]
+;;  stw r3, [sp, #4]
+;;  stw r4, [sp, #6]
+    bl .impl
+;;  ldw r2, [sp, #2]
+;;  ldw r3, [sp, #4]
+;;  ldw r4, [sp, #6]
+;;  add sp, #8
+    add sp, #2
+    ldw pc, [sp]
+
+.impl
+    mov cmp_buf, #hi(.nan_name)
+    add cmp_buf, #lo(.nan_name)
+
+    stw link, [sp]
+    bl .casecmp3
+    ldw link, [sp]
+
     preq
     bra .f16_return_nan
 
-.parse_sign
-    mov sign, #0
+    mov z_sign, #0
+    ldb ch, [buf]
+
     mov tmp, #'+'
     cmp ch, tmp
     preq
-    bra .skip_sign
+    bra .got_sign
 
-.parse_sign_minus
     mov tmp, #'-'
     cmp ch, tmp
     prne
-    bra .parse_inf
+    bra .parse_value
 
-    mov sign, #1
-.skip_sign
-    ldb ch, [buf]
+    mov z_sign, #0x8000
+
+.got_sign
     add buf, #1
 
-.parse_inf
-    mov buf2, #hi(inf_name)
-    add buf2, #lo(inf_name)
-    bl .no_case_cmp3
+.parse_value
+    mov cmp_buf, #hi(.inf_name)
+    add cmp_buf, #lo(.inf_name)
+
+    stw link, [sp]
+    bl .casecmp3
+    ldw link, [sp]
+
     preq
     bra .f16_return_inf
 
-.leading_zeroes
+    mov flags, #bit .flag_missing_value
+    ldb ch, [buf]
     mov tmp, #'0'
+
 .leading_zeros_loop
     cmp ch, tmp
     prne
     bra .parse_mantissa
-    ldb ch, [buf]
+
+    bic flags, #bit .flag_missing_value
     add buf, #1
+    ldb ch, [buf]
     bra .leading_zeros_loop
 
 .parse_mantissa
-    mov mantissa, #0
-    mov mantissa_lo, #0
-    mov exponent, #0
-    ;; TODO combine into a single flags registers
-    mov full, #0
-    mov seen_dp, #0
-    mov sign, #0
+    mov z, #0
+    mov z_lo, #0
+    mov z_exp, #0
 
 .parse_mantissa_loop
-    and ch, ch
-    preq
-    bra .parse_exponent
+    tst flags, #bit .flag_seen_dp
+    prne
+    bra .parse_digit
 
     mov tmp, #'.'
     cmp ch, tmp
     prne
     bra .parse_digit
 
-    and seen_dp, seen_dp
-    prne
-    bra .parse_digit
-    mov seen_dp, #1
-    ldb ch, [buf]
+    orr flags, #bit .flag_seen_dp
     add buf, #1
-    bra .parse_mantissa
+    ldb ch, [buf]
 
 .parse_digit
     mov tmp, #'9'
@@ -96,148 +140,172 @@
     prlo
     bra .parse_exponent
 
+    bic flags, #bit .flag_missing_value
+
     sub ch, tmp
-    sub exponent, seen_dp
-    add exponent, full
-    and full, full
+    tst flags, #bit .flag_seen_dp
     prne
+    sub z_exp, #1
+
+    tst flags, #bit .flag_saturated
+    preq
+    bra .not_saturated
+    add z_exp, #1
     bra .next_digit
 
-    mov tmp, #0x7f / 10
-    cmp mantissa, tmp
+.not_saturated
+    mov tmp, #(0x7fff / 10) & 0xff00
+    cmp z, tmp
     prls
-    bra .accept_digit
+    bra .accumulate_digit
 
     mov tmp, #0
     sub ch, #5
-    adc mantissa_lo, tmp
-    adc mantissa, tmp
-    mov full, #1
-    add exponent, #1
+    adc z_lo, tmp
+    adc z, tmp
+    orr flags, #bit .flag_saturated
+    add z_exp, #1
     bra .next_digit
 
-.accept_digit
+.accumulate_digit
     mov tmp, #10
-    mul mantissa, tmp
-    muh tmp, mantissa_lo
-    add mantissa, tmp
+    mul z, tmp
+    muh tmp, z_lo
+    add z, tmp
     mov tmp, #10
-    mul mantissa_lo, tmp
-    add mantissa_lo, digit
+    mul z_lo, tmp
+    add z_lo, ch
     prcs
-    add mantissa, #1
+    add z, #1
 
 .next_digit
-    ldb ch, [buf]
     add buf, #1
+    ldb ch, [buf]
     bra .parse_mantissa_loop
 
 .parse_exponent
-    mov exp_sign, #0
+    tst flags, #bit .flag_missing_value
+    prne
+    bra .error
+
     mov tmp, #'E'
-    cmp ch, tmp
+    eor tmp, ch
+    bic tmp, #bit 5
     prne
     bra .evaluate
 
-    ldb ch, [buf]
+    orr flags, #bit .flag_missing_exp
+
     add buf, #1
+    ldb ch, [buf]
+
     mov tmp, #'+'
     cmp ch, tmp
     preq
-    bra .parse_exponent_digits_pre
+    bra .got_exponent_sign
 
     mov tmp, #'-'
     cmp ch, tmp
     prne
     bra .parse_exponent_loop
-    mov exp_sign, #1
-    bra .parse_exponent_digits_pre
 
-.parse_exponent_digits_pre
-    ldb ch, [buf]
+    orr flags, #bit .flag_exp_sign
+
+.got_exponent_sign
     add buf, #1
+    ldb ch, [buf]
 
 .parse_exponent_loop
     mov tmp, #'9'
     cmp ch, tmp
     prhi
     bra .evaluate
+
     mov tmp, #'0'
     cmp ch, tmp
     prlo
     bra .evaluate
-    mov get_exp_value, #1   ;; TODO do something useful with this
+
+    sub ch, tmp
+    bic flags, #bit .flag_missing_exp
     mov tmp, #10
     mul exp_value, tmp
     add exp_value, ch
-    ldb ch, [buf]
     add buf, #1
+    ldb ch, [buf]
     bra .parse_exponent_loop
 
 .evaluate
+    tst flags, #bit .flag_missing_exp
+    prne
+    bra .error
+
+    add buf, #1
+
     mov tmp, #0
-    and exp_sign, exp_sign
+    tst flags, #bit .flag_exp_sign
     prne
     rsb exp_value, tmp
-    add exponent, exp_value
+    add z_exp, exp_value
 
-    ;; table is 5 bytes per entry, and valid for exponent in [-11,4]
+    ;; table is 5 bytes per entry, and valid for z_exp in [-11,4]
     mov tmp, #5
-    mul exponent, tmp
+    mul z_exp, tmp
     mov tmp, #hi(.pow10_table + 5*11)
     add tmp, #lo(.pow10_table + 5*11)
-    add tmp, exponent
-    
+    add tmp, z_exp
+
     ldw pow10_mul_hi, [tmp,#0]
     ldw pow10_mul_lo, [tmp,#2]
-    ldb exponent, [tmp,#4]
+    ldb z_exp, [tmp,#4]
 
-    clz shift, mantissa
+    clz shift, z
     tst shift, #16
     preq
     bra .done_clz
 
-    clz shift, mantissa_lo
+    clz shift, z_lo
     add shift, #16
 
 .done_clz
     sub shift, #1   ; we want to shift highest set bit to bit 30
 
-    sub exponent, shift
+    sub z_exp, shift
     tst shift, #16
     prne
     bra .big_shift
 
 .small_shift
-    mov tmp2, mantissa_lo
-    lsl mantissa_lo, shift
-    lsl mantissa, shift
+    mov tmp2, z_lo
+    lsl z_lo, shift
+    lsl z, shift
     mov tmp, #16
     sub tmp, shift
     lsr tmp2, tmp
-    orr mantissa, tmp2
+    orr z, tmp2
     bra .done_shift
 
 .big_shift
-    mov mantissa, mantissa_lo
-    mov mantissa_lo, #0
+    mov z, z_lo
+    mov z_lo, #0
     sub shift, #16
-    lsl mantissa, shift
+    lsl z, shift
 
 .done_shift
+    mov tmp, #1<<15
+    add z_lo, tmp
     mov tmp, #0
-    add mantissa_lo, #1<<15
-    adc mantissa, tmp
+    adc z, tmp
     prpl
     bra .drop16
-    lsr mantissa, #1
-    rrx mantissa_lo, #1
-    add exponent, #1
+    lsr z, #1
+    rrx z_lo
+    add z_exp, #1
 
 .drop16
-    mov tmp, mantissa
+    mov tmp, z
 
-    muh mantissa, pow10_mul_hi
+    muh z, pow10_mul_hi
     muh pow10_mul_lo, tmp
     mul tmp, pow10_mul_hi
 
@@ -245,105 +313,120 @@
     mov tmp, #0
     prmi                ; test bit 15 of intermediate sum
     mov tmp, #1         ; round up
-    adc mantissa, tmp   ; incorporate carry from intermediate sum
-    
-    tst mantissa, #bit 14
-    prne
-    bra .normalised
+    adc z, tmp          ; also incorporate carry from intermediate sum
 
-    lsl mantissa, #1
-    sub exponent, #1
+    tst z, #bit 14
+    prne
     bra .f16_round_pack
 
+    lsl z, #1
+    sub z_exp, #1
+    bra .f16_round_pack
+
+.error
+    ;; TODO how to indicate errors?
+    mov r1, #0
+    mvn r1, r1
+    mov pc, link
+
     ; utility routine
-.no_case_cmp3
+.casecmp3
     ldb ch, [buf]
-    bic ch, #bit 5
-    ldb tmp, [buf2]
-    cmp ch, tmp
+    ldb tmp, [cmp_buf]
+    eor tmp, ch
+    bic tmp, #bit 5
     prne
     mov pc, link
+
     ldb ch, [buf, #1]
-    bic ch, #bit 5
-    ldb tmp, [buf2, #1]
-    cmp ch, tmp
+    ldb tmp, [cmp_buf, #1]
+    eor tmp, ch
+    bic tmp, #bit 5
     prne
     mov pc, link
+
     ldb ch, [buf, #2]
-    bic ch, #bit 5
-    ldb tmp, [buf2, #2]
-    cmp ch, tmp
+    ldb tmp, [cmp_buf, #2]
+    eor tmp, ch
+    bic tmp, #bit 5
+    prne
+    mov pc, link
+
+    add buf, #3
+    cmp ch, ch
     mov pc, link
 
 .nan_name
-    ds "nan"
+    ds "NAN"
 
 .inf_name
-    ds "inf"
+    ds "INF"
 
 ; 16 * 5 = 80 bytes
 .pow10_table
     ; negative powers are expressed as fractions of 1<<32
     ; -11
-    dl 0xafe0ff0c
-    db 16 +15 +14 -36 
+    dl 0xafebff0c
+    db 44 -36
 
     ; -10
-    dl 0xdbe0fecf
-    db 16 +15 +14 -33 
+    dl 0xdbe6fecf
+    db 44 -33
 
     ; -9
     dl 0x89705f41
-    db 16 +15 +14 -29 
+    db 44 -29
 
     ; -8
-    dl 0xabc07712
-    db 16 +15 +14 -26 
+    dl 0xabcc7712
+    db 44 -26
 
     ; -7
-    dl 0xd6b094d6
-    db 16 +15 +14 -23 
+    dl 0xd6bf94d6
+    db 44 -23
 
     ; -6
-    dl 0x8630bd06
-    db 16 +15 +14 -19 
+    dl 0x8637bd06
+    db 44 -19
 
     ; -5
-    dl 0xa7c0ac48
-    db 16 +15 +14 -16 
+    dl 0xa7c5ac48
+    db 44 -16
 
     ; -4
-    dl 0xd1b01759
-    db 16 +15 +14 -13 
+    dl 0xd1b71759
+    db 44 -13
 
     ; -3
-    dl 0x83106e98
-    db 16 +15 +14 -9  
+    dl 0x83126e98
+    db 44 -9
 
     ; -2
-    dl 0xa3d00a3e
-    db 16 +15 +14 -6  
+    dl 0xa3d70a3e
+    db 44 -6
 
     ; -1
-    dl 0xccc0cccd
-    db 16 +15 +14 -4  
+    dl 0xcccccccd
+    db 44 -3
 
     ; Positive powers are shifted left to get leading bit in bit 31,
     ; with an adjusted shift value to compensate.
     ; 0
-    dl 0x80000000  
-    db 16 +15 +45 -31 
+    dl 0x80000000
+    db 44 +32 -31
     ; 1
-    dl 0xa0000000  
-    db 16 +15 +45 -28 
+    dl 0xa0000000
+    db 44 +32 -28
     ; 2
-    dl 0xc8000000  
-    db 16 +15 +45 -25 
+    dl 0xc8000000
+    db 44 +32 -25
     ; 3
-    dl 0x7d000000  
-    db 16 +15 +45 -21 
+    dl 0x7d000000
+    db 44 +32 -21
     ; 4
-    dl 0x9c400000  
-    db 16 +15 +45 -18 
+    dl 0x9c400000
+    db 44 +32 -18
+
+    align
 }
 
