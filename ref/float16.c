@@ -609,16 +609,20 @@ void f16_to_ascii(f16 x, char *buf)
 
     int exp = x.exp;
 
+    u32 frac;
+    u32 hulp = 1;
+
     // is value >= 1.0 ?
     if (exp >= 15) {
         u16 whole;
-        u32 frac;
         
         // exp counts how many bits of fra are the integer part
         if (exp <= 25) {
             whole = (x.fra | (1<<10)) >> (25-exp);
-            frac = (u32)x.fra << (exp-9);        // move leading fractional bit to bit 15
+            // move leading fractional bit to bit 15
+            frac = (u32)x.fra << (exp-9);
             frac &= 0xffff;
+            hulp <<= (exp-9);
         }
         else {
             whole = (x.fra | (1<<10)) << (exp-25);
@@ -631,26 +635,15 @@ void f16_to_ascii(f16 x, char *buf)
         u16 trial;
         char digit;
 
-        // TODO - we should figure out how many decimal digits are actually warranted
-        u16 places = 3;
-        trial = pow10_table[places];
-        frac *= trial;
-        frac += 1<<15;
-        frac >>= 16;
-        if (frac >= trial) {
-            frac -= trial;
-            whole++;
-        }
-
         do {
+            digit = 0;
             trial = pow10_table[place];
             trial <<= bit;
-
-            digit = 0;
             do {
+                digit <<= 1;
                 if (whole >= trial) {
                     whole -= trial;
-                    digit |= 1<<bit;
+                    digit |= 1;
                 }
                 trial >>= 1;
                 bit -= 1;
@@ -665,42 +658,17 @@ void f16_to_ascii(f16 x, char *buf)
             outputting |= (place == 0);
         } while((place & 0x8000) == 0);
 
-        // TODO - fold this into following code
-        if (places > 0) {
-            place = places - 1;
-
-            if (frac > 0) {
-                *buf++ = '.';
-                do {
-                    digit = 0;
-                    bit = 3;
-                    trial = pow10_table[place];
-                    trial <<= bit;
-                    do {
-                        digit <<= 1;
-                        if (frac >= trial) {
-                            frac -= trial;
-                            digit |= 1;
-                        }
-                        trial >>= 1;
-                        bit -= 1;
-                    } while((bit & 0x8000) == 0);
-                    *buf++ = '0' | digit;
-                    place -= 1;
-                } while((place & 0x8000) == 0 && frac > 0);
-            }
-        }
-        *buf = '\0';
+        frac <<= 12; // move leading bit (15) up to bit 27
+        hulp <<= 11;
     }
     else {
         // exp < 15, thus value is < 1.0
         //
-        // Threshold for switching from scientific to fixed notation
+        // Possible thresholds for switching from scientific to fixed notation
         // 0x068e = 0.0001
         // 0x1419 = 0.001
 
-        u32 frac = x.fra;
-        u32 hulp = 1;
+        frac = x.fra;
         if (exp == 0) {
             frac <<= 1;
             hulp <<= 1;
@@ -717,9 +685,12 @@ void f16_to_ascii(f16 x, char *buf)
         frac <<= exp + 3;
         hulp <<= exp + 2;
 
+        *buf++ = '0';
+    }
+
+    if (frac != 0) {
         u16 out = 0;
 
-        *buf++ = '0';
         *buf++ = '.';
 
         bool roundup = 0;
@@ -748,17 +719,16 @@ void f16_to_ascii(f16 x, char *buf)
         if (roundup) {
             while(*ptr == '9') *ptr-- = '0';
             if (*ptr == '.') {
-                // TODO
+                // TODO - only need to to worry about this,
+                // if we allow fixed precision formatting.
             }
             else {
                 (*ptr)++;
             }
         }
-
-        *buf++ = '\0';
-
-        return;
     }
+
+    *buf++ = '\0';
 }
 
 // Input conversion
@@ -772,25 +742,25 @@ f16 f16_from_ascii(char *buf)
 
     struct mul_shift pow10_table[] = {
         // negative powers are expressed as fractions of 1<<32
-        {0xafebff0c, 16 +15 +14 -36}, // -11
-        {0xdbe6fecf, 16 +15 +14 -33}, // -10
-        {0x89705f41, 16 +15 +14 -29}, // -9
-        {0xabcc7712, 16 +15 +14 -26}, // -8
-        {0xd6bf94d6, 16 +15 +14 -23}, // -7
-        {0x8637bd06, 16 +15 +14 -19}, // -6
-        {0xa7c5ac48, 16 +15 +14 -16}, // -5
-        {0xd1b71759, 16 +15 +14 -13}, // -4
-        {0x83126e98, 16 +15 +14 -9 }, // -3
-        {0xa3d70a3e, 16 +15 +14 -6 }, // -2
-        {0xcccccccd, 16 +15 +14 -4 }, // -1
+        {0xafebff0c, 44 -36}, // -11
+        {0xdbe6fecf, 44 -33}, // -10
+        {0x89705f41, 44 -29}, // -9
+        {0xabcc7712, 44 -26}, // -8
+        {0xd6bf94d6, 44 -23}, // -7
+        {0x8637bd06, 44 -19}, // -6
+        {0xa7c5ac48, 44 -16}, // -5
+        {0xd1b71759, 44 -13}, // -4
+        {0x83126e98, 44 -9 }, // -3
+        {0xa3d70a3e, 44 -6 }, // -2
+        {0xcccccccd, 44 -3 }, // -1
 
         // Positive powers are shifted left to get leading bit in bit 31,
         // with an adjusted shift value to compensate.
-        {0x80000000, 16 +15 +45 -31}, // 0
-        {0xa0000000, 16 +15 +45 -28}, // 1
-        {0xc8000000, 16 +15 +45 -25}, // 2
-        {0x7d000000, 16 +15 +45 -21}, // 3
-        {0x9c400000, 16 +15 +45 -18}  // 4
+        {0x80000000, 44 +32 -31}, // 0
+        {0xa0000000, 44 +32 -28}, // 1
+        {0xc8000000, 44 +32 -25}, // 2
+        {0x7d000000, 44 +32 -21}, // 3
+        {0x9c400000, 44 +32 -18}  // 4
     };
 
     char ch;
@@ -890,6 +860,7 @@ f16 f16_from_ascii(char *buf)
     // TODO prove or check dec_exponent in range [-11..4]
     u32 pow10_mul = pow10_table[dec_exponent+11].mul;
     int bin_exponent = pow10_table[dec_exponent+11].shift;
+//  printf("dec_exponent=%d => pow10_mul=%08x bin_exponent=%d\n", dec_exponent, pow10_mul, bin_exponent);
 
     // normalise so bit 30 is set (leave 31 clear for possible carry out later)
     while((dec_mantissa & (1<<30)) == 0) {
@@ -954,20 +925,13 @@ f16 f16_from_ascii(char *buf)
 
 int main() {
     char buf[100];
-
-    float f1 = 1.2e3;
-    u32 f1u = (*(u32*)&f1);
-    f1u = (f1u + 0x1000) & 0xffffe000;
-
-    *(u32*) &f1 = f1u;
-    printf("f=%.15f mant_bits=%x\n", f1, (f1u>>13) & 0x3ff);
-
-    f16 u = f16_from_ascii("1.2e3");
-
-    f16_to_ascii(u, buf);
-    printf("== %04x => %s ... ", u.bits, buf);
-    f16_print(u);
-    printf("\n");
+    for(u16 i = 0x0; i <= 0x0400; i++) {
+        f16 u; u.bits = i;
+        f16_to_ascii(u, buf);
+        printf("%04x => %s => ", i, buf);
+        f16_print(u);
+        printf("\n");
+    }
 }
 
 
