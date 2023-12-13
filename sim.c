@@ -55,7 +55,8 @@ static inline char *attr(u8 code) {
 
 #define attr_reset (enable_color ? "\033[0m" : "")
 
-bool trace_mem = 0;
+bool trace_load = 0;
+bool trace_store = 0;
 int header_counter = 0;
 int header_every = 20;
 
@@ -453,12 +454,12 @@ void decode(u16 op)
 
         case SS_LOAD:
             r[ldst_target] = mem_rd(ldst_addr, ldst_wide);
-            if (trace_mem) {
+            if (trace_load) {
                 printf("READ %s [%04x] => %04x\n", ldst_wide ? "WORD" : "BYTE", ldst_addr, r[ldst_target]);
             }
             break;
         case SS_STORE:
-            if (trace_mem) {
+            if (trace_store) {
                 printf("WRITE %s [%04x] <= %04x\n", ldst_wide ? "WORD" : "BYTE", ldst_addr, r[ldst_target]);
             }
             mem_wr(ldst_addr, ldst_wide, r[ldst_target]);
@@ -618,6 +619,16 @@ typedef struct
     void (*fn)(args*);
 } option;
 
+void opt_trace_store(args *args)
+{
+    trace_store = 1;
+}
+
+void opt_trace_load(args *args)
+{
+    trace_load = 1;
+}
+
 void opt_no_headers(args *args)
 {
     header_every = 0;
@@ -664,6 +675,8 @@ option options[] = {
     {"-h", "--help", "        display this message, and exit",    &opt_help},
     {"-e", "--header-every", "output header every N lines",       &opt_header_every},
     {"-E", "--no-headers", "  do not output headers",             &opt_no_headers},
+    {"-L", "--trace-load", "  trace memory reads",                &opt_trace_load},
+    {"-S", "--trace-store", " trace memory writes",               &opt_trace_store},
     {"-p", "--plain", "       undecorated output",                &opt_plain},
     {"-s", "--starred", "     mark changed registers with *...*", &opt_starred},
     {"-c", "--color", "       coloured output",                   &opt_color},
