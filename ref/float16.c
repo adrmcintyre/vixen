@@ -587,7 +587,14 @@ void print_consts()
     }
 }
 
-u16 pow10_table[] = {1, 10, 100, 1000, 10000};
+u16 pow10_table[] = {
+                40000, 20000, 10000,
+0x8000 | 8000,  4000,  2000,  1000,
+0x8000 | 800,   400,   200,   100,
+0x8000 | 80,    40,    20,    10,
+0x8000 | 8,     4,     2,     1,
+0x8000 | 0
+};
 
 void f16_to_ascii(f16 x, char *buf)
 {
@@ -614,49 +621,50 @@ void f16_to_ascii(f16 x, char *buf)
 
     // is value >= 1.0 ?
     if (exp >= 15) {
-        u16 whole;
+        u16 whole = x.fra | (1<<10);
         
         // exp counts how many bits of fra are the integer part
         if (exp <= 25) {
-            whole = (x.fra | (1<<10)) >> (25-exp);
+            whole >>= (25-exp);
             // move leading fractional bit to bit 15
             frac = (u32)x.fra << (exp-9);
             frac &= 0xffff;
             hulp <<= (exp-9);
         }
         else {
-            whole = (x.fra | (1<<10)) << (exp-25);
+            whole <<= (exp-25);
             frac = 0;
         }
 
         char outputting = 0;
-        u16 place = 4;
-        u16 bit = 2;
+
         u16 trial;
         char digit;
+        u16 *ptr = pow10_table;
+
+        trial = *ptr;
 
         do {
             digit = 0;
-            trial = pow10_table[place];
-            trial <<= bit;
             do {
                 digit <<= 1;
                 if (whole >= trial) {
                     whole -= trial;
                     digit |= 1;
+                    outputting = 1;
                 }
-                trial >>= 1;
-                bit -= 1;
-            } while((bit & 0x8000) == 0);
+                trial = *++ptr;
+            } while((trial & 0x8000) == 0);
+            digit += '0';
+            trial &= ~0x8000;
+            if (trial == 0) break;
 
-            outputting |= digit;
             if (outputting) {
-                *buf++ = '0' | digit;
+                *buf++ = digit;
             }
-            bit = 3;
-            place -= 1;
-            outputting |= (place == 0);
-        } while((place & 0x8000) == 0);
+        } while(1);
+
+        *buf++ = digit;
 
         frac <<= 12; // move leading bit (15) up to bit 27
         hulp <<= 11;
@@ -677,6 +685,8 @@ void f16_to_ascii(f16 x, char *buf)
             frac |= 0x400;
         }
 
+        *buf++ = '0';
+
         // shift up so that exp=15 would correspond to the implicit
         // bit at 28, thus when multiplied by 10 each leading fractional
         // digit will appear at bits 31..28
@@ -684,46 +694,40 @@ void f16_to_ascii(f16 x, char *buf)
         // 15+3+10 = 28
         frac <<= exp + 3;
         hulp <<= exp + 2;
-
-        *buf++ = '0';
     }
 
     if (frac != 0) {
-        u16 out = 0;
-
         *buf++ = '.';
 
-        bool roundup = 0;
         while(1) {
             hulp *= 10;
             frac *= 10;
             u16 digit = frac >> 28;
-            out = out * 10 + digit;
             frac &= ~(0xf<<28);
 
             *buf++ = '0' + digit;
 
             // TODO deal with exponent boundaries
-            roundup = frac >> 27;
-            if (roundup) {
+            if (frac & (1<<27)) {
                 if (frac + hulp >= (1<<28)) {
+                    char *ptr = buf;
+
+                    // TODO in practice this condition is never true! can we prove why?!
+                    while(*--ptr == '9') *ptr = '0';
+
+                    if (*ptr != '.') {
+                        (*ptr)++;
+                    }
+                    else {
+                        // TODO - only need to to worry about this,
+                        // if we allow fixed precision formatting.
+                    }
                     break;
                 }
             } else {
                 if (frac <= hulp) {
                     break;
                 }
-            }
-        }
-        char *ptr = buf-1;
-        if (roundup) {
-            while(*ptr == '9') *ptr-- = '0';
-            if (*ptr == '.') {
-                // TODO - only need to to worry about this,
-                // if we allow fixed precision formatting.
-            }
-            else {
-                (*ptr)++;
             }
         }
     }
@@ -925,7 +929,7 @@ f16 f16_from_ascii(char *buf)
 
 int main() {
     char buf[100];
-    for(u16 i = 0x0; i <= 0x0400; i++) {
+    for(u16 i = 0x0000; i <= 0x07600; i++) {
         f16 u; u.bits = i;
         f16_to_ascii(u, buf);
         printf("%04x => %s => ", i, buf);
