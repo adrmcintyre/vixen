@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/errno.h>
 
 typedef unsigned char bool;
 typedef unsigned char u8;
@@ -8,15 +9,15 @@ typedef unsigned short u16;
 typedef unsigned long u32;
 
                             // light dark
-const u8 white   = 0x00;    //  67       
-const u8 red     = 0x01;    //  61     1 
-const u8 green   = 0x02;    //  62     2 
-const u8 yellow  = 0x03;    //  63     3 
-const u8 blue    = 0x04;    //  64     4 
-const u8 magenta = 0x05;    //  65     5 
-const u8 cyan    = 0x06;    //  66     6 
-const u8 grey    = 0x07;    //  7     60 
-const u8 black   = 0x08;    //         0 
+const u8 white   = 0x00;    //  67      
+const u8 red     = 0x01;    //  61     1
+const u8 green   = 0x02;    //  62     2
+const u8 yellow  = 0x03;    //  63     3
+const u8 blue    = 0x04;    //  64     4
+const u8 magenta = 0x05;    //  65     5
+const u8 cyan    = 0x06;    //  66     6
+const u8 grey    = 0x07;    //  7     60
+const u8 black   = 0x08;    //         0
 
 const u8 dark      = 0x08;
 const u8 bg        = 0x10;
@@ -25,7 +26,9 @@ const u8 underline = 0x40;
 const u8 inverse   = 0x80;
 
 bool enable_color = 1;
-bool enable_asterisks = 0;
+bool enable_ascii = 0;
+
+bool mode_post = 0;
 
 char *attr_cache[256] = {};
 
@@ -53,12 +56,17 @@ static inline char *attr(u8 code) {
     return res ? res : mk_attr(code);
 }
 
-#define attr_reset (enable_color ? "\033[0m" : "")
+#define attr_reset  (enable_color ? "\033[0m" : "")
+#define attr_strike (enable_color ? "\033[9m" : "")
 
-bool trace_load = 0;
-bool trace_store = 0;
+bool trace_read = 0;
+bool trace_write = 0;
 int header_counter = 0;
 int header_every = 20;
+const char* asm_file = 0;
+
+const char* asm_labels[65536] = {};
+const char* asm_text[65536] = {};
 
 char disasm[32];
 
@@ -91,6 +99,35 @@ const int SS_BRANCH     = 10;
 const int SS_PRED       = 11;
 const int SS_HALT       = 12;
 const int SS_TRAP       = 13;
+
+const u8 TOUCH_RD = 1;
+const u8 TOUCH_WR = 2;
+
+u8 touched_reg[16] = {};
+bool touched_skip = 0;
+
+u16 rd(int i)
+{
+    touched_reg[i] |= TOUCH_RD;
+    return r[i];
+}
+
+void wr(int i, u16 value)
+{
+    touched_reg[i] |= TOUCH_WR;
+    r[i] = value;
+}
+
+void touch_skip()
+{
+    touched_skip = 1;
+}
+
+void untouch_all()
+{
+    for(int i=0; i<16; i++) touched_reg[i] = 0;
+    touched_skip = 0;
+}
 
 u16 mem_rd(u16 addr, bool wide)
 {
@@ -153,7 +190,7 @@ void trap()
 
 #define t(args...) sprintf(disasm, args)
 
-void decode(u16 op)
+void execute(u16 op)
 {
     u8 dst          = (op >> 0)  & 0x0f;
     u8 src          = (op >> 4)  & 0x0f;
@@ -205,46 +242,46 @@ void decode(u16 op)
         substate = SS_ALU;
         signs_ne = (r[dst] ^ r[src]) >> 15;
         switch(arithlog_cat) {
-            case 0x00: t("mov r%d, r%d", dst, src); mov_op = 1; res = r[src]; break;
-            case 0x01: t("mvn r%d, r%d", dst, src); mov_op = 1; res = (u16)~r[src]; break;
-            case 0x02: t("adc r%d, r%d", dst, src); add_op = 1; res = (u32)r[dst] + r[src] + cin; break;
-            case 0x03: t("sbc r%d, r%d", dst, src); sub_op = 1; res = (u32)r[dst] + (u16)~r[src] + cin; break;
-            case 0x04: t("add r%d, r%d", dst, src); add_op = 1; res = (u32)r[dst] + r[src]; break;
-            case 0x05: t("sub r%d, r%d", dst, src); sub_op = 1; res = (u32)r[dst] + (u16)~r[src] + 1u; break;
-            case 0x06: t("rsc r%d, r%d", dst, src); sub_op = 1; res = (u32)r[src] + (u16)~r[dst] + cin; break;
-            case 0x07: t("rsb r%d, r%d", dst, src); sub_op = 1; res = (u32)r[src] + (u16)~r[dst] + 1u; break;
+            case 0x00: t("mov r%d, r%d", dst, src); mov_op = 1; res = rd(src); break;
+            case 0x01: t("mvn r%d, r%d", dst, src); mov_op = 1; res = (u16)~rd(src); break;
+            case 0x02: t("adc r%d, r%d", dst, src); add_op = 1; res = (u32)rd(dst) + rd(src) + cin; break;
+            case 0x03: t("sbc r%d, r%d", dst, src); sub_op = 1; res = (u32)rd(dst) + (u16)~rd(src) + cin; break;
+            case 0x04: t("add r%d, r%d", dst, src); add_op = 1; res = (u32)rd(dst) + rd(src); break;
+            case 0x05: t("sub r%d, r%d", dst, src); sub_op = 1; res = (u32)rd(dst) + (u16)~rd(src) + 1u; break;
+            case 0x06: t("rsc r%d, r%d", dst, src); sub_op = 1; res = (u32)rd(src) + (u16)~rd(dst) + cin; break;
+            case 0x07: t("rsb r%d, r%d", dst, src); sub_op = 1; res = (u32)rd(src) + (u16)~rd(dst) + 1u; break;
 
-            case 0x08: t("clz r%d, r%d", dst, src); mov_op = 1; res = clz(r[src]); break;
+            case 0x08: t("clz r%d, r%d", dst, src); mov_op = 1; res = clz(rd(src)); break;
             case 0x09: t("???");                    substate = SS_TRAP; break;
-            case 0x0a: t("mul r%d, r%d", dst, src); logic_op = 1; res = ((u32)r[dst] * r[src]) & 0xffff; break;
-            case 0x0b: t("muh r%d, r%d", dst, src); logic_op = 1; res = ((u32)r[dst] * r[src]) >> 16; break;
-            case 0x0c: t("and r%d, r%d", dst, src); logic_op = 1; res = r[dst] & r[src]; break;
-            case 0x0d: t("cmp r%d, r%d", dst, src); cmp_op = 1; res = (u32)r[dst] + (u16)~r[src] + 1u; break;
-            case 0x0e: t("cmn r%d, r%d", dst, src); cmp_op = 1; res = (u32)r[dst] + r[src]; break;
+            case 0x0a: t("mul r%d, r%d", dst, src); logic_op = 1; res = ((u32)rd(dst) * rd(src)) & 0xffff; break;
+            case 0x0b: t("muh r%d, r%d", dst, src); logic_op = 1; res = ((u32)rd(dst) * rd(src)) >> 16; break;
+            case 0x0c: t("and r%d, r%d", dst, src); logic_op = 1; res = rd(dst) & rd(src); break;
+            case 0x0d: t("cmp r%d, r%d", dst, src); cmp_op = 1; res = (u32)rd(dst) + (u16)~rd(src) + 1u; break;
+            case 0x0e: t("cmn r%d, r%d", dst, src); cmp_op = 1; res = (u32)rd(dst) + rd(src); break;
             case 0x0f: t("???");                    substate = SS_TRAP; break;
 
             // ROR
             case 0x10:
                 t("ror r%d, r%d", dst, src);
-                if ((r[src] & 0xf)==0) {
+                if ((rd(src) & 0xf)==0) {
                     logic_op = 1;
-                    res = r[dst];
+                    res = rd(dst);
                 } else {
                     shift_op = 1;
-                    res = r[dst] << (16u-(r[src] & 0xf)) |
-                        r[dst] >>      (r[src] & 0xf);
-                    cout = (r[dst] >> ((r[src]-1u) & 0xf)) & 1;
+                    res = rd(dst) << (16u-(rd(src) & 0xf)) |
+                        rd(dst) >>      (rd(src) & 0xf);
+                    cout = (rd(dst) >> ((rd(src)-1u) & 0xf)) & 1;
                 }
                 break;
             // LSL
             case 0x11:
                 t("lsl r%d, r%d", dst, src);
                 shift_op = 1;
-                if (r[src] > 0u) {
-                    res = r[dst] << r[src];
-                    cout = (r[src] <= 16u) && ((r[dst] >> (16u-r[src])) & 1);
+                if (rd(src) > 0u) {
+                    res = rd(dst) << rd(src);
+                    cout = (rd(src) <= 16u) && ((rd(dst) >> (16u-rd(src))) & 1);
                 } else {
-                    res = r[dst];
+                    res = rd(dst);
                     cout = 0;
                 }
                 break;
@@ -252,11 +289,11 @@ void decode(u16 op)
             case 0x12:
                 t("lsr r%d, r%d", dst, src);
                 shift_op = 1;
-                if (r[src] > 0u) {
-                    res = r[dst] >> r[src];
-                    cout = (r[dst] >> (r[src]-1u)) & 1;
+                if (rd(src) > 0u) {
+                    res = rd(dst) >> rd(src);
+                    cout = (rd(dst) >> (rd(src)-1u)) & 1;
                 } else {
-                    res = r[dst];
+                    res = rd(dst);
                     cout = 0;
                 }
                 break;
@@ -264,34 +301,34 @@ void decode(u16 op)
             case 0x13:
                 t("asr r%d, r%d", dst, src);
                 shift_op = 1;
-                if (r[src] > 0u) {
-                    res = r[dst] >> r[src];
-                    if (r[dst] & 0x8000) res |= (~0) << (16u-r[src]);
-                    cout = (r[dst] >> (r[src]-1u)) & 1;
+                if (rd(src) > 0u) {
+                    res = rd(dst) >> rd(src);
+                    if (rd(dst) & 0x8000) res |= (~0) << (16u-rd(src));
+                    cout = (rd(dst) >> (rd(src)-1u)) & 1;
                 } else {
-                    res = r[dst];
+                    res = rd(dst);
                     cout = 0;
                 }
                 break;
 
-            case 0x14: t("orr r%d, r%d", dst, src); logic_op = 1; res = r[dst] | r[src]; break;
-            case 0x15: t("eor r%d, r%d", dst, src); logic_op = 1; res = r[dst] ^ r[src]; break;
-            case 0x16: t("bic r%d, r%d", dst, src); logic_op = 1; res = r[dst] & ~r[src]; break;
-            case 0x17: t("tst r%d, r%d", dst, src); tst_op = 1;   res = r[dst] & r[src]; break;
+            case 0x14: t("orr r%d, r%d", dst, src); logic_op = 1; res = rd(dst) | rd(src); break;
+            case 0x15: t("eor r%d, r%d", dst, src); logic_op = 1; res = rd(dst) ^ rd(src); break;
+            case 0x16: t("bic r%d, r%d", dst, src); logic_op = 1; res = rd(dst) & ~rd(src); break;
+            case 0x17: t("tst r%d, r%d", dst, src); tst_op = 1;   res = rd(dst) & rd(src); break;
 
-            // RRX / ROR# 
+            // RRX / ROR#
             case 0x18:
                 shift_op = 1;
                 if (num4 == 0) {
                     t("rrx r%d", dst);
-                    res = (cin ? 0x8000 : 0) | (r[dst] >> 1);
-                    cout = r[dst] & 1;
+                    res = (cin ? 0x8000 : 0) | (rd(dst) >> 1);
+                    cout = rd(dst) & 1;
                 } else {
                     t("ror r%d, #%d", dst, num4);
                     shift_op = 1;
-                    res = r[dst] << (16u-num4) |
-                        r[dst] >>      num4;
-                    cout = (r[dst] >> (num4-1u)) & 1;
+                    res = rd(dst) << (16u-num4) |
+                        rd(dst) >>      num4;
+                    cout = (rd(dst) >> (num4-1u)) & 1;
                 }
                 break;
 
@@ -299,10 +336,10 @@ void decode(u16 op)
                 t("lsl r%d, #%d", dst, num4);
                 shift_op = 1;
                 if (num4 > 0u) {
-                    res = r[dst] << num4;
-                    cout = (r[dst] >> (16u-num4)) & 1;
+                    res = rd(dst) << num4;
+                    cout = (rd(dst) >> (16u-num4)) & 1;
                 } else {
-                    res = r[dst];
+                    res = rd(dst);
                     cout = 0;
                 }
                 break;
@@ -310,10 +347,10 @@ void decode(u16 op)
                 t("lsr r%d, #%d", dst, num4);
                 shift_op = 1;
                 if (num4 > 0u) {
-                    res = r[dst] >> num4;
-                    cout = (r[dst] >> (num4-1u)) & 1;
+                    res = rd(dst) >> num4;
+                    cout = (rd(dst) >> (num4-1u)) & 1;
                 } else {
-                    res = r[dst];
+                    res = rd(dst);
                     cout = 0;
                 }
                 break;
@@ -321,31 +358,31 @@ void decode(u16 op)
                 t("asr r%d, #%d", dst, num4);
                 shift_op = 1;
                 if (num4 > 0u) {
-                    res = r[dst] >> num4;
-                    if (r[dst] & 0x8000) res |= (~0) << (16u-num4);
-                    cout = (r[dst] >> (num4-1u)) & 1;
+                    res = rd(dst) >> num4;
+                    if (rd(dst) & 0x8000) res |= (~0) << (16u-num4);
+                    cout = (rd(dst) >> (num4-1u)) & 1;
                 } else {
-                    res = r[dst];
+                    res = rd(dst);
                     cout = 0;
                 }
                 break;
 
-            case 0x1c: t("orr r%d, #bit %d", dst, num4); logic_op = 1; res = r[dst] | (1<<num4); break;
-            case 0x1d: t("eor r%d, #bit %d", dst, num4); logic_op = 1; res = r[dst] ^ (1<<num4); break;
-            case 0x1e: t("bic r%d, #bit %d", dst, num4); logic_op = 1; res = r[dst] & ~(1<<num4); break;
-            case 0x1f: t("tst r%d, #bit %d", dst, num4); tst_op = 1;   res = r[dst] & (1<<num4); break;
+            case 0x1c: t("orr r%d, #bit %d", dst, num4); logic_op = 1; res = rd(dst) | (1<<num4); break;
+            case 0x1d: t("eor r%d, #bit %d", dst, num4); logic_op = 1; res = rd(dst) ^ (1<<num4); break;
+            case 0x1e: t("bic r%d, #bit %d", dst, num4); logic_op = 1; res = rd(dst) & ~(1<<num4); break;
+            case 0x1f: t("tst r%d, #bit %d", dst, num4); tst_op = 1;   res = rd(dst) & (1<<num4); break;
 
             default:
                 if (dst != 0xf) {
                     add_op = 1;
-                    signs_ne = (r[dst]>>15) != sign;
+                    signs_ne = (rd(dst)>>15) != sign;
                     if (sign == 0) {
                         t("add r%d, #0x%02x", dst, num8);
-                        res = (u32)r[dst] + num8;
+                        res = (u32)rd(dst) + num8;
                     } else {
                         u16 delta = (u16)num8 | 0xff00;
                         t("sub r%d, #0x%02x", dst, -(signed short)delta);
-                        res = (u32)r[dst] + delta;
+                        res = (u32)rd(dst) + delta;
                     }
                 }
                 else if ((op>>8 & 0x1f) == 0x1f) {
@@ -395,7 +432,7 @@ void decode(u16 op)
             t("ldb r%d, [r%d, #%d]", ldst_target, ldst_base, num5);
         }
         substate = SS_LOAD;
-        ldst_addr = r[ldst_base] + num5;
+        ldst_addr = rd(ldst_base) + num5;
     }
     else if (major_cat == 0x02) {
         if (ldst_wide) {
@@ -404,7 +441,7 @@ void decode(u16 op)
             t("stb r%d, [r%d, #%d]", ldst_target, ldst_base, num5);
         }
         substate = SS_STORE;
-        ldst_addr = r[ldst_base] + num5;
+        ldst_addr = rd(ldst_base) + num5;
     }
     else if (major_cat == 0x03) {
         switch(mov8_br) {
@@ -442,7 +479,7 @@ void decode(u16 op)
             break;
         case SS_ALU:
             if (wr_reg) {
-                r[dst] = res;
+                wr(dst, res);
             }
             u16 fl = special_regs[FLAGS];
             if (wr_nz) { fl &= ~FLAG_N; fl |= (nout ? FLAG_N : 0); }
@@ -453,35 +490,40 @@ void decode(u16 op)
             break;
 
         case SS_LOAD:
-            r[ldst_target] = mem_rd(ldst_addr, ldst_wide);
-            if (trace_load) {
+            wr(ldst_target, mem_rd(ldst_addr, ldst_wide));
+            if (trace_read) {
                 printf("READ %s [%04x] => %04x\n", ldst_wide ? "WORD" : "BYTE", ldst_addr, r[ldst_target]);
             }
             break;
         case SS_STORE:
-            if (trace_store) {
+            if (trace_write) {
                 printf("WRITE %s [%04x] <= %04x\n", ldst_wide ? "WORD" : "BYTE", ldst_addr, r[ldst_target]);
             }
             mem_wr(ldst_addr, ldst_wide, r[ldst_target]);
             break;
         case SS_RD_FLAGS:
-            r[special_reg] = special_regs[FLAGS];
+            wr(special_reg, special_regs[FLAGS]);
             break;
         case SS_WR_FLAGS:
-            special_regs[FLAGS] = r[special_reg];
+            special_regs[FLAGS] = rd(special_reg);
             break;
         case SS_BRANCH:
-            if (br_link) r[14] = r[15];
+            if (br_link) {
+                wr(14, r[15]);
+            }
             r[15] = br_addr;
             break;
         case SS_PRED:
-            if (!pred_true) r[15] += 2;
+            if (!pred_true) {
+                touch_skip();
+                r[15] += 2;
+            }
             break;
         case SS_RD_SPECIAL:
-            r[special_reg] = special_regs[special_special];
+            wr(special_reg, special_regs[special_special]);
             break;
         case SS_WR_SPECIAL:
-            special_regs[special_special] = r[special_reg];
+            special_regs[special_special] = rd(special_reg);
             break;
         case SS_SWI:
         case SS_RTU:
@@ -492,12 +534,6 @@ void decode(u16 op)
     }
 }
 
-void save_regs()
-{
-    memcpy(prev_r, r, sizeof(r));
-    memcpy(prev_special_regs, special_regs, sizeof(special_regs));
-}
-
 void trace_headers()
 {
     if (header_every == 0) {
@@ -506,10 +542,10 @@ void trace_headers()
     if (header_counter == 0) {
         printf("\n");
         printf("%s", attr(bold|blue));
-        if (enable_asterisks) {
-            printf("-pc- -op-     -disassembly-     -flag-   r0    r1    r2    r3    r4    r5    r6    r7    r8    r9   r10   r11   r12   r13   r14   r15\n");
+        if (enable_ascii) {
+            printf("flag   r0    r1    r2    r3    r4    r5    r6    r7    r8    r9    r10   r11   r12   r13   r14   pc\n");
         } else {
-            printf("-pc- -op-     -disassembly-     -flag-  r0   r1   r2   r3   r4   r5   r6   r7   r8   r9  r10  r11  r12  r13  r14  r15\n");
+            printf("flag  r0   r1   r2   r3   r4   r5   r6   r7   r8   r9   r10  r11  r12  r13  r14  pc\n");
         }
         printf("%s", attr_reset);
     }
@@ -531,7 +567,6 @@ void trace_flags()
         { FLAG_C, " ", "C"},
         { FLAG_V, " ", "V"}
     };
-    printf("|");
     for(int i=0; i<4; i++) {
         u16 pre = prev_special_regs[FLAGS] & info[i].mask;
         u16 now = special_regs[FLAGS] & info[i].mask;
@@ -540,40 +575,50 @@ void trace_flags()
                 now ? info[i].on : info[i].off,
                 (now == pre) ? "" : attr_reset);
     }
-    printf("|");
+    printf(" ");
 }
 
 void trace_regs()
 {
-  printf("%s", attr(grey));
-
-    bool old_diff = 0;
-    for(int i=0; i<16; i++) {
-        bool diff = prev_r[i] != r[i];
-        if (!old_diff && diff) {
-            printf("%s ", attr(dark|red));
-            if (enable_asterisks) printf("*");
-        }
-        else if (old_diff && !diff) {
-            if (enable_asterisks) printf("*");
-            printf(" %s", attr(grey));
-        }
-        else {
-            if (enable_asterisks) printf(" ");
-            printf(" ");
-        }
-
-        printf("%04x", r[i]);
-        old_diff = diff;
-    }
-    if (enable_asterisks) {
-        if (old_diff) {
-            printf("*");
-        } else {
-            printf(" ");
+    if (enable_ascii) {
+        bool old_diff = 0;
+        for(int i=0; i<16; i++) {
+            u8 touch = touched_reg[i];
+            if (touch & TOUCH_WR) {
+                printf("[%04x]", r[i]);
+            }
+            else if (touch & TOUCH_RD) {
+                printf(" %04x ", r[i]);
+            }
+            else {
+                printf(" %04x ", r[i]);
+            }
         }
     }
-    printf("%s", attr_reset);
+    else {
+        printf("%s", attr(grey));
+
+        u8 old_touch = 0;
+        for(int i=0; i<16; i++) {
+            if (i>0) printf(" ");
+
+            u8 touch = touched_reg[i];
+            if (touch != old_touch) {
+                if (touch & TOUCH_WR) {
+                    printf("%s", attr(dark|red));
+                }
+                else if (touch & TOUCH_RD) {
+                    printf("%s", attr(dark|green));
+                }
+                else {
+                    printf("%s", attr(grey));
+                }
+            }
+            printf("%04x", r[i]);
+            old_touch = touch;
+        }
+        printf("%s", attr_reset);
+    }
 }
 
 void dw(u16 addr, u16 data)
@@ -603,7 +648,52 @@ void load_prog()
     fclose(lo_fp);
 }
 
-typedef struct 
+void load_asm()
+{
+    if (asm_file == 0) {
+        return;
+    }
+
+    u16 org = 0x0000;
+    u16 opcode;
+
+    FILE *fp = fopen(asm_file, "r");
+    if (fp == 0) {
+        fprintf(stderr, "could not load %s\n", asm_file);
+        exit(1);
+    }
+    int lineno = 0;
+    char buf[1024];
+    while(fgets(buf, sizeof(buf), fp)) {
+        lineno++;
+        char *end = strchr(buf, '\n');
+        if (end) *end = '\0';
+
+        if (buf[0] == '.') {
+            // TODO - label should actually refer to next org read in?
+            asm_labels[org+2] = strdup(buf+1);
+        }
+        else if (2 == sscanf(buf, "%hx %hx ; ", &org, &opcode)) {
+            asm_text[org] = strdup(buf+12);
+        }
+        else if (buf[0] == ';') {
+            // ignore comment
+        }
+        else {
+            fprintf(stderr, "%s:%d: syntax error\n", asm_file, lineno);
+            exit(1);
+        }
+    }
+
+    if (ferror(fp)) {
+        fprintf(stderr, "%s:%d: while reading: %s\n", asm_file, lineno, strerror(errno));
+        exit(1);
+    }
+
+    fclose(fp);
+}
+
+typedef struct
 {
     const char* prog;   // name of program
     const char* opt;    // current option
@@ -615,33 +705,33 @@ typedef struct
 {
     char *short_opt;
     char *long_opt;
+    char *arg_opt;
     char *msg;
     void (*fn)(args*);
 } option;
 
-void opt_trace_store(args *args)
+void opt_trace_write(args *args)
 {
-    trace_store = 1;
+    trace_write = 1;
 }
 
-void opt_trace_load(args *args)
+void opt_trace_read(args *args)
 {
-    trace_load = 1;
+    trace_read = 1;
 }
 
-void opt_no_headers(args *args)
-{
-    header_every = 0;
-}
-
-void opt_header_every(args *args)
+const char *arg_value(args *args)
 {
     if (--args->c == 0) {
         fprintf(stderr, "%s: missing value\n", args->opt);
         exit(1);
     }
+    return *++args->v;
+}
 
-    const char * arg = *++args->v;
+void opt_header_every(args *args)
+{
+    const char *arg = arg_value(args);
     char *endptr = 0;
     long val = (int)strtol(arg, &endptr, 0);
     if (val < 0 || val > 255 || *endptr) {
@@ -651,44 +741,101 @@ void opt_header_every(args *args)
     header_every = (int)val;
 }
 
+void opt_asm(args *args)
+{
+    asm_file = arg_value(args);
+}
+
 void opt_color(args *args)
 {
     enable_color = 1;
-    enable_asterisks = 0;
+    enable_ascii = 0;
 }
 
 void opt_plain(args *args)
 {
     enable_color = 0;
-    enable_asterisks = 0;
+    enable_ascii = 0;
 }
 
-void opt_starred(args *args)
+void opt_ascii(args *args)
 {
     enable_color = 0;
-    enable_asterisks = 1;
+    enable_ascii = 1;
+}
+
+void opt_pre(args *args)
+{
+    mode_post = 0;
+}
+
+void opt_post(args *args)
+{
+    mode_post = 1;
 }
 
 void opt_help(args *args);
 
 option options[] = {
-    {"-h", "--help", "        display this message, and exit",    &opt_help},
-    {"-e", "--header-every", "output header every N lines",       &opt_header_every},
-    {"-E", "--no-headers", "  do not output headers",             &opt_no_headers},
-    {"-L", "--trace-load", "  trace memory reads",                &opt_trace_load},
-    {"-S", "--trace-store", " trace memory writes",               &opt_trace_store},
-    {"-p", "--plain", "       undecorated output",                &opt_plain},
-    {"-s", "--starred", "     mark changed registers with *...*", &opt_starred},
-    {"-c", "--color", "       coloured output",                   &opt_color},
+    {"-h", "--help",         "",     "display this message, and exit",         &opt_help},
+    {"-A", "--asm",          "FILE", "display assembly from FILE",             &opt_asm},
+    {"-H", "--header-every", "",     "output header every N lines (0=none)",   &opt_header_every},
+    {"-r", "--trace-read",   "",     "trace memory reads",                     &opt_trace_read},
+    {"-w", "--trace-write" , "",     "trace memory writes",                    &opt_trace_write},
+    {"-c", "--color",        "",     "coloured output (default)",              &opt_color},
+    {"-a", "--ascii",        "",     "ascii decorated output",                 &opt_ascii},
+    {"-p", "--plain",        "",     "undecorated output",                     &opt_plain},
+    {"",   "--pre",          "",     "output pre-instruction state (default)", &opt_pre},
+    {"",   "--post",         "",     "output post-instruction state",          &opt_post},
 };
 
 void opt_help(args *args)
 {
-    fprintf(stderr, "%s: vixen cpu simulator\n", args->prog);
-    fprintf(stderr, "\nOptions:\n");
+    fprintf(stderr, "%s: vixen cpu simulator\n\nOptions:\n", args->prog);
+
+    int maxw = 0;
     for(int i=0; i<sizeof(options)/sizeof(options[0]); ++i) {
         option *opt = &options[i];
-        fprintf(stderr, "  %s, %s  %s\n", opt->short_opt, opt->long_opt, opt->msg);
+        int w = 2;  // indent
+        if (*opt->short_opt) {
+            w += strlen(opt->short_opt);
+            if (*opt->long_opt) {
+                w += 2; // comma, space
+            }
+        }
+        if (*opt->long_opt) {
+            w += strlen(opt->long_opt);
+        }
+        if (*opt->arg_opt) {
+            w += 1; // space
+            w += strlen(opt->arg_opt);
+        }
+        w += 2; // spaces before message
+        if (w > maxw) maxw = w;
+    }
+
+    for(int i=0; i<sizeof(options)/sizeof(options[0]); ++i) {
+        option *opt = &options[i];
+        char buf[200];
+        strcpy(buf, "  ");
+        if (*opt->short_opt) {
+            strcat(buf, opt->short_opt);
+            if (*opt->long_opt) {
+                strcat(buf, ", ");
+            }
+        }
+        if (*opt->long_opt) {
+            strcat(buf, opt->long_opt);
+        }
+        if (*opt->arg_opt) {
+            strcat(buf, " ");
+            strcat(buf, opt->arg_opt);
+        }
+        int w = strlen(buf);
+        memset(buf + strlen(buf), ' ', maxw-w);
+        strcpy(buf + maxw, opt->msg);
+        strcat(buf, "\n");
+        fputs(buf, stderr);
     }
     exit(0);
 }
@@ -701,7 +848,10 @@ void parse_args(int argc, const char* argv[]) {
         bool found = 0;
         for(int j=0; j<sizeof(options) / sizeof(options[0]); j++) {
             option *opt = &options[j];
-            if (0==strcmp(args.opt, opt->short_opt) || 0==strcmp(args.opt, opt->long_opt)) {
+            if (
+                    *opt->short_opt && 0==strcmp(args.opt, opt->short_opt) ||
+                    *opt->long_opt && 0==strcmp(args.opt, opt->long_opt)
+            ) {
                 opt->fn(&args);
                 found = 1;
                 break;
@@ -718,22 +868,45 @@ int main(int argc, const char* argv[])
 {
     parse_args(argc, argv);
     load_prog();
+    load_asm();
 
     for(int i=0; i<16; i++) r[i] = 0;
     for(int i=0; i<4; i++) special_regs[i] = 0;
 
+    const char spaces[] = "                            ";
+
     while(1) {
         u16 pc = r[15];
         u16 op = mem_rd(pc, 1);
-        r[15] = pc + 2;
-
-        save_regs();
-        decode(op);
+        if (mode_post) {
+            r[15] = pc + 2;
+            untouch_all();
+            execute(op);
+        }
 
         trace_headers();
-        printf("%s%04x %04x ; %-20s%s", attr(dark|green), pc, op, disasm, attr_reset);
+        const char *label = asm_labels[pc];
+        if (label != 0) {
+            if (enable_ascii) {
+                printf("%102s.%s\n", "", label);
+            } else {
+                printf("%85s.%s\n", "", label);
+            }
+        }
+    
         trace_flags();
         trace_regs();
-        printf("\n");
+        printf(" %s; %s%s%s\n", 
+                attr(dark|green),
+                touched_skip ? attr_strike : "",
+                (asm_file && asm_text[pc]) ? asm_text[pc] : disasm,
+                attr_reset
+        );
+
+        if (!mode_post) {
+            r[15] = pc + 2;
+            untouch_all();
+            execute(op);
+        }
     }
 }
