@@ -50,3 +50,11 @@ video code:
         option to draw last point
         point
         fill rect
+
+floating point:
+    build test suite
+
+    remaining required operations, including:
+        fp compare op
+        fp mini interpreter?
+
