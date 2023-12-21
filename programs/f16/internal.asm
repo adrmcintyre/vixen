@@ -22,7 +22,7 @@ def f16_one       0x3c00    ; 1
 def f16_one_eps   0x3c01    ; 1+epsilon
 def f16_two       0x4000    ; 2
 def f16_three     0x4200    ; 3
-def f16_max       0x7bff    ; largest finite number
+def f16_max_fin   0x7bff    ; largest finite number
 def f16_inf       0x7c00    ; infinity
 def f16_min_nan   0x7c01    ; smallest valid NaN
 def f16_qnan      0x7e00    ; smallest quiet NaN
@@ -116,17 +116,21 @@ def f16_exp_mask  0x7c00    ; mask for exponent
 .f16_return_inf
     mov z, #.f16_inf
     orr z, z_sign
+    add z, #0           ; clear V
     mov pc, link
 
 .f16_return_nan
-    mov z, #.f16_qnan
+    mov z, #0x8000 | (.f16_qnan>>1)
+    add z, z            ; z = f16_qnan, with V set
     mov pc, link
 
 .f16_return_zero
     mov z, z_sign
+    add z, #0           ; clear V
     mov pc, link
 
 .f16_return_pos_zero
     mov z, #0
+    add z, #0           ; clear V
     mov pc, link
 
