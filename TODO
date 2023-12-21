@@ -55,6 +55,6 @@ floating point:
     build test suite
 
     remaining required operations, including:
-        fp compare op
         fp mini interpreter?
+
 
