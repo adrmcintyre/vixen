@@ -12,4 +12,4 @@ if ! gcc -o ./out/sim ./sim.c >& out/gcc.log; then
     exit 1
 fi
 
-./out/sim -A out/asm.log | tee out/sim.log
+./out/sim --post -A out/asm.log | tee out/sim.log
