@@ -1,9 +1,16 @@
-mov r0, #hi(0x2fe6)
-add r0, #lo(0x2fe6)
-mov r1, #0x1000
-bl .f16_to_ascii
-hlt
-
+; Converts the float x to an ascii string placed in memory pointed to
+; by buf, which must have sufficient space for the converted string.
+;
+; On return, buf points to one past the last character written.
+;
+; A '-' sign is inserted for numbers < 0, but '+' is not used for numbers >= 0.
+; A '.' decimal point is only inserted for numbers with a fractional part.
+; A leading '0' is always inserted for numbers < 1 in magnitude.
+; Exponential notation is not used (i.e. 1000 is converted to "1000" not "1e3").
+; +inf is converted to "inf"
+; -inf is converted to "-inf"
+; NaN is converted to "nan"
+; 
 .f16_to_ascii
 {
     alias r0 x

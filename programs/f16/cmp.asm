@@ -1,9 +1,27 @@
-; Result:
-;   less_than:    result = -1, flags = -V -C -Z
-;   equal_to:     result =  0, flags = -V +C +Z
-;   greater_than: result = +1, flags = -V +C -Z
-;   unordered:    result = +2, flags = +V -C -Z
-
+; Compares two floating point values, and returns a value indicating their
+; relative ordering, as well as setting the processor flags in such a way
+; that the unsigned predicates can be used. (Despite the fact that floats
+; are signed, the signed predicates prlt, prle, prge, prgt will not work
+; as expected).
+;
+;   a < b    : result = -1, flags = -V -C -Z
+;   a == b   : result =  0, flags = -V +C +Z
+;   a > b    : result = +1, flags = -V +C -Z
+;   unordered: result = +2, flags = +V -C -Z
+;
+; Unordered will be indicated if either or both arguments are NaN.
+;
+;   prvs is_unordered
+;   prvc !is_unordered
+;   prlo <
+;   prls <=
+;   preq ==
+;   prhs >=
+;   prhi >
+;   prne !=
+;
+; If unordered is a possibility, prvs/prvc should always be checked first.
+;
 .f16_cmp {
     alias r0 a
     alias r1 b

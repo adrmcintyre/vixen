@@ -1,22 +1,9 @@
-def VALUE 0xbc00
-
-mov r0, #hi(.VALUE)
-add r0, #lo(.VALUE)
-bl .f16_ftou
-hlt
-
-def f16_info_negative   0x8000
-def f16_info_non_finite 0x4000
-def f16_info_nan        0x2000
-
-; Convert float to 16-bit unsigned integer, truncating towards zero.
+; Converts the float in "a" to a 16-bit unsigned integer, truncating towards zero.
 ;
-; On exit:
-;   if V is clear:
-;       num=integer part of a
-;   if V is set:
-;       num=0x0000 if a was NaN or < 0.0 or -inf
-;       num=0xffff if a was +inf
+; Return values:
+;   V is clear, num=integer part of a
+;   V is set, num=0x0000: a was < 0.0, or -inf, or NaN
+;   V is set, num=0xffff: a was +inf
 ;
 .f16_ftou {
     alias r0 a
@@ -51,16 +38,13 @@ def f16_info_nan        0x2000
 }
 
 
-; Convert float to 16-bit signed integer, truncating towards zero.
+; Converts the float in "a" to a 16-bit signed integer, truncating towards zero.
 ;
-; On exit:
-;   if V is clear:
-;       num=integer part of a
-;
-;   if V is set:
-;       num=0      if a was NaN
-;       num=0x7fff if a was >= 32768.0 (or +inf)
-;       num=0x8000 if a was <= 32769.0 (or -inf)
+; Return values:
+;   V is clear, num=integer part of a
+;   V is set, num=0x0000: a was NaN
+;   V is set, num=0x7fff: a was >= 32768.0, or +inf
+;   V is set, num=0x8000: a was <= 32769.0, or -inf
 ;
 .f16_ftoi {
     alias r0 a
@@ -122,15 +106,19 @@ def f16_info_nan        0x2000
 }
 
 
-; Convert float to 16-bit integer magnitude (truncating towards zero),
+; Converts the float in "a" to a 16-bit integer magnitude (truncating towards 0),
 ; with separate sign/inf/nan indicators.
 ;
-; On exit:
+; Return values:
 ;   num=magnitude of integer part of a
-;   info & f16_info_negative   : a was negative
-;   info & f16_info_non_finite : a was +-inf or NaN
-;   info & f16_info_nan        : a was NaN
+;   info & f16_info_negative:   a was negative
+;   info & f16_info_non_finite: a was +inf, -inf, or NaN
+;   info & f16_info_nan:        a was NaN
 ;
+def f16_info_negative   0x8000
+def f16_info_non_finite 0x4000
+def f16_info_nan        0x2000
+
 .f16_ftomag {
     alias r0 a
     alias r1 info

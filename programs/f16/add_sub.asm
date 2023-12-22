@@ -91,7 +91,7 @@
 .tiny_delta
     lsl a_exp, #10                      ; b is so small compared to a, we can just return a
     mov z, a
-    add z, a_exp
+    add z, a_exp                        ; will clear V, as adding a_exp does not change z's sign
     orr z, z_sign
     mov pc, link
 
@@ -129,7 +129,7 @@
     ; sign=+ exp=1 fra=0.25, so value = (1).25 * 2^(1-15) = 1.25 * 2^-14
     ;
     mov z, a
-    add z, b
+    add z, b                            ; will clear V as a and b are both small
     orr z, z_sign
     mov pc, link
 
@@ -321,6 +321,7 @@
 .subnormal
     lsl z, a_exp                        ; no adjustment needed for subnormal
     orr z, z_sign
+    add z, #0                           ; ensure V is cleared
     mov pc, link
 }
 

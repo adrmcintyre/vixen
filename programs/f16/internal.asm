@@ -109,7 +109,7 @@ def f16_exp_mask  0x7c00    ; mask for exponent
 
     ; note: orr would be incorrect here, as bit 10 of z is
     ; used to indicate an increment to the exponent is wanted
-    add z, z_exp        ; combine with fraction
+    add z, z_exp        ; combine with fraction; V is cleared as a side effect
     orr z, z_sign       ; set sign
     mov pc, link
 

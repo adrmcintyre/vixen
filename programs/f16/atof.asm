@@ -9,6 +9,26 @@
     db 0
     align
 
+; Parse a float in the form:
+;
+;   <float> ::=
+;       <sign>? ( <mantissa> <exponent>? | <inf> ) |
+;       <nan>
+;
+;   <mantissa> ::=
+;       <digit>+ |
+;       <digit>+ <point> |
+;       <digit>* <point> <digit>+
+;
+;   <exponent> ::= E <sign>? <digit>+
+;   <sign> ::= [-+]
+;   <digit> ::= [0-9]
+;   <point> ::= '.'
+;   <inf> ::= [Ii][Nn][Ff]
+;   <nan> ::= [Nn][Aa][Nn]
+;
+; If no valid number can be parsed, 0 is returned with V set.
+;
 .f16_parse
 {
     alias r0 buf
@@ -324,9 +344,8 @@
     bra .f16_round_pack
 
 .error
-    ;; TODO how to indicate errors?
-    mov r1, #0
-    mvn r1, r1
+    mov r2, #0x8000 
+    add r2, r2              ; r2=0 and sets V
     mov pc, link
 
     ; utility routine

@@ -1,4 +1,7 @@
-; Convert 16-bit signed integer to float.
+; Converts a 16-bit signed integer in num to a float.
+;
+; Return values:
+;   z=result, V is cleared
 ;
 .f16_itof {
     alias r0  num
@@ -11,7 +14,7 @@
     alias r15 pc
 
     mov z, num
-    and z, z
+    add z, #0           ; clears V
     preq
     mov pc, link
 
