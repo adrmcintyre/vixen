@@ -26,16 +26,7 @@
     and z_sign, z
     prmi
     rsb z, tmp
-
-    mov z_exp, #30-1    ; account for leading 1 bit
-    clz tmp, z
-    sub z_exp, tmp
-    lsl z, tmp
-
-    lsr z, #1
-    prcs
-    orr z, #bit 0
-    bra .f16_round_pack
+    bra .f16_utof_return
 }
 
 ; Converts a 16-bit unsigned integer to float.
@@ -56,7 +47,21 @@
     alias r14 link
     alias r15 pc
 
-    ;
-    ; TODO
-    ;
+    mov z, num
+    add z, #0           ; clears V
+    preq
+    mov pc, link
+
+    mov z_sign, #0
+}
+.f16_utof_return
+    mov z_exp, #30-1    ; account for leading 1 bit
+    clz tmp, z
+    sub z_exp, tmp
+    lsl z, tmp
+
+    lsr z, #1
+    prcs
+    orr z, #bit 0
+    bra .f16_round_pack
 }
