@@ -1,14 +1,14 @@
 ;; Adapted from the softfloat library by John R Hauser.
 ;; See https://github.com/ucb-bar/berkeley-softfloat-3
 
-def VALUE 0x0003
-
-mov r0, #hi(.VALUE)
-add r0, #lo(.VALUE)
-bl .f16_sqrt
-hlt
-
-
+; Computes sqrt(a).
+;
+; Arguments:
+;   r0: a
+;
+; Results:
+;   r2: square-root; V=1 on NaN
+;
 .f16_sqrt
 {
     alias r0 a  

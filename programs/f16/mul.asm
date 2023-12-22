@@ -3,6 +3,15 @@
 
 ; Requires f16_internal.asm
 
+; Computes a * b.
+;
+; Arguments
+;   r0: a
+;   r1: b
+;
+; Results
+;   r2: product; V=1 on NaN
+;
 .f16_mul {
     alias r5 a_exp
     alias r6 b_exp

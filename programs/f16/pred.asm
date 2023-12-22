@@ -1,8 +1,12 @@
 ;-------------------------------------------------------------------------------
-; These predicate functions all return their results in the same form.
+; These predicate functions all have the same signature:
 ;
-;   Z=1, result=1: predicate is true
-;   Z=0, result=0: predicate is false
+; Arguments
+;   r0: float to be tested
+;
+; Returns
+;   r2: 1, Z=1 -- predicate is true
+;   r2: 0, Z=0 -- predicate is false
 ;
 ; The Z flag is set in such a way that a subsequent preq is taken
 ; if the predicate was true, and prne is taken if it was false.
@@ -14,7 +18,7 @@
 ;   bra .was_finite
 ;-------------------------------------------------------------------------------
 
-; Tests if the float "a" is normal, i.e. not 0, subnormal, infinite, or NaN.
+; Tests if its argument is normal, i.e. not zero, subnormal, infinite, or NaN.
 .f16_is_normal {
     bic a, #.f16_sign_mask
     sub a, #0x400                   ; we abuse unsigned comparison
@@ -22,14 +26,14 @@
     bra .f16_pred_cmp_lo            ; to effectively test 0x0400 <= a < 0x7c00
 }
 
-; Tests if the float "a" is finite, i.e. not infinite or NaN.
+; Tests if its argument is finite, i.e. not infinite or NaN.
 .f16_is_finite {
     bic a, #.f16_sign_mask
     mov tmp, #.f16_exp_mask
     bra .f16_pred_cmp_lo            ; test 0 <= a < 0x7c00
 }
 
-; Tests if the float "a" is zero, i.e. +0 or -0.
+; Tests if its argument is zero, i.e. +0 or -0.
 .f16_is_zero {
     mov result, #0
     bic a, #.f16_sign_mask
@@ -38,7 +42,7 @@
     mov pc, link
 }
 
-; Tests if the float "a" is subnormal, i.e. 0 < magnitude <= 6.1e-5
+; Tests if its argument is subnormal, i.e. 0 < magnitude <= 6.1e-5
 .f16_is_subnormal {
     mov tmp, #0x0400
     bic a, #.f16_sign_mask
@@ -48,7 +52,7 @@
     bra .f16_pred_return
 }
 
-; Tests if the float "a" is NaN.
+; Tests if its argument is a NaN.
 .f16_is_nan {
     mov result, #0
     bic a, #.f16_sign_mask
@@ -61,7 +65,7 @@
     mov pc, link
 }
 
-; Tests if the float "a" is infinite, i.e. +inf or -inf.
+; Tests if its argument is infinite, i.e. +Inf or -Inf.
 .f16_is_infinite {
     mov result, #0
     bic a, #.f16_sign_mask

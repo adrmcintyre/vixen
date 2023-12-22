@@ -3,6 +3,15 @@
 
 ; Requires f16_internal.asm
 
+; Computes a / b.
+;
+; Arguments
+;   r0: a
+;   r1: b
+;
+; Returns
+;   r2: quotient; V=1 on NaN
+;
 .f16_div
 {
     ; working registers

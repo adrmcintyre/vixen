@@ -1,11 +1,15 @@
-; Returns the minimum of two floats a, b.
+; Computes the minimum of two floats.
+;
+; Arguments
+;   r0: a
+;   r1: b
+;
+; Returns
+;   r2: minimum, V=0 -- a and b are both valid
+;   r2: NaN, V=1     -- a or b are NaN
 ;
 ; Note that -0 < +0, so min(+0,-0) = -0
 ; 
-; Return values:
-;   V is clear, result=minimum
-;   V is set,   result=NaN if any arg is NaN
-;
 .f16_min {
     alias r0 a
     alias r1 b
@@ -46,14 +50,18 @@
     mov pc, link
 }
 
-; Returns the maximum of two floats a, b.
+; Computes the maximum of two floats.
+;
+; Arguments
+;   r0: a
+;   r1: b
+;
+; Returns
+;   r2: maximum, V=0 -- a and b are both valid
+;   r2: NaN, V=1     -- a or b are NaN
 ;
 ; Note that -0 < +0, so max(+0,-0) = +0
 ; 
-; Return values:
-;   V is clear, result=maximum
-;   V is set,   result=NaN if any arg is NaN
-;
 .f16_max {
     alias r0 a
     alias r1 b

@@ -1,9 +1,12 @@
-; Converts the float in "a" to a 16-bit unsigned integer, truncating towards zero.
+; Converts a float to a 16-bit unsigned integer, truncating towards zero.
 ;
-; Return values:
-;   V is clear, num=integer part of a
-;   V is set, num=0x0000: a was < 0.0, or -inf, or NaN
-;   V is set, num=0xffff: a was +inf
+; Arguments
+;   r0: float to convert
+;
+; Returns
+;   r2: value, V=0  -- successful conversion
+;   r2: 0x0000, V=1 -- input was < 0.0, -Inf, or NaN
+;   r2: 0xffff, V=1 -- input was +Inf
 ;
 .f16_ftou {
     alias r0 a
@@ -43,8 +46,8 @@
 ; Return values:
 ;   V is clear, num=integer part of a
 ;   V is set, num=0x0000: a was NaN
-;   V is set, num=0x7fff: a was >= 32768.0, or +inf
-;   V is set, num=0x8000: a was <= 32769.0, or -inf
+;   V is set, num=0x7fff: a was >= 32768.0, or +Inf
+;   V is set, num=0x8000: a was <= 32769.0, or -Inf
 ;
 .f16_ftoi {
     alias r0 a
@@ -106,14 +109,18 @@
 }
 
 
-; Converts the float in "a" to a 16-bit integer magnitude (truncating towards 0),
-; with separate sign/inf/nan indicators.
+; Converts a float to a 16-bit unsigned integer magnitude (truncating towards 0),
+; and separate negative/Inf/NaN indicators.
 ;
-; Return values:
-;   num=magnitude of integer part of a
-;   info & f16_info_negative:   a was negative
-;   info & f16_info_non_finite: a was +inf, -inf, or NaN
-;   info & f16_info_nan:        a was NaN
+; Arguments
+;   r0: float to convert
+;
+; Returns
+;   r1 & f16_info_negative   -- argument is negative
+;   r1 & f16_info_non_finite -- argument is +Inf, -Inf, or NaN
+;   r1 & f16_info_nan        -- argument is NaN
+;   r2: magnitude            -- argument is finite
+;   r2: 0                    -- argument is NaN or infinite
 ;
 def f16_info_negative   0x8000
 def f16_info_non_finite 0x4000

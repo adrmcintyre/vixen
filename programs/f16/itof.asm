@@ -1,7 +1,10 @@
-; Converts a 16-bit signed integer in num to a float.
+; Converts a 16-bit signed integer to float.
 ;
-; Return values:
-;   z=result, V is cleared
+; Arguments
+;   r0: signed integer to convert
+;
+; Returns
+;   r2: converted float, V=0
 ;
 .f16_itof {
     alias r0  num
@@ -35,7 +38,13 @@
     bra .f16_round_pack
 }
 
-; Convert 16-bit unsigned integer to float.
+; Converts a 16-bit unsigned integer to float.
+;
+; Arguments
+;   r0: unsigned integer to convert
+;
+; Returns
+;   r2: converted float, V=0
 ;
 .f16_utof {
     alias r0  num

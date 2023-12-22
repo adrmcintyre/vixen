@@ -1,15 +1,17 @@
-;;; test case
-.test
-    mov r0, #hi(.test_str)
-    add r0, #lo(.test_str)
-    bl .f16_parse
-    hlt
-.test_str
-    ds "12e1"
-    db 0
-    align
-
-; Parse a float in the form:
+; Parses an ASCII string into a float, stopping at the first
+; invalid character. E.g. "123.5xyz" will be parsed to 123.5,
+; and r0 will be left pointing at the 'x'.
+;
+; Arguments
+;   r0: pointer to input buffer
+; 
+; Returns
+;   r0: points 1 past last valid character
+;   r2: value, V=0 -- on success
+;   r2: NaN, V=1   -- on parsing "nan"
+;   r2: 0, V=1     -- on failure
+;
+; The following format is recognised.
 ;
 ;   <float> ::=
 ;       <sign>? ( <mantissa> <exponent>? | <inf> ) |
@@ -26,8 +28,6 @@
 ;   <point> ::= '.'
 ;   <inf> ::= [Ii][Nn][Ff]
 ;   <nan> ::= [Nn][Aa][Nn]
-;
-; If no valid number can be parsed, 0 is returned with V set.
 ;
 .f16_parse
 {
@@ -60,23 +60,6 @@
     def flag_missing_exp   3
     def flag_missing_value 4
 
-    ;; TODO - stack the correct registers!
-
-    stw link, [sp]
-    sub sp, #2
-;;  sub sp, #8
-;;  stw r2, [sp, #2]
-;;  stw r3, [sp, #4]
-;;  stw r4, [sp, #6]
-    bl .impl
-;;  ldw r2, [sp, #2]
-;;  ldw r3, [sp, #4]
-;;  ldw r4, [sp, #6]
-;;  add sp, #8
-    add sp, #2
-    ldw pc, [sp]
-
-.impl
     mov cmp_buf, #hi(.nan_name)
     add cmp_buf, #lo(.nan_name)
 

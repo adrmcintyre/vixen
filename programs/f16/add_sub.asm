@@ -3,7 +3,15 @@
 
 ; Requires f16_internal.asm
 
-; external routine
+; Computes a - b.
+;
+; Arguments
+;   r0: a
+;   r1: b
+;
+; Returns
+;   r2: difference; V=1 on NaN
+;
 .f16_sub
 {
     alias r9 subtract
@@ -16,6 +24,15 @@
     bra .f16_internal_add_sub
 }
 
+; Computes a + b.
+;
+; Arguments
+;   r0: a
+;   r1: b
+;
+; Returns
+;   r2: sum; V=1 on NaN
+;
 .f16_add
 {
     alias r9 subtract

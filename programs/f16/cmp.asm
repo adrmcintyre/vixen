@@ -1,26 +1,29 @@
-; Compares two floating point values, and returns a value indicating their
-; relative ordering, as well as setting the processor flags in such a way
-; that the unsigned predicates can be used. (Despite the fact that floats
-; are signed, the signed predicates prlt, prle, prge, prgt will not work
-; as expected).
+; Compares two floating point values (a, b).
 ;
-;   a < b    : result = -1, flags = -V -C -Z
-;   a == b   : result =  0, flags = -V +C +Z
-;   a > b    : result = +1, flags = -V +C -Z
-;   unordered: result = +2, flags = +V -C -Z
+; Arguments
+;   r0: a
+;   r1: b
 ;
-; Unordered will be indicated if either or both arguments are NaN.
+; Returns
+;   r2: -1, V=0, C=0, Z=0 -- if a < b
+;   r2:  0, V=0, C=1, Z=1 -- if a == b
+;   r2: +1, V=0, C=1, Z=1 -- if a > b
+;   r2: +2, V=1, C=0, Z=1 -- if unordered (either arg is NaN).
 ;
-;   prvs is_unordered
-;   prvc !is_unordered
-;   prlo <
-;   prls <=
-;   preq ==
-;   prhs >=
-;   prhi >
-;   prne !=
-;
+; The following predicates can be used after calling f16_cmp to check the result.
 ; If unordered is a possibility, prvs/prvc should always be checked first.
+;
+;   prvs: is_unordered(a, b)
+;   prvc: !is_unordered(a, b)
+;   prlo: a < b
+;   prls: a <= b
+;   preq: a == b
+;   prhs: a >= b
+;   prhi: a > b
+;   prne: a != b
+;
+; (Despite the fact that floats are signed, the signed predicates prlt, prle,
+; prge, prgt will not work as expected).
 ;
 .f16_cmp {
     alias r0 a
