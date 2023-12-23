@@ -54,7 +54,7 @@
 
     mov z_sign, #0
 }
-.f16_utof_return
+.f16_utof_return {
     mov z_exp, #30-1    ; account for leading 1 bit
     clz tmp, z
     sub z_exp, tmp
