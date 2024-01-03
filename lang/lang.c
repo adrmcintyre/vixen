@@ -5,18 +5,6 @@
 
 #include "header.h"
 
-enum {
-    // first entries double as argument counts
-    kw_fn0 = 0,
-    kw_fn1 = 1,
-    kw_fn2 = 2,
-    kw_fn3 = 3,
-
-    kw_const   = 4,
-    kw_cmd     = 5,
-    kw_control = 6
-};
-
 const char* op_names[] = {
     "fail",
     "mark",
@@ -55,9 +43,15 @@ const char* op_names[] = {
     "op_jfalse",
 };
 
+const char* debug_op_name(u8 op)
+{
+    if (op & 0x80) return op_names[op-0x80];
+    return "<invalid>";
+}
+
 // each table should be arranged in ascii order
 const u8 keywords_hpx[] = {
-    op_print,    kw_cmd,        'p','r','i','n','t',
+    op_print,    kw_cmd_any,    'p','r','i','n','t',
     fail, 0
 };
 const u8 keywords_aiqy[] = {
@@ -65,7 +59,7 @@ const u8 keywords_aiqy[] = {
     op_asc,      kw_fn1,        'a','s','c',
 
     op_if,       kw_control,    'i','f',
-    op_input,    kw_cmd,        'i','n','p','u','t',
+    op_input,    kw_cmd_any,    'i','n','p','u','t',
     op_int,      kw_fn1,        'i','n','t',
     fail, 0
 };
@@ -82,7 +76,7 @@ const u8 keywords_cks[] = {
 
     op_sgn,      kw_fn1,        's','g','n',
     op_sqr,      kw_fn1,        's','q','r',
-    op_stop,     kw_cmd,        's','t','o','p',
+    op_stop,     kw_cmd0,       's','t','o','p',
     op_str,      kw_fn1,        's','t','r',
     op_substr,   kw_fn3,        's','u','b','s','t','r',
     fail, 0
@@ -176,44 +170,14 @@ void die(const char* msg)
     exit(1);
 }
 
-u16 f16_from_float(float f)
-{
-    if (isnan(f)) return 0x7e00;
-
-    u16 sign = signbit(f) ? 0x8000:0;
-    if (isinf(f)) return sign|0x7c00;
-    if (f==0.0f)  return sign|0x0000;
-
-    unsigned long fbits = *(unsigned long*)&f;
-    int exp = ((fbits>>23) & 0xff) - 112;
-    if (exp > 30) return sign|0x7c00;
-    u16 fra = (fbits>>13) & 0x03ff;
-    if (exp >= 1) return sign|(exp<<10)|fra;
-    fra |= 0x0400;
-    for(; exp < 1; exp++) fra >>= 1;
-    return sign|fra;
-}
-
-float f16_to_float(u16 u)
-{
-    unsigned long lu = u;
-    unsigned long bits = (lu & 0x8000) << 16;
-    lu &= 0x7fff;
-    if (lu != 0) {
-        if (lu >= 0x7c00) bits |= 0x70000000;
-        else {
-            unsigned long adj = 112;
-            while(lu < 0x0200) { lu <<= 1; adj -= 1; }
-            lu += adj<<10;
-        }
-        bits |= lu << 13;
-    }
-    return *(float*) &bits;
-}
-
 // Heap
 u16 heap_top;
 u8 heap[4096];
+
+void heap_init()
+{
+    heap_top = 0;
+}
 
 u16 heap_alloc(u16 n)
 {
@@ -241,14 +205,20 @@ const u8 *input_ptr;
 const u8 *token_ptr;
 
 // Hash structure:
-// 2 chain
-// 2 hash
-// 1 len
-// n ascii
-// ...?
+// +0 chain
+// +2 hash
+// +4 kind
+// +5 val
+// +7 len
+// +8... name
 
 const u8 ident_bucket_count = 32;
 u16 ident_bucket[ident_bucket_count];
+
+void intern_init()
+{
+    for(u8 i=0; i<ident_bucket_count; i++) ident_bucket[i] = 0;
+}
 
 // token_ptr..input_ptr
 u16 intern_ident()
@@ -261,8 +231,17 @@ u16 intern_ident()
     u16 p = ident_bucket[buck];
     while(p) {
         u16 h2 = ((u16)heap[p+2]<<8) | heap[p+3];
-        u16 len2 = heap[p+4];
-        if (h2 == h && len2 == token_len && (0==memcmp(token_ptr, &heap[p+5], len2))) {
+        u16 len2 = heap[p+7];
+        if (h2 != h) {
+            fprintf(stderr, "hash mismatch\n");
+        }
+        else if (len2 != token_len) {
+            fprintf(stderr, "len mismatch\n");
+        }
+        else if (0!=memcmp(token_ptr, &heap[p+8], len2)) {
+            fprintf(stderr, "name mismatch\n");
+        }
+        else {
             return p;
         }
 
@@ -271,13 +250,17 @@ u16 intern_ident()
         p = chain;
     }
 
-    p = heap_alloc(token_len + 5);
-    heap[p] = 0;
+    // TODO - named constants for offsets
+    p = heap_alloc(token_len + 8);
+    heap[p+0] = 0;
     heap[p+1] = 0;
     heap[p+2] = h >> 8;
     heap[p+3] = h & 0xff;
-    heap[p+4] = token_len;
-    memcpy(&heap[p+5], token_ptr, token_len);
+    heap[p+4] = kind_fail;
+    heap[p+5] = 0;
+    heap[p+6] = 0;
+    heap[p+7] = token_len;
+    memcpy(&heap[p+8], token_ptr, token_len);
 
     if (last_p == 0) {
         ident_bucket[buck] = p;
@@ -300,29 +283,36 @@ u16 lookup_keyword()
     u16 i = ch & 7;
     const u8 *kwd_ptr = keywords[i];
 
-    while(1) {
+    kwop = *kwd_ptr++;
+    while(kwop != fail) {
         const u8 *p = token_ptr;
 
-        kwop   = *kwd_ptr++;
         kwinfo = *kwd_ptr++;
-        if (kwop == 0) return 0;
 
+        u8 kwd_ch;
         while(1) {
-            u8 ch = *p;
-            u8 kwd_ch = *kwd_ptr++;
+            ch = *p;
+            kwd_ch = *kwd_ptr++;
             if (kwd_ch & 0x80) {
-                if (p == input_ptr) return 1;
-                break;
+                if (p != input_ptr) break;
+                return 1;
             }
-            if (kwd_ch > ch) return 0;
+            if (kwd_ch > ch) {
+                return 0;
+            }
             if (kwd_ch < ch) {
                 // skip until id byte
-                while((*++kwd_ptr & 0x80) == 0);
+                while(1) {
+                    kwd_ch = *kwd_ptr++;
+                    if (kwd_ch & 0x80) break;
+                }
                 break;
             }
             p++;
         }
+        kwop = kwd_ch;
     }
+    return 0;
 }
 
 // Advances input_ptr past any spaces.
@@ -339,10 +329,12 @@ void lex_space()
 // Returns kind_int if an integer was recognised, or kind_float for a float,
 // setting token_ptr and advancing input_ptr.
 //
-// Returns kind_bottom if neither recognised, with input_ptr unchanged.
+// Returns kind_fail if neither recognised, with input_ptr unchanged.
 //
 u8 lex_number()
 {
+    lex_space();
+
     trace("lex_number");
     // TODO - recognise [+-]Inf / NaN ?
     const u8 *p = input_ptr;
@@ -384,21 +376,10 @@ u8 lex_number()
     return (dp || nexp) ? kind_float : kind_int;
 }
 
-// TODO
-// Define four types of string:
-//
-//      empty: ""
-//      char:  "c"
-//      prog:  "some text in program"
-//      heap:  "some text in heap"
-//
-const u8 *str_ptr;
-u8 str_char;
-
 // Looks for a string literal in the input.
 // Returns one of the following:
 //
-// - kind_bottom
+// - kind_fail
 //      no open " found, input_ptr is left unchanged
 // - kind_str_empty
 //      empty string was found
@@ -409,8 +390,13 @@ u8 str_char;
 //      a multi character string was found, str_ptr points to its first
 //      character in the program text (opening quote is skipped)
 //
+const u8 *str_ptr;
+u8 str_char;
+
 u8 lex_string()
 {
+    lex_space();
+
     trace("lex_string");
     u8 ch = *input_ptr;
     if (ch != '"') return 0;
@@ -450,6 +436,8 @@ u8 lex_string()
 //
 u16 lex_word()
 {
+    lex_space();
+
     const u8 *inp = input_ptr;
     token_ptr = input_ptr;
 
@@ -470,6 +458,7 @@ u16 lex_word()
             (ch >= '0' && ch <= '9'));
 
     input_ptr = inp;
+
     return 1;
 }
 
@@ -516,6 +505,8 @@ candidate_loop:
 //
 u16 lex_unop()
 {
+    lex_space();
+
     // don't consume '-' or '+' immediately followed by a digit or '.',
     // as we went lex_number to deal with that instead
     u8 ch = *input_ptr;
@@ -533,16 +524,20 @@ u16 lex_unop()
 //
 u16 lex_binop()
 {
+    lex_space();
+
     return lex_op(binops);
 }
 
-// Returns 1 is the specified character is next in the input stream,
+// Returns 1 if the specified character is next in the input stream,
 // advancing input_ptr.
 //
 // Returns 0 if the character is not present, leaving input_ptr unchanged.
 //
 u16 lex_char(u8 ch)
 {
+    lex_space();
+
     if (*input_ptr != ch) return 0;
 
     input_ptr++;
@@ -556,6 +551,8 @@ u16 lex_char(u8 ch)
 //
 u16 lex_eol()
 {
+    lex_space();
+
     if (*input_ptr != '\0') return 0;
     
     return 1;
@@ -591,22 +588,15 @@ void emit_word(u16 w)
 //
 void emit_op(u8 op)
 {
-    fprintf(stderr, "emit_op %s\n", op_names[op-0x80]);
+    fprintf(stderr, "emit_op %s\n", debug_op_name(op));
     *code_ptr++ = op;
 }
 
-// Emits the last recognised ident, interning it if needed.
-//
-void emit_ident()
+void emit_ident(u16 id)
 {
-    u16 id = intern_ident();
-
-    {
-        char buf[256];
-        memcpy(buf, token_ptr, input_ptr-token_ptr);
-        buf[input_ptr-token_ptr] = '\0';
-        fprintf(stderr, "emit_ident %04x = %s\n", id, buf);
-    }
+    fprintf(stderr, "emit_ident %04x = ", id);
+    fwrite(&heap[id+8], 1, heap[id+7], stderr); // TODO - named constants
+    putc('\n', stderr);
 
     *code_ptr++ = (id >> 8);
     *code_ptr++ = (id & 0xff);
@@ -619,6 +609,11 @@ void emit_ident()
 const u16 pending_ops_max = 32;
 u16 pending_ops[pending_ops_max];
 u8 pending_ops_sp;
+
+void expr_init()
+{
+    pending_ops_sp = 0;
+}
 
 void parse_expr(); // forward decl
 
@@ -639,7 +634,7 @@ u16 parse_literal()
 {
     trace("parse_literal");
     u8 kind = lex_number();
-    if (kind == kind_bottom) {
+    if (kind == kind_fail) {
         kind = lex_string();
     }
 
@@ -732,7 +727,7 @@ u16 parse_index_arg()
 
     pending_ops[pending_ops_sp++] = mark_op;
     parse_expr();
-    if (*input_ptr != ']') die("expected ']'");
+    if (!lex_char(']')) die("expected ']'");
     emit_op(op_index);
     
     return 1;
@@ -756,7 +751,7 @@ void parse_keyword_args()
         if (nargs-1 > kwinfo) die("too many arguments");
         emit_op(op);
     }
-    else if (kwinfo == kw_cmd) {
+    else if (kwinfo >= kw_cmd0 && kwinfo <= kw_cmd_any) {
         die("unexpected command");
     }
     else if (kwinfo == kw_control) {
@@ -786,8 +781,9 @@ void parse_terminal()
             parse_keyword_args();
         }
         else {
+            u16 id = intern_ident();
             emit_op(op_ident_get);
-            emit_ident();
+            emit_ident(id);
             u16 nargs = parse_args();
             if (nargs) {
                 emit_op(op_call);
@@ -842,27 +838,51 @@ void parse_expr()
     }
 }
 
-int main()
+void parse_start()
 {
-    const char prog[] =
-    "len(\"hello world\")"
-    ;
+    heap_init();
+    intern_init();
+    stmt_init();
+    code_ptr = malloc(4096);
+    code_base = code_ptr;
+}
 
-    code_base = malloc(4096);
-    prog_base = (const u8*) prog;
+void parse_line()
+{
+    expr_init();
 
-    code_ptr = code_base;
-    pending_ops_sp = 0;
-    input_ptr = (const u8*) prog;
+    parse_stmt();
+    if (!lex_char(';')) die("missing ;");
+}
 
-    parse_expr();
+void parse_finish()
+{
     if (!lex_eol()) {
         fprintf(stderr, "unexpected trailing material: %s\n", input_ptr);
         exit(1);
     }
-    emit_op(op_print);
-    emit_byte(1);
-    emit_op(op_stop);
+    // TODO - check control stack is empty
+}
+
+int main()
+{
+    const char* prog =
+        "a = 0;"
+        "b = len(\"hello world\");"
+        "while a < b;"
+        "   print a;"
+        "   a = a + 1;"
+        "wend;"
+        "stop;"
+    ;
+
+    const u8 *p = (u8*) prog;
+    prog_base = p;
+    input_ptr = p;
+
+    parse_start();
+    while(*input_ptr) parse_line();
+    parse_finish();
 
     vm_run(code_base);
 }

@@ -46,7 +46,7 @@ enum {
 };
 
 enum {
-    kind_bottom    = 0,
+    kind_fail      = 0,
     kind_int       = 1,
     kind_float     = 2,
     kind_str_empty = 3,
@@ -55,9 +55,45 @@ enum {
     kind_str_heap  = 6
 };
 
+enum {
+    // these entries double as argument counts
+    kw_fn0 = 0,
+    kw_fn1 = 1,
+    kw_fn2 = 2,
+    kw_fn3 = 3,
+
+    kw_const   = 4,
+    kw_cmd0    = 5,
+    kw_cmd_any = 6,
+    kw_control = 7
+};
+
 extern const u8 *prog_base;
+extern u8 *code_base;
+extern u8 *code_ptr;
+
+extern u8 heap[];
 
 void die(const char* msg);
 u16 vm_run(const u8* vm_pc_base);
 u16 f16_from_float(float f);
 float f16_to_float(u16 u);
+const char* debug_op_name(u8 op);
+
+void emit_op(u8 op);
+void emit_byte(u8 b);
+void emit_word(u16 w);
+void emit_ident(u16 w);
+
+u16 lex_char(u8 ch);
+u16 lex_word();
+
+extern u8 kwop;
+extern u8 kwinfo;
+u16 lookup_keyword();
+
+u16 intern_ident();
+void parse_expr();
+void parse_stmt();
+
+void stmt_init();

@@ -1,7 +1,7 @@
 .PHONY: all
 all: lang
 
-lang: lang.c vm.c
+lang: lang.c vm.c stmts.c float.c
 	gcc -o $@ $^ -I.
 
 .PHONY: clean

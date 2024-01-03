@@ -9,20 +9,20 @@ u16 vm_bi;
 float vm_af;
 float vm_bf;
 
-const u8 *vm_pc;
+u16 vm_pc;
 u16 vm_sp;
 u8 vm_stack[1536];
 
 u8 fetch_byte()
 {
-    return *vm_pc++;
+    return code_base[vm_pc++];
 }
 
 u16 fetch_word()
 {
     u16 w;
-    w = (*vm_pc++)<<8;
-    w |= *vm_pc++; 
+    w = code_base[vm_pc++]<<8;
+    w |= code_base[vm_pc++]; 
     return w;
 }
 
@@ -114,6 +114,16 @@ int pop_nums()
         vm_bf = vm_af;
         pop_float();
     }
+    return k;
+}
+
+u8 pop_val()
+{
+    vm_sp -= 3;
+    u8 hi = vm_stack[vm_sp+0];
+    u8 lo = vm_stack[vm_sp+1];
+    u8 k  = vm_stack[vm_sp+2];
+    vm_ai = (hi<<8) | lo;
     return k;
 }
 
@@ -242,14 +252,34 @@ void cmd_print()
     }
 }
 
+void vm_ident_set()
+{
+    u16 id = fetch_word();
+    u8 k = pop_val();
+    u8 *p = heap+id+4;  // TODO - named constant please
+    *p++ = k;
+    *p++ = vm_ai>>8;
+    *p++ = vm_ai & 0xff;
+}
+
+void vm_ident_get()
+{
+    u16 id = fetch_word();
+    u8 *p = heap+id+4;  // TODO - named constant please
+    u8 k  = *p++;
+    u8 hi = *p++;
+    u8 lo = *p++;
+    push_val(k, (hi<<8)|lo);
+}
+
 u16 vm_run(const u8 *vm_pc_base)
 {
-    vm_pc = vm_pc_base;
+    vm_pc = (u16)(vm_pc_base - code_base);
     vm_sp = 0;
 
     while(1) {
         u8 op = fetch_byte();
-        fprintf(stderr, "dispatching opcode %02x\n", op);
+        fprintf(stderr, "dispatching opcode %02x = %s\n", op, debug_op_name(op));
 
         switch(op) {
             // operators
@@ -318,26 +348,31 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_print: cmd_print(); break;
             case op_input: die("input: unimplemented"); break;
 
-            // control
+            // 0 arg commands
             case op_stop:   return 1;
             case op_return: die("return: unimplemented"); break;
 
             // internal ops
             case op_index:      die("index: unimplemented"); break;
             case op_call:       die("call: unimplemented"); break;
-            case op_ident_get:  die("ident_get: unimplemented"); break;
-            case op_ident_set:  die("ident_set: unimplemented"); break;
+            case op_ident_get:  vm_ident_get(); break;
+            case op_ident_set:  vm_ident_set(); break;
             case op_lit_int:    push_int(fetch_word()); break;
             case op_lit_float:  push_f16(fetch_word()); break;
             case op_lit_str_empty: push_val(kind_str_empty, 0); break;
             case op_lit_str_char: push_val(kind_str_char, fetch_byte()); break;
             case op_lit_str_prog: push_val(kind_str_prog, fetch_word()); break;
-            case op_jump:       vm_pc = vm_pc_base + fetch_word(); break;
+            case op_jump:
+                {
+                    u16 tmp = fetch_word();
+                    vm_pc += tmp;
+                    break;
+                }
             case op_jfalse:
                 {
                     u16 tmp = fetch_word();
                     pop_int();
-                    if (vm_ai == 0) vm_pc = vm_pc_base + tmp;
+                    if (vm_ai == 0) vm_pc += tmp;
                     break;
                 }
 
