@@ -33,7 +33,8 @@ enum {
 
     // internal ops
     op_index,
-    op_call,
+    op_call_proc,
+    op_call_func,
     op_ident_get,
     op_ident_set,
     op_slot_get,
@@ -46,7 +47,8 @@ enum {
     op_jump,
     op_jfalse,
     op_return_func,
-    op_return_proc
+    op_return_proc,
+    op_return_missing
 };
 
 enum {

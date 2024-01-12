@@ -269,20 +269,18 @@ void cmd_print()
 
         switch(k) {
             case kind_int:
-                printf("int:%d\n", val);
+                printf("%d", val);
                 break;
             case kind_float:
-                printf("float:%f\n", f16_to_float(val));
+                printf("%f", f16_to_float(val));
                 break;
             case kind_str_empty:
-                printf("str:\"\"\n");
                 break;
             case kind_str_char:
-                printf("str:\"%c\"\n", val & 0xff);
+                printf("%c", val & 0xff);
                 break;
             case kind_str_prog:
                 {
-                    printf("str:\"");
                     const u8 *p = prog_base + val;
                     u8 ch = *p;
                     while(ch != '"') {
@@ -293,14 +291,15 @@ void cmd_print()
                         putchar(ch);
                         ch = *++p;
                     }
-                    printf("\"\n");
                     break;
                 }
             default:
-                printf("kind:%02x value:%04x\n", k, val);
+                printf("%02x:%04x", k, val);
                 break;
         }
+        if (n > 0) printf(" ");
     }
+    printf("\n");
 }
 
 void vm_ident_set()
@@ -339,43 +338,20 @@ void vm_slot_get()
     push_val(k, (hi<<8)|lo);
 }
 
-void vm_call()
+void vm_call(u8 kind)
 {
     u8 nargs = fetch_byte();
     u16 id = fetch_word();
     const u8 *func = &heap[id];
 
+    u8 k = func[ident_kind];
+    if (k == kind_fail) die("func/proc not defined");
+    if (k != kind) die("bad call");
+
     if (func[ident_arg_count] != nargs) {
         fprintf(stderr, "     want=%d got=%d\n", func[ident_arg_count], nargs);
         die("wrong argument count");
     }
-
-    // frame:
-    //              before  call    return
-    //  arg0        old_fp
-    //  arg1
-    //  slot2
-    //  slot3
-    //  ...
-    //  fp     
-    //  sp     
-    //  pc     
-    //  ------------------------------------
-    //  tmp0
-    //  tmp1
-    //  arg0                new_fp  [retval]
-    //  arg1                        ret_sp
-    //  arg2
-    //  slot3       old_sp
-    //  slot4
-    //  slot5
-    //  ...
-    //  fp                  [old_fp]
-    //  sp                  [old_sp]
-    //  pc                  [old_pc]
-    //  <empty>             new_sp
-    
-    fprintf(stderr, "     call vm_sp=%04x vm_fp=%02x - nargs=%d slot_count=%d\n", vm_sp, vm_fp, nargs, func[ident_slot_count]);
 
     u16 old_fp = vm_fp;
     u16 old_sp = vm_sp - 3 * nargs;
@@ -499,10 +475,12 @@ u16 vm_run(const u8 *vm_pc_base)
             // return
             case op_return_func: vm_return_func(); break;
             case op_return_proc: vm_return_proc(); break;
+            case op_return_missing: die("missing return"); break;
 
             // internal ops
             case op_index:      die("index: unimplemented"); break;
-            case op_call:       vm_call(); break;
+            case op_call_proc:  vm_call(kind_proc); break;
+            case op_call_func:  vm_call(kind_func); break;
             case op_ident_get:  vm_ident_get(); break;
             case op_ident_set:  vm_ident_set(); break;
             case op_slot_get:   vm_slot_get(); break;

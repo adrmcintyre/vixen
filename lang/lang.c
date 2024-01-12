@@ -31,7 +31,8 @@ const char* op_names[] = {
     "op_until", "op_wend", "op_while",
 
     "op_index",
-    "op_call",
+    "op_call_proc",
+    "op_call_func",
     "op_ident_get",
     "op_ident_set",
     "op_slot_get",
@@ -44,7 +45,8 @@ const char* op_names[] = {
     "op_jump",
     "op_jfalse",
     "op_return_func",
-    "op_return_proc"
+    "op_return_proc",
+    "op_return_missing"
 };
 
 const char* debug_op_name(u8 op)
@@ -630,6 +632,11 @@ void parse_unops()
     }
 }
 
+// Parses a literal:
+//      <integer>
+//      <float>
+//      <string>
+//      // TODO? <char>
 u16 parse_literal()
 {
     u8 kind = lex_number();
@@ -637,6 +644,7 @@ u16 parse_literal()
         kind = lex_string();
     }
 
+    // TODO - maybe parse true/false literals here
     switch(kind) {
         case kind_int:
             {
@@ -760,58 +768,53 @@ void parse_keyword_args()
 //      <ident>[<expr>]'
 //      <const-kwd>
 //      <func-kwd>(<expr-list>)
-//      <integer>
-//      <float>
-//      // TODO <string>
-//      // TODO? <char>
+//      <literal>
 //
 void parse_terminal()
 {
     if (parse_paren_expr()) return;
 
-    if (lex_word()) {
-        if (lookup_keyword()) {
-            parse_keyword_args();
-        }
-        else {
-            u16 id; intern_ident(&id);
+    if (parse_literal()) return;
 
-            u16 nargs = parse_args();
-            if (nargs) {
-                // function call always lookup symbol in global scope
-                emit_op(op_call);
-                emit_byte(nargs-1);
-                emit_ident(id);
-                return;
-            }
-            else if (func_kind == kind_fail) {
-                // if we're at global scope, all symbol lookups are global
-                emit_op(op_ident_get);
-                emit_ident(id);
-            }
-            else {
-                // we're in a function...
-                u8 slot_num = heap[id+ident_slot_num];
-                if (slot_num == 0xff) {
-                    // get from global scope if no slot defined
-                    emit_op(op_ident_get);
-                    emit_ident(id);
-                }
-                else {
-                    // get from the slot
-                    emit_op(op_slot_get);
-                    emit_byte(slot_num);
-                }
-            }
+    if (!lex_word()) die("expected ident or literal");
 
-            if (parse_index_arg()) return;
-        }
+    if (lookup_keyword()) {
+        parse_keyword_args();
         return;
     }
 
-    if (parse_literal()) return;
+    u16 id; intern_ident(&id);
 
-    die("expected ident or literal");
+    u16 nargs = parse_args();
+    if (nargs) {
+        // function call: always lookup symbol in global scope
+        emit_op(op_call_func);
+        emit_byte(nargs-1);
+        emit_ident(id);
+        return;
+    }
+
+    if (func_kind == kind_fail) {
+        // if we're at global scope, all symbol lookups are global
+        emit_op(op_ident_get);
+        emit_ident(id);
+    }
+    else {
+        // we're in a function...
+        u8 slot_num = heap[id+ident_slot_num];
+        if (slot_num == 0xff) {
+            // get from global scope if no slot defined
+            emit_op(op_ident_get);
+            emit_ident(id);
+        }
+        else {
+            // get from the slot
+            emit_op(op_slot_get);
+            emit_byte(slot_num);
+        }
+    }
+
+    parse_index_arg();
 }
 
 // Parses an <expr>, consisting of one or more <terminal>s each preceded 
@@ -880,19 +883,21 @@ void parse_finish()
 int main()
 {
     const char* prog =
-		"f = 12;"
-		"print \"got \", gcd(37*f, 23*f);"
-        "print \"want \", f;"
-        "stop;"
 		"func gcd(x,y);"
-		"if x > y;"
-		"	return gcd(x-y, y);"
-		"endif;"
-		"if x < y;"
-		"	return gcd(x, y-x);"
-		"endif;"
-		"return x;"
+		"   if x > y;"
+		"   	return gcd(x-y, y);"
+		"   endif;"
+		"   if x < y;"
+		"   	return gcd(x, y-x);"
+		"   endif;"
+		"   return x;"
 		"end;"
+        "proc report(got, want);"
+        "   print \"got\", got, \"want\", want;"
+        "end;"
+		"f = 12;"
+		"report gcd(37*f, 23*f), f;"
+        "stop;"
     ;
 
     const u8 *p = (u8*) prog;

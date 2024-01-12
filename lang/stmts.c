@@ -147,24 +147,25 @@ void resolve_forward_jump()
     patch_forward_ref(code_base + ref);
 }
 
-void parse_func(u8 kind)
+void parse_func(u8 op)
 {
     if (control_sp != 0) die("func/proc not allowed inside control block");
-    if (func_kind != kind_fail) die("func/proc not allowed inside func/proc");
-    func_kind = kind;
+
+    push_control(op);
+    emit_forward_jump(op_jump);
+
+    func_kind = (op==op_func) ? kind_func : kind_proc;
 
     if (!lex_word()) die("expected name");
     if (lookup_keyword()) die("unexpected reserved word");
 
     // first time we've seen this, or it has only been referenced before
     if (intern_ident(&func_id) || heap[func_id+ident_kind] == kind_fail) {
-        heap[func_id+ident_kind] = kind;
+        heap[func_id+ident_kind] = func_kind;
     }
     else {
         die("already exists");
     }
-
-    // TODO emit forward jump over definition
 
     u16 func_addr = (u16)(code_ptr - code_base);
     heap[func_id+ident_val+0] = func_addr >> 8;
@@ -193,8 +194,6 @@ void parse_func(u8 kind)
     }
     heap[func_id+ident_arg_count] = slot_num;
     heap[func_id+ident_slot_count] = slot_num;
-
-    // TODO - handle jumping over generated func code
 }
 
 // Parses a control statement.
@@ -268,10 +267,8 @@ void parse_control_stmt(u8 op)
         break;
 
     case op_proc:
-        parse_func(kind_proc);
-
     case op_func:
-        parse_func(kind_func);
+        parse_func(op);
         break;
 
     case op_return:
@@ -287,31 +284,33 @@ void parse_control_stmt(u8 op)
         break;
 
     case op_end:
-        // TODO - handle jumping over generated func code
-        if (func_kind == kind_fail) die("end not after a func/proc");
+        {
+            u8 k = pop_control();
+            if (k != op_func && k != op_proc) die("end not after a func/proc");
 
-        if (func_kind == kind_proc) {
-            emit_op(op_return_proc);
+            if (func_kind == kind_proc) {
+                emit_op(op_return_proc);
+            }
+            else {
+                // TODO - compile error if some path does not end in a return.
+                emit_op(op_return_missing);
+            }
+            func_kind = kind_fail;
+            resolve_forward_jump();
+            break;
         }
-        else {
-            // TODO - figure something else out for implicit return?
-            // Maybe even an error if some path does not end in a return.
-            emit_op(op_lit_int);
-            emit_word(0);
-            emit_op(op_return_func);
-        }
-        func_kind = kind_fail;
-        break;
     }
 }
 
-// Parses a ',' separated list of 1 or more exprs.
+// Parses a ',' separated list of 0 or more exprs.
 //
-// Returns 1 more than the number of expressions.
+// Returns the number of expressions.
 //
-u16 parse_exprs()
+u8 parse_exprs()
 {
-    u16 nargs = 0;
+    if (lex_eol()) return 0;
+
+    u8 nargs = 0;
     parse_expr();
     nargs += 1;
     while(lex_char(',')) {
@@ -332,7 +331,7 @@ void parse_stmt()
         }
         else if (kwinfo == kw_cmd_any) {
             // TODO check arg counts
-            u16 nargs = parse_exprs();
+            u8 nargs = parse_exprs();
             emit_op(opcode);
             emit_byte(nargs);
         }
@@ -362,7 +361,10 @@ void parse_stmt()
             }
         }
         else {
-            // TODO parse proc invocation
+            u8 nargs = parse_exprs();
+            emit_op(op_call_proc);
+            emit_byte(nargs);
+            emit_ident(id);
         }
     }
 }
