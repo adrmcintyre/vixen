@@ -4,18 +4,22 @@
 
 #include "header.h"
 
+// TODO? - a top-of-stack register to reduce number of push/pop sequences
 u16 vm_ai;
 u16 vm_bi;
 float vm_af;
 float vm_bf;
 
-u16 vm_pc;
+u16 vm_fp;
 u16 vm_sp;
+u16 vm_pc;
 u8 vm_stack[1536];
 
 u8 fetch_byte()
 {
-    return code_base[vm_pc++];
+    u8 b = code_base[vm_pc++];
+    fprintf(stderr, "     fetch_byte => %02x\n", b);
+    return b;
 }
 
 u16 fetch_word()
@@ -23,88 +27,129 @@ u16 fetch_word()
     u16 w;
     w = code_base[vm_pc++]<<8;
     w |= code_base[vm_pc++]; 
+    fprintf(stderr, "     fetch_word => %04x\n", w);
     return w;
+}
+
+void push_byte(u8 b)
+{
+    fprintf(stderr, "     push_byte <= %02x\n", b);
+    vm_stack[vm_sp+0] = b;
+    vm_sp += 1;
+}
+
+void push_word(u16 w)
+{
+    fprintf(stderr, "     push_word <= %04x\n", w);
+    vm_stack[vm_sp+0] = w>>8;
+    vm_stack[vm_sp+1] = w&0xff;
+    vm_sp += 2;
 }
 
 void push_int(u16 i)
 {
-    trace("push_int");
-    vm_stack[vm_sp++] = i>>8;
-    vm_stack[vm_sp++] = i&0xff;
-    vm_stack[vm_sp++] = kind_int;
+    fprintf(stderr, "     push_int <= %04x\n", i);
+    vm_stack[vm_sp+0] = kind_int;
+    vm_stack[vm_sp+1] = i>>8;
+    vm_stack[vm_sp+2] = i&0xff;
+    vm_sp += 3;
 }
 
 void push_f16(u16 f)
 {
-    trace("push_f16");
-    vm_stack[vm_sp++] = f>>8;
-    vm_stack[vm_sp++] = f&0xff;
-    vm_stack[vm_sp++] = kind_float;
+    fprintf(stderr, "     push_f16\n");
+    vm_stack[vm_sp+0] = kind_float;
+    vm_stack[vm_sp+1] = f>>8;
+    vm_stack[vm_sp+2] = f&0xff;
+    vm_sp += 3;
 }
 
 void push_float(float f)
 {
-    trace("push_float");
-    push_f16(f16_from_float(f));
+    fprintf(stderr, "     push_float\n");
+    u16 u = f16_from_float(f);
+    vm_stack[vm_sp+0] = kind_float;
+    vm_stack[vm_sp+1] = u>>8;
+    vm_stack[vm_sp+2] = u&0xff;
+    vm_sp += 3;
+}
+
+u8 pop_byte()
+{
+    vm_sp -= 1;
+    u8 b = vm_stack[vm_sp+0];
+    fprintf(stderr, "     pop_byte => %02x\n", b);
+    return b;
+}
+
+u16 pop_word()
+{
+    vm_sp -= 2;
+    u8 hi = vm_stack[vm_sp+0];
+    u8 lo = vm_stack[vm_sp+1];
+    u16 w = hi<<8 | lo;
+    fprintf(stderr, "     pop_word => %04x\n", w);
+    return w;
 }
 
 void pop_int()
 {
-    trace("pop_int");
     vm_sp -= 3;
-    u8 hi = vm_stack[vm_sp+0];
-    u8 lo = vm_stack[vm_sp+1];
-    u8 k  = vm_stack[vm_sp+2];
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
     if (k != kind_int) die("expected integer");
 
     vm_ai = (hi<<8) | lo;
+    fprintf(stderr, "     pop_int => %04x\n", vm_ai);
 }
 
 void pop_float()
 {
-    trace("pop_float");
     vm_sp -= 3;
-    u8 hi = vm_stack[vm_sp+0];
-    u8 lo = vm_stack[vm_sp+1];
-    u8 k  = vm_stack[vm_sp+2];
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
     if (k != kind_float) die("expected float");
 
     u16 u = (hi<<8) | lo;
 
     vm_ai = u;
     vm_af = f16_to_float(u);
+
+    fprintf(stderr, "     pop_float\n");
 }
 
 void pop_ints()
 {
-    trace("pop_ints");
     pop_int(); vm_bi = vm_ai;
     pop_int();
 }
 
 int pop_num()
 {
-    trace("pop_num");
     vm_sp -= 3;
-    u8 hi = vm_stack[vm_sp+0];
-    u8 lo = vm_stack[vm_sp+1];
-    u8 k  = vm_stack[vm_sp+2];
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
     u16 u = (hi<<8) | lo;
     if (k == kind_int) {
+        vm_ai = u;
+        fprintf(stderr, "     pop_num => %04x\n", vm_ai);
     }
     else if (k == kind_float) {
+        vm_ai = u;
         vm_af = f16_to_float(u);
+        fprintf(stderr, "     pop_float => %f\n", vm_af);
     }
     else {
         die("expected float or integer");
     }
-    vm_ai = u;
     return k;
 }
 
 int pop_nums()
 {
-    trace("pop_nums");
     int k = pop_num();
     if (k == kind_int) {
         vm_bi = vm_ai;
@@ -120,27 +165,29 @@ int pop_nums()
 u8 pop_val()
 {
     vm_sp -= 3;
-    u8 hi = vm_stack[vm_sp+0];
-    u8 lo = vm_stack[vm_sp+1];
-    u8 k  = vm_stack[vm_sp+2];
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
     vm_ai = (hi<<8) | lo;
+    fprintf(stderr, "     pop_val => k:%02x v=%04x\n", k, vm_ai);
     return k;
 }
 
 void push_val(u8 kind, u16 value)
 {
-    vm_stack[vm_sp++] = value >> 8;
-    vm_stack[vm_sp++] = value & 0xff;
-    vm_stack[vm_sp++] = kind;
+    fprintf(stderr, "     push_val <= k:%02x v=%04x\n", kind, value);
+    vm_stack[vm_sp+0] = kind;
+    vm_stack[vm_sp+1] = value >> 8;
+    vm_stack[vm_sp+2] = value & 0xff;
+    vm_sp += 3;
 }
 
 u8 pop_str()
 {
-    trace("pop_str");
     vm_sp -= 3;
-    u8 hi = vm_stack[vm_sp+0];
-    u8 lo = vm_stack[vm_sp+1];
-    u8 k  = vm_stack[vm_sp+2];
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
     switch(k) {
         case kind_str_empty:
         case kind_str_char:
@@ -153,7 +200,7 @@ u8 pop_str()
     }
 
     vm_ai = (hi<<8) | lo;
-    fprintf(stderr, "popped str: vm_ai=0x%04x\n", vm_ai);
+    fprintf(stderr, "     pop_str %04x\n", vm_ai);
     return k;
 }
 
@@ -214,10 +261,11 @@ void cmd_print()
     vm_sp -= 3*n;
     const u8 *ptr = &vm_stack[vm_sp];
     while(n--) {
-        u8 hi = *ptr++;
-        u8 lo = *ptr++;
-        u8 k  = *ptr++;
+        u8 k  = *(ptr+0);
+        u8 hi = *(ptr+1);
+        u8 lo = *(ptr+2);
         u16 val = (hi<<8) | lo;
+        ptr += 3;
 
         switch(k) {
             case kind_int:
@@ -248,6 +296,9 @@ void cmd_print()
                     printf("\"\n");
                     break;
                 }
+            default:
+                printf("kind:%02x value:%04x\n", k, val);
+                break;
         }
     }
 }
@@ -256,30 +307,126 @@ void vm_ident_set()
 {
     u16 id = fetch_word();
     u8 k = pop_val();
-    u8 *p = heap+id+4;  // TODO - named constant please
-    *p++ = k;
-    *p++ = vm_ai>>8;
-    *p++ = vm_ai & 0xff;
+    heap[id+ident_kind] = k;
+    heap[id+ident_val+0] = vm_ai >> 8;
+    heap[id+ident_val+1] = vm_ai & 0xff;
 }
 
 void vm_ident_get()
 {
     u16 id = fetch_word();
-    u8 *p = heap+id+4;  // TODO - named constant please
-    u8 k  = *p++;
-    u8 hi = *p++;
-    u8 lo = *p++;
+    u8 k  = heap[id+ident_kind];
+    u8 hi = heap[id+ident_val+0];
+    u8 lo = heap[id+ident_val+1];
     push_val(k, (hi<<8)|lo);
+}
+
+void vm_slot_set()
+{
+    u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
+    u8 k = pop_val();
+    slot[0] = k;
+    slot[1] = vm_ai >> 8;
+    slot[2] = vm_ai & 0xff;
+}
+
+void vm_slot_get()
+{
+    u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
+    u8 k  = slot[0];
+    u8 hi = slot[1];
+    u8 lo = slot[2];
+    push_val(k, (hi<<8)|lo);
+}
+
+void vm_call()
+{
+    u8 nargs = fetch_byte();
+    u16 id = fetch_word();
+    const u8 *func = &heap[id];
+
+    if (func[ident_arg_count] != nargs) {
+        fprintf(stderr, "     want=%d got=%d\n", func[ident_arg_count], nargs);
+        die("wrong argument count");
+    }
+
+    // frame:
+    //              before  call    return
+    //  arg0        old_fp
+    //  arg1
+    //  slot2
+    //  slot3
+    //  ...
+    //  fp     
+    //  sp     
+    //  pc     
+    //  ------------------------------------
+    //  tmp0
+    //  tmp1
+    //  arg0                new_fp  [retval]
+    //  arg1                        ret_sp
+    //  arg2
+    //  slot3       old_sp
+    //  slot4
+    //  slot5
+    //  ...
+    //  fp                  [old_fp]
+    //  sp                  [old_sp]
+    //  pc                  [old_pc]
+    //  <empty>             new_sp
+    
+    fprintf(stderr, "     call vm_sp=%04x vm_fp=%02x - nargs=%d slot_count=%d\n", vm_sp, vm_fp, nargs, func[ident_slot_count]);
+
+    u16 old_fp = vm_fp;
+    u16 old_sp = vm_sp - 3 * nargs;
+    vm_fp = vm_sp - 3 * nargs;
+    vm_sp = vm_fp + 3 * func[ident_slot_count];
+
+    push_word(old_fp);
+    push_word(old_sp);
+    push_word(vm_pc);
+
+    vm_pc = func[ident_val+0]<<8 | func[ident_val+1];
+}
+
+void vm_return_func()
+{
+    u8 k = pop_val();
+
+    u16 old_pc = pop_word();
+    u16 old_sp = pop_word();
+    u16 old_fp = pop_word();
+
+    vm_fp = old_fp;
+    vm_sp = old_sp;
+    push_val(k, vm_ai);
+    vm_pc = old_pc;
+}
+
+void vm_return_proc()
+{
+    u16 old_pc = pop_word();
+    u16 old_sp = pop_word();
+    u16 old_fp = pop_word();
+
+    vm_fp = old_fp;
+    vm_sp = old_sp;
+    vm_pc = old_pc;
 }
 
 u16 vm_run(const u8 *vm_pc_base)
 {
-    vm_pc = (u16)(vm_pc_base - code_base);
+    fprintf(stderr, "\n");
+    fprintf(stderr, "RUNNING\n");
+
+    vm_fp = 0;
     vm_sp = 0;
+    vm_pc = (u16)(vm_pc_base - code_base);
 
     while(1) {
+        fprintf(stderr, "pc=%04x fp=%04x sp=%04x\n", vm_pc, vm_fp, vm_sp);
         u8 op = fetch_byte();
-        fprintf(stderr, "dispatching opcode %02x = %s\n", op, debug_op_name(op));
+        fprintf(stderr, "     %s\n", debug_op_name(op));
 
         switch(op) {
             // operators
@@ -347,16 +494,19 @@ u16 vm_run(const u8 *vm_pc_base)
             // build-in procedures
             case op_print: cmd_print(); break;
             case op_input: die("input: unimplemented"); break;
+            case op_stop:  return 1;
 
-            // 0 arg commands
-            case op_stop:   return 1;
-            case op_return: die("return: unimplemented"); break;
+            // return
+            case op_return_func: vm_return_func(); break;
+            case op_return_proc: vm_return_proc(); break;
 
             // internal ops
             case op_index:      die("index: unimplemented"); break;
-            case op_call:       die("call: unimplemented"); break;
+            case op_call:       vm_call(); break;
             case op_ident_get:  vm_ident_get(); break;
             case op_ident_set:  vm_ident_set(); break;
+            case op_slot_get:   vm_slot_get(); break;
+            case op_slot_set:   vm_slot_set(); break;
             case op_lit_int:    push_int(fetch_word()); break;
             case op_lit_float:  push_f16(fetch_word()); break;
             case op_lit_str_empty: push_val(kind_str_empty, 0); break;

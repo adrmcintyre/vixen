@@ -18,6 +18,9 @@ const u8 forward_jump_max = 32;
 u16 forward_jump_sp = 0;
 u16 forward_jump_stack[forward_jump_max];
 
+u8 func_kind;
+u16 func_id;
+
 void stmt_init()
 {
     control_sp = 0;
@@ -25,6 +28,8 @@ void stmt_init()
     end_loop_sp = 0;
     end_loop_count = 0;
     forward_jump_sp = 0;
+    func_kind = kind_fail;
+    func_id = 0;
 }
 
 // Records the beginning of a control structure.
@@ -142,12 +147,60 @@ void resolve_forward_jump()
     patch_forward_ref(code_base + ref);
 }
 
+void parse_func(u8 kind)
+{
+    if (control_sp != 0) die("func/proc not allowed inside control block");
+    if (func_kind != kind_fail) die("func/proc not allowed inside func/proc");
+    func_kind = kind;
+
+    if (!lex_word()) die("expected name");
+    if (lookup_keyword()) die("unexpected reserved word");
+
+    // first time we've seen this, or it has only been referenced before
+    if (intern_ident(&func_id) || heap[func_id+ident_kind] == kind_fail) {
+        heap[func_id+ident_kind] = kind;
+    }
+    else {
+        die("already exists");
+    }
+
+    // TODO emit forward jump over definition
+
+    u16 func_addr = (u16)(code_ptr - code_base);
+    heap[func_id+ident_val+0] = func_addr >> 8;
+    heap[func_id+ident_val+1] = func_addr & 0xff;
+    heap[func_id+ident_arg_count] = 0;
+    heap[func_id+ident_slot_count] = 0;
+
+    if (!lex_char('(')) die("missing (");
+
+    u8 slot_num = 0;
+    if (!lex_char(')')) {
+        while(1) {
+            if (!lex_word()) die("expected parameter name");
+            if (lookup_keyword()) die("unexpected reserved word");
+            u16 param_id; intern_ident(&param_id);
+            if (heap[param_id+ident_slot_num] != 0xff) die("repeated parameter name");
+
+            heap[param_id+ident_slot_num] = slot_num;
+            slot_num += 1;
+
+            // TODO - some sort of stack for tracking id <-> slot association?
+            // TODO - (may need to undo some stuff at func end)
+            if (lex_char(')')) break;
+            if (!lex_char(',')) die("expected ,");
+        }
+    }
+    heap[func_id+ident_arg_count] = slot_num;
+    heap[func_id+ident_slot_count] = slot_num;
+
+    // TODO - handle jumping over generated func code
+}
+
 // Parses a control statement.
 //
 void parse_control_stmt(u8 op)
 {
-    trace("parse_control_stmt");
-
     switch(op) {
     case op_if:
         // |if <expr>| ... [else] ... endif
@@ -214,13 +267,41 @@ void parse_control_stmt(u8 op)
         if (!emit_end_loop_jump(op_jump)) die("break not in a loop");
         break;
 
+    case op_proc:
+        parse_func(kind_proc);
 
-  //case op_func:
-  //case op_return:
-  //    if (!maybe_expr()) return 0;
-  //    emit_op(op_return);
-  //    return 1;
-  //case op_end:
+    case op_func:
+        parse_func(kind_func);
+        break;
+
+    case op_return:
+        if (func_kind == kind_fail) die("return not inside func/proc");
+        if (func_kind == kind_proc) {
+            if (!lex_eol()) die("proc cannot return a value");
+            emit_op(op_return_proc);
+        }
+        else {
+            parse_expr();
+            emit_op(op_return_func);
+        }
+        break;
+
+    case op_end:
+        // TODO - handle jumping over generated func code
+        if (func_kind == kind_fail) die("end not after a func/proc");
+
+        if (func_kind == kind_proc) {
+            emit_op(op_return_proc);
+        }
+        else {
+            // TODO - figure something else out for implicit return?
+            // Maybe even an error if some path does not end in a return.
+            emit_op(op_lit_int);
+            emit_word(0);
+            emit_op(op_return_func);
+        }
+        func_kind = kind_fail;
+        break;
     }
 }
 
@@ -230,8 +311,6 @@ void parse_control_stmt(u8 op)
 //
 u16 parse_exprs()
 {
-    trace("parse_expr");
-
     u16 nargs = 0;
     parse_expr();
     nargs += 1;
@@ -244,11 +323,9 @@ u16 parse_exprs()
 
 void parse_stmt()
 {
-    trace("parse_stmt");
     if (!lex_word()) die("expected statement");
 
     if (lookup_keyword()) {
-        fprintf(stderr, "kwop=%02x kwinfo=%02x\n",kwop,kwinfo);
         u8 opcode = kwop;
         if (kwinfo == kw_cmd0) {
             emit_op(opcode);
@@ -267,11 +344,26 @@ void parse_stmt()
         }
     }
     else {
-        u16 id = intern_ident();
-        if (!lex_char('=')) die("missing =");
-        parse_expr();
-        emit_op(op_ident_set);
-        emit_ident(id);
+        u16 id; intern_ident(&id);
+        if (lex_char('=')) {
+            parse_expr();
+            if (func_kind == kind_fail) {
+                emit_op(op_ident_set);
+                emit_ident(id);
+            }
+            else {
+                u8 slot_num = heap[id+ident_slot_num];
+                if (slot_num == 0xff) {
+                    slot_num = heap[func_id+ident_slot_count]++;
+                    heap[id+ident_slot_num] = slot_num;
+                }
+                emit_op(op_slot_set);
+                emit_byte(slot_num);
+            }
+        }
+        else {
+            // TODO parse proc invocation
+        }
     }
 }
 

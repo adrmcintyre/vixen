@@ -24,7 +24,7 @@ const char* op_names[] = {
     "op_chr", "op_else", "op_end",
     "op_endif", "op_false", "op_func",
     "op_if", "op_input", "op_int",
-    "op_left", "op_len", "op_print",
+    "op_left", "op_len", "op_print", "op_proc",
     "op_repeat", "op_return", "op_right",
     "op_rnd", "op_sgn", "op_sqr",
     "op_stop", "op_str", "op_substr", "op_true",
@@ -34,6 +34,8 @@ const char* op_names[] = {
     "op_call",
     "op_ident_get",
     "op_ident_set",
+    "op_slot_get",
+    "op_slot_set",
     "op_lit_int",
     "op_lit_float",
     "op_lit_str_empty",
@@ -41,6 +43,8 @@ const char* op_names[] = {
     "op_lit_str_prog",
     "op_jump",
     "op_jfalse",
+    "op_return_func",
+    "op_return_proc"
 };
 
 const char* debug_op_name(u8 op)
@@ -52,6 +56,7 @@ const char* debug_op_name(u8 op)
 // each table should be arranged in ascii order
 const u8 keywords_hpx[] = {
     op_print,    kw_cmd_any,    'p','r','i','n','t',
+    op_proc,     kw_control,    'p','r','o','c',
     fail, 0
 };
 const u8 keywords_aiqy[] = {
@@ -204,14 +209,6 @@ const u8 *prog_base;
 const u8 *input_ptr;
 const u8 *token_ptr;
 
-// Hash structure:
-// +0 chain
-// +2 hash
-// +4 kind
-// +5 val
-// +7 len
-// +8... name
-
 const u8 ident_bucket_count = 32;
 u16 ident_bucket[ident_bucket_count];
 
@@ -220,8 +217,10 @@ void intern_init()
     for(u8 i=0; i<ident_bucket_count; i++) ident_bucket[i] = 0;
 }
 
-// token_ptr..input_ptr
-u16 intern_ident()
+// Looks up token_ptr..input_ptr in the interned symbol table, creating
+// a new entry if not found. On exit, sets id to the new or existing entry.
+// Returns 1 if a new entry was created, or 0 otherwise.
+u16 intern_ident(u16 *id)
 {
     u16 token_len = input_ptr-token_ptr;
     u16 h = hash(token_ptr, token_len);
@@ -230,37 +229,40 @@ u16 intern_ident()
     u16 last_p = 0;
     u16 p = ident_bucket[buck];
     while(p) {
-        u16 h2 = ((u16)heap[p+2]<<8) | heap[p+3];
-        u16 len2 = heap[p+7];
-        if (h2 != h) {
-            fprintf(stderr, "hash mismatch\n");
-        }
-        else if (len2 != token_len) {
-            fprintf(stderr, "len mismatch\n");
-        }
-        else if (0!=memcmp(token_ptr, &heap[p+8], len2)) {
-            fprintf(stderr, "name mismatch\n");
-        }
+        u16 h2 = ((u16)heap[p+ident_hash+0]<<8) | heap[p+ident_hash+1];
+        u16 len2 = heap[p+ident_len];
+        if (h2 != h) { }
+        else if (len2 != token_len) { }
+        else if (0!=memcmp(token_ptr, &heap[p+ident_name], len2)) { }
         else {
-            return p;
+            *id = p;
+            return 0;
         }
 
         last_p = p;
-        u16 chain = ((u16)heap[p]<<8) | heap[p+1];
+        u16 chain = ((u16)heap[p+ident_chain+0]<<8) | heap[p+ident_chain+1];
         p = chain;
     }
 
-    // TODO - named constants for offsets
-    p = heap_alloc(token_len + 8);
-    heap[p+0] = 0;
-    heap[p+1] = 0;
-    heap[p+2] = h >> 8;
-    heap[p+3] = h & 0xff;
-    heap[p+4] = kind_fail;
-    heap[p+5] = 0;
-    heap[p+6] = 0;
-    heap[p+7] = token_len;
-    memcpy(&heap[p+8], token_ptr, token_len);
+    // TODO - point to name in program text instead of copying it?
+    //
+    // TODO - allocate value contiguously in separate part of the heap
+    // and store a pointer to it from the ident record instead.
+    //
+    // During code gen inject the value pointer instead of the ident pointer.
+    //
+    p = heap_alloc(token_len + ident_name);
+    heap[p+ident_chain+0] = 0;
+    heap[p+ident_chain+1] = 0;
+    heap[p+ident_hash+0] = h >> 8;
+    heap[p+ident_hash+1] = h & 0xff;
+    heap[p+ident_kind] = kind_fail;
+    heap[p+ident_val+0] = 0;
+    heap[p+ident_val+1] = 0;
+    heap[p+ident_slot_num] = 0xff;  //doubles as slot_count for funcs
+    heap[p+ident_arg_count] = 0;    //only used for funcs/procs
+    heap[p+ident_len] = token_len;
+    memcpy(&heap[p+ident_name], token_ptr, token_len);
 
     if (last_p == 0) {
         ident_bucket[buck] = p;
@@ -269,7 +271,8 @@ u16 intern_ident()
         heap[last_p+1] = p & 0xff;
     }
 
-    return p;
+    *id = p;
+    return 1;
 }
 
 // Returns 1 if token_ptr..input_ptr identifies a keyword
@@ -335,7 +338,6 @@ u8 lex_number()
 {
     lex_space();
 
-    trace("lex_number");
     // TODO - recognise [+-]Inf / NaN ?
     const u8 *p = input_ptr;
     u8 digits = 0;
@@ -397,7 +399,6 @@ u8 lex_string()
 {
     lex_space();
 
-    trace("lex_string");
     u8 ch = *input_ptr;
     if (ch != '"') return 0;
     input_ptr++;
@@ -595,7 +596,7 @@ void emit_op(u8 op)
 void emit_ident(u16 id)
 {
     fprintf(stderr, "emit_ident %04x = ", id);
-    fwrite(&heap[id+8], 1, heap[id+7], stderr); // TODO - named constants
+    fwrite(&heap[id+ident_name], 1, heap[id+ident_len], stderr);
     putc('\n', stderr);
 
     *code_ptr++ = (id >> 8);
@@ -622,7 +623,6 @@ void parse_expr(); // forward decl
 //
 void parse_unops()
 {
-    trace("parse_unops");
     while(1) {
         u16 op = lex_unop();
         if ((op>>8) == fail) return;
@@ -632,7 +632,6 @@ void parse_unops()
 
 u16 parse_literal()
 {
-    trace("parse_literal");
     u8 kind = lex_number();
     if (kind == kind_fail) {
         kind = lex_string();
@@ -675,7 +674,6 @@ u16 parse_literal()
 //
 u16 parse_paren_expr()
 {
-    trace("parse_paren_expr");
     if (!lex_char('(')) return 0;
 
     pending_ops[pending_ops_sp++] = mark_op;
@@ -692,7 +690,6 @@ u16 parse_paren_expr()
 //
 u16 parse_args()
 {
-    trace("parse_args");
     if (!lex_char('(')) {
         return 0;
     }
@@ -722,7 +719,6 @@ u16 parse_args()
 //
 u16 parse_index_arg()
 {
-    trace("parse_index_arg");
     if (!lex_char('[')) return 0;
 
     pending_ops[pending_ops_sp++] = mark_op;
@@ -737,8 +733,6 @@ u16 parse_index_arg()
 // and emits its opcode.
 void parse_keyword_args()
 {
-    trace("parse_keyword_args");
-
     if (kwinfo == kw_const) {
         emit_op(kwop);
     }
@@ -773,7 +767,6 @@ void parse_keyword_args()
 //
 void parse_terminal()
 {
-    trace("parse_terminal");
     if (parse_paren_expr()) return;
 
     if (lex_word()) {
@@ -781,15 +774,36 @@ void parse_terminal()
             parse_keyword_args();
         }
         else {
-            u16 id = intern_ident();
-            emit_op(op_ident_get);
-            emit_ident(id);
+            u16 id; intern_ident(&id);
+
             u16 nargs = parse_args();
             if (nargs) {
+                // function call always lookup symbol in global scope
                 emit_op(op_call);
                 emit_byte(nargs-1);
+                emit_ident(id);
                 return;
             }
+            else if (func_kind == kind_fail) {
+                // if we're at global scope, all symbol lookups are global
+                emit_op(op_ident_get);
+                emit_ident(id);
+            }
+            else {
+                // we're in a function...
+                u8 slot_num = heap[id+ident_slot_num];
+                if (slot_num == 0xff) {
+                    // get from global scope if no slot defined
+                    emit_op(op_ident_get);
+                    emit_ident(id);
+                }
+                else {
+                    // get from the slot
+                    emit_op(op_slot_get);
+                    emit_byte(slot_num);
+                }
+            }
+
             if (parse_index_arg()) return;
         }
         return;
@@ -805,7 +819,6 @@ void parse_terminal()
 //
 void parse_expr()
 {
-    trace("parse_expr");
     while(1) {
         parse_unops();
         parse_terminal();
@@ -867,13 +880,19 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "a = 0;"
-        "b = len(\"hello world\");"
-        "while a < b;"
-        "   print a;"
-        "   a = a + 1;"
-        "wend;"
+		"f = 12;"
+		"print \"got \", gcd(37*f, 23*f);"
+        "print \"want \", f;"
         "stop;"
+		"func gcd(x,y);"
+		"if x > y;"
+		"	return gcd(x-y, y);"
+		"endif;"
+		"if x < y;"
+		"	return gcd(x, y-x);"
+		"endif;"
+		"return x;"
+		"end;"
     ;
 
     const u8 *p = (u8*) prog;

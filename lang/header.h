@@ -25,10 +25,10 @@ enum {
     op_chr,     op_else,    op_end,
     op_endif,   op_false,   op_func,
     op_if,      op_input,   op_int,
-    op_left,    op_len,     op_print,
+    op_left,    op_len,     op_print,   op_proc,
     op_repeat,  op_return,  op_right,
     op_rnd,     op_sgn,     op_sqr,
-    op_stop,    op_str, op_substr,  op_true,
+    op_stop,    op_str,     op_substr,  op_true,
     op_until,   op_wend,    op_while,
 
     // internal ops
@@ -36,13 +36,17 @@ enum {
     op_call,
     op_ident_get,
     op_ident_set,
+    op_slot_get,
+    op_slot_set,
     op_lit_int,
     op_lit_float,
     op_lit_str_empty,
     op_lit_str_char,
     op_lit_str_prog,
     op_jump,
-    op_jfalse
+    op_jfalse,
+    op_return_func,
+    op_return_proc
 };
 
 enum {
@@ -52,7 +56,9 @@ enum {
     kind_str_empty = 3,
     kind_str_char  = 4,
     kind_str_prog  = 5,
-    kind_str_heap  = 6
+    kind_str_heap  = 6,
+    kind_proc      = 7,
+    kind_func      = 8,
 };
 
 enum {
@@ -87,13 +93,35 @@ void emit_ident(u16 w);
 
 u16 lex_char(u8 ch);
 u16 lex_word();
+u16 lex_eol();
 
 extern u8 kwop;
 extern u8 kwinfo;
 u16 lookup_keyword();
 
+enum {
+    ident_chain      =  0, // +2
+    ident_hash       =  2, // +2
+    ident_kind       =  4, // +1
+    ident_val        =  5, // +2    // address of code for func
+
+    // make these u16 offsets into the frame instead
+    // to save having to compute * 3 on lookup - also
+    // allows possibility of variable sized slots
+    ident_slot_num   =  7, // +1    // union \ slot index for func local vars/args
+    ident_slot_count =  7, // +1    // union / number of slots (inc args) for func
+
+    ident_arg_count  =  8, // +1    // number of args for func
+    ident_len        =  9, // +1
+    ident_name       = 10  // +len
+};
+
 u16 intern_ident();
+
 void parse_expr();
 void parse_stmt();
+
+
+u8 func_kind;
 
 void stmt_init();
