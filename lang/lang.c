@@ -883,20 +883,12 @@ void parse_finish()
 int main()
 {
     const char* prog =
-		"func gcd(x,y);"
-		"   if x > y;"
-		"   	return gcd(x-y, y);"
-		"   endif;"
-		"   if x < y;"
-		"   	return gcd(x, y-x);"
-		"   endif;"
-		"   return x;"
-		"end;"
-        "proc report(got, want);"
-        "   print \"got\", got, \"want\", want;"
-        "end;"
-		"f = 12;"
-		"report gcd(37*f, 23*f), f;"
+        "i=0;"
+        "n=10;"
+        "while i < n;"
+        "   print i;"
+        "   i=i+1;"
+        "wend;"
         "stop;"
     ;
 

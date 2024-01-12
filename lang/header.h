@@ -53,14 +53,15 @@ enum {
 
 enum {
     kind_fail      = 0,
-    kind_int       = 1,
-    kind_float     = 2,
-    kind_str_empty = 3,
-    kind_str_char  = 4,
-    kind_str_prog  = 5,
-    kind_str_heap  = 6,
-    kind_proc      = 7,
-    kind_func      = 8,
+    kind_bool      = 1,
+    kind_int       = 2,
+    kind_float     = 3,
+    kind_str_empty = 4,
+    kind_str_char  = 5,
+    kind_str_prog  = 6,
+    kind_str_heap  = 7,
+    kind_proc      = 8,
+    kind_func      = 9,
 };
 
 enum {

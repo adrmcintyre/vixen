@@ -46,6 +46,15 @@ void push_word(u16 w)
     vm_sp += 2;
 }
 
+void push_bool(u16 b)
+{
+    fprintf(stderr, "     push_bool <= %s\n", b ? "true" : "false");
+    vm_stack[vm_sp+0] = kind_bool;
+    vm_stack[vm_sp+1] = 0;
+    vm_stack[vm_sp+2] = (b==0) ? 0 : 1;
+    vm_sp += 3;
+}
+
 void push_int(u16 i)
 {
     fprintf(stderr, "     push_int <= %04x\n", i);
@@ -92,6 +101,18 @@ u16 pop_word()
     return w;
 }
 
+void pop_bool()
+{
+    vm_sp -= 3;
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
+    if (k != kind_bool) die("expected boolean");
+
+    vm_ai = lo ? 1 : 0;
+    fprintf(stderr, "     pop_bool => %s\n", vm_ai ? "true" : "false");
+}
+
 void pop_int()
 {
     vm_sp -= 3;
@@ -118,6 +139,12 @@ void pop_float()
     vm_af = f16_to_float(u);
 
     fprintf(stderr, "     pop_float\n");
+}
+
+void pop_bools()
+{
+    pop_bool(); vm_bi = vm_ai;
+    pop_bool();
 }
 
 void pop_ints()
@@ -268,6 +295,9 @@ void cmd_print()
         ptr += 3;
 
         switch(k) {
+            case kind_bool:
+                printf(val ? "true" : "false");
+                break;
             case kind_int:
                 printf("%d", val);
                 break;
@@ -408,7 +438,7 @@ u16 vm_run(const u8 *vm_pc_base)
             // operators
             case op_neg:   pop_int(); push_int(-vm_ai); break;
             case op_bnot:  pop_int(); push_int(~vm_ai); break;
-            case op_lnot:  pop_int(); push_int(!vm_ai); break;
+            case op_lnot:  pop_bool(); push_bool(!vm_ai); break;
 
             case op_mul:   if (pop_nums() == kind_int) push_int(vm_ai * vm_bi); else push_float(vm_af * vm_bf); break;
             case op_div:   if (pop_nums() == kind_int) push_int(vm_ai / vm_bi); else push_float(vm_af / vm_bf); break;
@@ -421,23 +451,24 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_lsr:   pop_ints(); push_int(vm_ai >> vm_bi); break;
             case op_lsl:   pop_ints(); push_int(vm_ai << vm_bi); break;
 
-            case op_le:    pop_ints(); push_int(vm_ai <= vm_bi); break;
-            case op_lt:    pop_ints(); push_int(vm_ai < vm_bi); break;
-            case op_gt:    pop_ints(); push_int(vm_ai > vm_bi); break;
-            case op_ge:    pop_ints(); push_int(vm_ai >= vm_bi); break;
+            // TODO make relationals work for strings too
+            case op_le:    pop_ints(); push_bool(vm_ai <= vm_bi); break;
+            case op_lt:    pop_ints(); push_bool(vm_ai < vm_bi); break;
+            case op_gt:    pop_ints(); push_bool(vm_ai > vm_bi); break;
+            case op_ge:    pop_ints(); push_bool(vm_ai >= vm_bi); break;
+            case op_eq:    pop_ints(); push_bool(vm_ai == vm_bi); break;
+            case op_ne:    pop_ints(); push_bool(vm_ai != vm_bi); break;
 
-            case op_eq:    pop_ints(); push_int(vm_ai == vm_bi); break;
-            case op_ne:    pop_ints(); push_int(vm_ai != vm_bi); break;
             case op_band:  pop_ints(); push_int(vm_ai & vm_bi); break;
             case op_bor:   pop_ints(); push_int(vm_ai | vm_bi); break;
             case op_beor:  pop_ints(); push_int(vm_ai ^ vm_bi); break;
 
-            case op_land:  pop_ints(); push_int(vm_ai && vm_bi); break;
-            case op_lor:   pop_ints(); push_int(vm_ai || vm_bi); break;
+            case op_land:  pop_bools(); push_bool(vm_ai && vm_bi); break;
+            case op_lor:   pop_bools(); push_bool(vm_ai || vm_bi); break;
 
             // constants
-            case op_false: push_int(0); break;
-            case op_true:  push_int(1); break;
+            case op_false: push_bool(0); break;
+            case op_true:  push_bool(1); break;
 
             // built-in functions
             case op_abs:
@@ -499,22 +530,11 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_jfalse:
                 {
                     u16 tmp = fetch_word();
-                    pop_int();
+                    pop_bool();
                     if (vm_ai == 0) vm_pc += tmp;
                     break;
                 }
 
-            // Structural (not executed)
-            case op_func:
-            case op_break:
-            case op_else:
-            case op_end:
-            case op_endif:
-            case op_if:
-            case op_repeat:
-            case op_until:
-            case op_wend:
-            case op_while:
             default:
                 die("unknown opcode");
                 break;
