@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
 #include "header.h"
 
+// TODO - integers should be treated as SIGNED !!!!
+//
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
 u16 vm_ai;
 u16 vm_bi;
@@ -160,17 +163,21 @@ int pop_num()
     u8 hi = vm_stack[vm_sp+1];
     u8 lo = vm_stack[vm_sp+2];
     u16 u = (hi<<8) | lo;
-    if (k == kind_int) {
-        vm_ai = u;
-        fprintf(stderr, "     pop_num => %04x\n", vm_ai);
-    }
-    else if (k == kind_float) {
-        vm_ai = u;
-        vm_af = f16_to_float(u);
-        fprintf(stderr, "     pop_float => %f\n", vm_af);
-    }
-    else {
-        die("expected float or integer");
+
+    switch(k) {
+        case kind_int:
+            vm_ai = u;
+            fprintf(stderr, "     pop_num => %04x\n", vm_ai);
+            break;
+
+        case kind_float:
+            vm_ai = u;
+            vm_af = f16_to_float(u);
+            fprintf(stderr, "     pop_float => %f\n", vm_af);
+            break;
+
+        default:
+            die("expected float or integer");
     }
     return k;
 }
@@ -181,7 +188,8 @@ int pop_nums()
     if (k == kind_int) {
         vm_bi = vm_ai;
         pop_int();
-    } else {
+    }
+    else {
         vm_bi = vm_ai;
         vm_bf = vm_af;
         pop_float();
@@ -215,13 +223,13 @@ u8 pop_str()
     u8 k  = vm_stack[vm_sp+0];
     u8 hi = vm_stack[vm_sp+1];
     u8 lo = vm_stack[vm_sp+2];
+
     switch(k) {
-        case kind_str_empty:
-        case kind_str_char:
-        case kind_str_prog:
+        case kind_str_0:
+        case kind_str_1:
+        case kind_str_n:
             break;
-        case kind_str_heap:
-            die("kind_str_heap: not implemented");
+
         default:
             die("expected string");
     }
@@ -231,55 +239,337 @@ u8 pop_str()
     return k;
 }
 
-u8 str_unescape_char(const u8 *p)
-{
-    u8 ch = *p;
-    if (ch == '\\') {
-        ch = *++p;
-        if (ch == '"') return '"';
-        if (ch == 'n') return '\n';
-        if (ch == 't') return '\t';
-        if (ch == '\\') return '\\';
-    }
-    return ch;
-}
-
 void fn_asc()
 {
     switch(pop_str()) {
-        case kind_str_empty: push_int(0); break;
-        case kind_str_char:  push_int(vm_ai); break;
-        case kind_str_prog:
-            push_int(str_unescape_char(prog_base + vm_ai));
-            break;
+        case kind_str_0:
+            push_int(0);
+            return;
+
+        case kind_str_1:
+            push_int(vm_ai);
+            return;
+
+        default:
+        {
+            u8 *str = heap + vm_ai;
+            u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+            if (len == 0) push_int(0);
+            else push_int(str[str_data+0]);
+            return;
+        }
     }
 }
 
 void fn_chr()
 {
     pop_int();
-    push_val(kind_str_char, vm_ai & 0xff);
+    push_val(kind_str_1, vm_ai & 0xff);
 }
 
 void fn_len()
 {
     switch(pop_str()) {
-        case kind_str_empty: push_int(0); break;
-        case kind_str_char:  push_int(1); break;
-        case kind_str_prog:
-            {
-                u16 len = 0;
-                const u8 *p = prog_base + vm_ai;
-                char ch = *p++;
-                while(ch != '"') {
-                    len++;
-                    if (ch == '\\') p++;
-                    ch = *p++;
-                }
-                push_int(len);
-                break;
-            }
+        case kind_str_0:
+            push_int(0);
+            return;
+
+        case kind_str_1:
+            push_int(1);
+            return;
+
+        default:
+        {
+            u8 *str = heap + vm_ai;
+            u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+            push_int(len);
+            return;
+        }
     }
+}
+
+void vm_substr(u16 pos, u16 n);
+void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len);
+
+void fn_left()
+{
+    pop_int();
+    u16 n = vm_ai;
+    vm_substr(0, n);
+}
+
+void fn_right()
+{
+    pop_int();
+    u16 n = vm_ai;
+
+    u8 k = pop_str();
+    if (n == 0 || k == kind_str_0) {
+        push_val(kind_str_0, 0);
+        return;
+    }
+
+    if (k == kind_str_1) {
+        if (n >= 1) push_val(kind_str_1, vm_ai);
+        else push_val(kind_str_0, 0);
+        return;
+    }
+
+    const u8 *str = heap + vm_ai;
+    u8 len = str[str_len_hi]<<8 | str[str_len_lo];
+    if (n >= len) {
+        n = len;
+    }
+    u16 pos = len - n;
+
+    return vm_substr_cont(str, pos, n, len);
+}
+
+void fn_substr()
+{
+    pop_int();
+    u16 n = vm_ai;
+
+    pop_int();
+    u16 pos = vm_ai;
+
+    vm_substr(pos, n);
+}
+
+void vm_substr(u16 pos, u16 n)
+{
+    u8 k = pop_str();
+
+    if (n == 0 || k == kind_str_0) {
+        push_val(kind_str_0, 0);
+        return;
+    }
+
+    if (k == kind_str_1) {
+        if (pos == 0) push_val(kind_str_1, vm_ai);
+        else push_val(kind_str_0, 0);
+        return;
+    }
+
+    const u8 *str = heap + vm_ai;
+    u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+
+    if (pos >= len) {
+        push_val(kind_str_0, 0);
+        return;
+    }
+
+    vm_substr_cont(str, pos, n, len);
+}
+
+void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len)
+{
+    if (pos == 0 && n >= len) {
+        push_val(kind_str_n, vm_ai);
+        return;
+    }
+
+    const u8 *data = str + str_data;
+
+    if (n == 1 || pos == len-1) {
+        push_val(kind_str_1, data[pos]);
+        return;
+    }
+
+    u16 len2 = len-pos;
+    if (n < len2) len2 = n;
+
+    u8 *str2 = heap + heap_alloc(str_data + len2);
+    str2[str_len_hi] = len2>>8;
+    str2[str_len_lo] = len2&0xff;
+    memcpy(str2+str_data, data+pos, len2);
+    push_val(kind_str_n, str2-heap);
+}
+
+void fn_str()
+{
+    u8 k = pop_val();
+    char buf[16];
+    const char *q;
+    u16 len;
+    switch(k) {
+        case kind_bool:
+            // TODO - it would make sense to put these on the heap
+            // at program start to avoid repeated reallocations
+            if (vm_ai != 0) { len = 4; q = "true"; }
+            else { len = 5; q = "false"; }
+            break;
+
+        case kind_int:
+            len = sprintf(buf, "%d", (int)(short)vm_ai);
+            q = buf;
+            break;
+
+        case kind_float:
+            len = sprintf(buf, "%f", vm_af);
+            q = buf;
+            break;
+
+        case kind_str_0:
+        case kind_str_1: 
+        case kind_str_n: push_val(k, vm_ai); return;
+
+        // TODO - it would make sense to put these on the heap
+        // at program start to avoid repeated reallocations
+        case kind_proc: len = 6; q = "<proc>"; break;
+        case kind_func: len = 6; q = "<func>"; break;
+        default: len = 9; q = "<unknown>"; break;
+    }
+
+    if (len == 1) {
+        push_val(kind_str_1, q[0]);
+        return;
+    }
+
+    u8 *str = heap+heap_alloc(len);
+    str[str_len_hi] = len>>8;
+    str[str_len_lo] = len&0xff;
+
+    u8 *p = str + str_data;
+    memcpy(p, q, len);
+    push_val(kind_str_n, str-heap);
+}
+
+
+const u8* vm_str_buf(u8 kind, u16 val, u8* pch, u16* len)
+{
+    switch(kind) {
+        case kind_str_0:
+            *len = 0;
+            return pch;
+
+        case kind_str_1:
+            *pch = val;
+            *len = 1;
+            return pch;
+
+        default:
+        {
+            const u8 *str = heap + val;
+            *len = str[str_len_hi]<<8 | str[str_len_lo];
+            return str + str_data;
+        }
+    }
+}
+
+void vm_add()
+{
+    u8 k2 = pop_val();
+
+    if (k2 == kind_int) {
+        vm_bi = vm_ai;
+        pop_int();
+        push_int(vm_ai + vm_bi);
+        return;
+    }
+    else if (k2 == kind_float) {
+        vm_bf = f16_to_float(vm_ai);
+        pop_float();
+        push_float(vm_af + vm_bf);
+        return;
+    }
+
+    if (!(k2 == kind_str_0 || k2 == kind_str_1 || k2 == kind_str_n)) die("cannot add");
+
+    vm_bi = vm_ai;
+    u8 k1 = pop_str();
+
+    if (k1 == kind_str_0) {
+        push_val(k2, vm_bi);
+        return;
+    }
+    if (k2 == kind_str_0) {
+        push_val(k1, vm_ai);
+        return;
+    }
+
+    u8 ch1, ch2;
+    u16 len1, len2;
+    const u8 *data1 = vm_str_buf(k1, vm_ai, &ch1, &len1);
+    const u8 *data2 = vm_str_buf(k2, vm_bi, &ch2, &len2);
+
+    u16 len = len1+len2;
+    u8 *str = heap+heap_alloc(len);
+    str[str_len_hi] = len>>8;
+    str[str_len_lo] = len&0xff;
+
+    u8 *p = str + str_data;
+    memcpy(p, data1, len1);
+    p += len1;
+    memcpy(p, data2, len2);
+    push_val(kind_str_n, str-heap);
+}
+
+void vm_relop(u8 op)
+{
+    u8 k2 = pop_val();
+    u16 b;
+
+    switch(k2) {
+        case kind_int:
+            vm_bi = vm_ai;
+            pop_int();
+            switch(op) {
+                case op_le: b = vm_ai <= vm_bi; break;
+                case op_lt: b = vm_ai <  vm_bi; break;
+                case op_gt: b = vm_ai >  vm_bi; break;
+                case op_ge: b = vm_ai >= vm_bi; break;
+                case op_eq: b = vm_ai == vm_bi; break;
+                case op_ne: b = vm_ai != vm_bi; break;
+            }
+            break;
+
+        case kind_float:
+            vm_bf = f16_to_float(vm_ai);
+            pop_float();
+            switch(op) {
+                case op_le: b = vm_af <= vm_bf; break;
+                case op_lt: b = vm_af <  vm_bf; break;
+                case op_gt: b = vm_af >  vm_bf; break;
+                case op_ge: b = vm_af >= vm_bf; break;
+                case op_eq: b = vm_af == vm_bf; break;
+                case op_ne: b = vm_af != vm_bf; break;
+            }
+            break;
+
+        case kind_str_0:
+        case kind_str_1:
+        case kind_str_n:
+        {
+            vm_bi = vm_ai;
+            u8 k1 = pop_str();
+
+            u8 ch1, ch2;
+            u16 len1, len2;
+            const u8 *data1 = vm_str_buf(k1, vm_ai, &ch1, &len1);
+            const u8 *data2 = vm_str_buf(k2, vm_bi, &ch2, &len2);
+            u16 prefix_len = len1;
+            if (len2 < prefix_len) prefix_len = len2;
+            int cmp = memcmp(data1, data2, prefix_len);
+            if (cmp == 0 && len1 != len2) {
+                cmp = (len1 < len2) ? -1 : 1;
+            }
+            switch(op) {
+                case op_le: b = cmp <= 0; break;
+                case op_lt: b = cmp <  0; break;
+                case op_gt: b = cmp >  0; break;
+                case op_ge: b = cmp >= 0; break;
+                case op_eq: b = cmp == 0; break;
+                case op_ne: b = cmp != 0; break;
+            }
+            break;
+        }
+
+        default:
+            die("non-comparable");
+    }
+
+    push_bool(b);
 }
 
 void cmd_print()
@@ -298,31 +588,30 @@ void cmd_print()
             case kind_bool:
                 printf(val ? "true" : "false");
                 break;
+
             case kind_int:
                 printf("%d", val);
                 break;
+
             case kind_float:
                 printf("%f", f16_to_float(val));
                 break;
-            case kind_str_empty:
+
+            case kind_str_0:
                 break;
-            case kind_str_char:
+
+            case kind_str_1:
                 printf("%c", val & 0xff);
                 break;
-            case kind_str_prog:
-                {
-                    const u8 *p = prog_base + val;
-                    u8 ch = *p;
-                    while(ch != '"') {
-                        if (ch == '\\') {
-                            ch = str_unescape_char(p);
-                            p++;
-                        }
-                        putchar(ch);
-                        ch = *++p;
-                    }
-                    break;
-                }
+
+            case kind_str_n:
+            {
+                const u8 *str = heap + val;
+                u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+                fwrite(str + str_data, 1, len, stdout);
+                break;
+            }
+
             default:
                 printf("%02x:%04x", k, val);
                 break;
@@ -442,7 +731,7 @@ u16 vm_run(const u8 *vm_pc_base)
 
             case op_mul:   if (pop_nums() == kind_int) push_int(vm_ai * vm_bi); else push_float(vm_af * vm_bf); break;
             case op_div:   if (pop_nums() == kind_int) push_int(vm_ai / vm_bi); else push_float(vm_af / vm_bf); break;
-            case op_add:   if (pop_nums() == kind_int) push_int(vm_ai + vm_bi); else push_float(vm_af + vm_bf); break;
+            case op_add:   vm_add(); break;
             case op_sub:   if (pop_nums() == kind_int) push_int(vm_ai - vm_bi); else push_float(vm_af - vm_bf); break;
 
             case op_mod:   pop_ints(); push_int(vm_ai % vm_bi); break;
@@ -451,13 +740,12 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_lsr:   pop_ints(); push_int(vm_ai >> vm_bi); break;
             case op_lsl:   pop_ints(); push_int(vm_ai << vm_bi); break;
 
-            // TODO make relationals work for strings too
-            case op_le:    pop_ints(); push_bool(vm_ai <= vm_bi); break;
-            case op_lt:    pop_ints(); push_bool(vm_ai < vm_bi); break;
-            case op_gt:    pop_ints(); push_bool(vm_ai > vm_bi); break;
-            case op_ge:    pop_ints(); push_bool(vm_ai >= vm_bi); break;
-            case op_eq:    pop_ints(); push_bool(vm_ai == vm_bi); break;
-            case op_ne:    pop_ints(); push_bool(vm_ai != vm_bi); break;
+            case op_le:    vm_relop(op); break;
+            case op_lt:    vm_relop(op); break;
+            case op_gt:    vm_relop(op); break;
+            case op_ge:    vm_relop(op); break;
+            case op_eq:    vm_relop(op); break;
+            case op_ne:    vm_relop(op); break;
 
             case op_band:  pop_ints(); push_int(vm_ai & vm_bi); break;
             case op_bor:   pop_ints(); push_int(vm_ai | vm_bi); break;
@@ -489,14 +777,14 @@ u16 vm_run(const u8 *vm_pc_base)
 
             case op_rnd:    push_int(random() & 0xffff); break;
             case op_sqr:    pop_float(); push_float(sqrt(vm_af)); break;
-            case op_int:    die("int: unimplemented"); break;
+            case op_int:    pop_float(); push_int((u16)(signed short)vm_af); break;
             case op_asc:    fn_asc(); break;
             case op_chr:    fn_chr(); break;
-            case op_left:   die("left: unimplemented"); break;
+            case op_left:   fn_left(); break;
             case op_len:    fn_len(); break;
-            case op_right:  die("right: unimplemented"); break;
-            case op_str:    die("str: unimplemented"); break;
-            case op_substr: die("substr: unimplemented"); break;
+            case op_right:  fn_right(); break;
+            case op_str:    fn_str(); break;
+            case op_substr: fn_substr(); break;
 
             // build-in procedures
             case op_print: cmd_print(); break;
@@ -509,31 +797,32 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_return_missing: die("missing return"); break;
 
             // internal ops
-            case op_index:      die("index: unimplemented"); break;
-            case op_call_proc:  vm_call(kind_proc); break;
-            case op_call_func:  vm_call(kind_func); break;
-            case op_ident_get:  vm_ident_get(); break;
-            case op_ident_set:  vm_ident_set(); break;
-            case op_slot_get:   vm_slot_get(); break;
-            case op_slot_set:   vm_slot_set(); break;
-            case op_lit_int:    push_int(fetch_word()); break;
-            case op_lit_float:  push_f16(fetch_word()); break;
-            case op_lit_str_empty: push_val(kind_str_empty, 0); break;
-            case op_lit_str_char: push_val(kind_str_char, fetch_byte()); break;
-            case op_lit_str_prog: push_val(kind_str_prog, fetch_word()); break;
+            case op_index:     die("index: unimplemented"); break;
+            case op_call_proc: vm_call(kind_proc); break;
+            case op_call_func: vm_call(kind_func); break;
+            case op_ident_get: vm_ident_get(); break;
+            case op_ident_set: vm_ident_set(); break;
+            case op_slot_get:  vm_slot_get(); break;
+            case op_slot_set:  vm_slot_set(); break;
+            case op_lit_int:   push_int(fetch_word()); break;
+            case op_lit_float: push_f16(fetch_word()); break;
+            case op_lit_str_0: push_val(kind_str_0, 0); break;
+            case op_lit_str_1: push_val(kind_str_1, fetch_byte()); break;
+            case op_lit_str_n: push_val(kind_str_n, fetch_word()); break;
             case op_jump:
-                {
-                    u16 tmp = fetch_word();
-                    vm_pc += tmp;
-                    break;
-                }
+            {
+                u16 tmp = fetch_word();
+                vm_pc += tmp;
+                break;
+            }
+
             case op_jfalse:
-                {
-                    u16 tmp = fetch_word();
-                    pop_bool();
-                    if (vm_ai == 0) vm_pc += tmp;
-                    break;
-                }
+            {
+                u16 tmp = fetch_word();
+                pop_bool();
+                if (vm_ai == 0) vm_pc += tmp;
+                break;
+            }
 
             default:
                 die("unknown opcode");

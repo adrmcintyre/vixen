@@ -41,9 +41,9 @@ enum {
     op_slot_set,
     op_lit_int,
     op_lit_float,
-    op_lit_str_empty,
-    op_lit_str_char,
-    op_lit_str_prog,
+    op_lit_str_0,
+    op_lit_str_1,
+    op_lit_str_n,
     op_jump,
     op_jfalse,
     op_return_func,
@@ -52,16 +52,15 @@ enum {
 };
 
 enum {
-    kind_fail      = 0,
-    kind_bool      = 1,
-    kind_int       = 2,
-    kind_float     = 3,
-    kind_str_empty = 4,
-    kind_str_char  = 5,
-    kind_str_prog  = 6,
-    kind_str_heap  = 7,
-    kind_proc      = 8,
-    kind_func      = 9,
+    kind_fail  = 0,
+    kind_bool  = 1,
+    kind_int   = 2,
+    kind_float = 3,
+    kind_str_0 = 4,
+    kind_str_1 = 5,
+    kind_str_n = 6,
+    kind_proc  = 7,
+    kind_func  = 8,
 };
 
 enum {
@@ -120,6 +119,14 @@ enum {
 };
 
 u16 intern_ident();
+
+enum {
+    str_len_hi = 0,
+    str_len_lo = 1,
+    str_data   = 2
+};
+
+u16 heap_alloc(u16 n);
 
 void parse_expr();
 void parse_stmt();

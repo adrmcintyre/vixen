@@ -39,9 +39,9 @@ const char* op_names[] = {
     "op_slot_set",
     "op_lit_int",
     "op_lit_float",
-    "op_lit_str_empty",
-    "op_lit_str_char",
-    "op_lit_str_prog",
+    "op_lit_str_0",
+    "op_lit_str_1",
+    "op_lit_str_n",
     "op_jump",
     "op_jfalse",
     "op_return_func",
@@ -385,14 +385,12 @@ u8 lex_number()
 //
 // - kind_fail
 //      no open " found, input_ptr is left unchanged
-// - kind_str_empty
+// - kind_str_0
 //      empty string was found
-// - kind_str_char
-//      (possibly escaped) single character string was found,
-//      str_char is set to the (unescaped) character
-// - kind_str_prog
-//      a multi character string was found, str_ptr points to its first
-//      character in the program text (opening quote is skipped)
+// - kind_str_1
+//      single character string was found, str_char is set to the character
+// - kind_str_n
+//      a multi character string was found, str_ptr points to its heap descriptor
 //
 const u8 *str_ptr;
 u8 str_char;
@@ -427,9 +425,30 @@ u8 lex_string()
 
     input_ptr = ptr;
 
-    if (len == 0) return kind_str_empty;
-    if (len == 1) return kind_str_char;
-    return kind_str_prog;
+    if (len == 0) return kind_str_0;
+    if (len == 1) return kind_str_1;
+
+    ptr = str_ptr;
+
+    u8 *q = heap + heap_alloc(str_data + len);
+    str_ptr = q;
+
+    *(q+str_len_hi) = len>>8;
+    *(q+str_len_lo) = len&0xff;
+    q += str_data;
+
+    while(1) {
+        ch = *ptr++;
+        if (ch == '"') break;
+        if (ch == '\\') {
+            ch = *++ptr;
+            if      (ch == 't') ch = '\t';
+            else if (ch == 'n') ch = '\n';
+        }
+        *q++ = ch;
+    }
+
+    return kind_str_n;
 }
 
 // Returns 1 if a word was recognised, setting token_ptr and
@@ -661,16 +680,16 @@ u16 parse_literal()
                 emit_word(f16);
                 return 1;
             }
-        case kind_str_empty:
-            emit_op(op_lit_str_empty);
+        case kind_str_0:
+            emit_op(op_lit_str_0);
             return 1;
-        case kind_str_char:
-            emit_op(op_lit_str_char);
+        case kind_str_1:
+            emit_op(op_lit_str_1);
             emit_byte(str_char);
             return 1;
-        case kind_str_prog:
-            emit_op(op_lit_str_prog);
-            emit_word((u16)(str_ptr - prog_base));
+        case kind_str_n:
+            emit_op(op_lit_str_n);
+            emit_word((u16)(str_ptr - heap));
             return 1;
         default:
             return 0;
@@ -745,12 +764,13 @@ void parse_keyword_args()
         emit_op(kwop);
     }
     else if (kwinfo <= kw_fn3) {
-        // parse_args may trample kwop
+        // parse_args may trample kwop, kwinfo
         u8 op = kwop;
+        u8 info = kwinfo;
         u16 nargs = parse_args();
         if (nargs == 0) die("expected arguments");
-        if (nargs-1 < kwinfo) die("too few arguments");
-        if (nargs-1 > kwinfo) die("too many arguments");
+        if (nargs-1 < info) die("too few arguments");
+        if (nargs-1 > info) die("too many arguments");
         emit_op(op);
     }
     else if (kwinfo >= kw_cmd0 && kwinfo <= kw_cmd_any) {
@@ -883,12 +903,7 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "i=0;"
-        "n=10;"
-        "while i < n;"
-        "   print i;"
-        "   i=i+1;"
-        "wend;"
+        "print \"abc\" <= \"abbd\";"
         "stop;"
     ;
 
