@@ -8,11 +8,19 @@
 typedef short i16;
 
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
+// TODO - heap cleanup (e.g. ref counts)
+// TODO - check for resource overflows - i.e. stack / heap
+// TODO - distinguish parse / runtime failures
+// TODO - auto-convert floats <=> ints
 
-typedef union {
-    u16 u;
-    i16 i;
-    u16 f;
+typedef struct
+{
+    u8 k;
+    union {
+        u16 u;
+        i16 i;
+        u16 f;
+    };
 } value;
 
 value vm_a;
@@ -26,7 +34,6 @@ u8 vm_stack[1536];
 u8 fetch_byte()
 {
     u8 b = code_base[vm_pc++];
-    fprintf(stderr, "     fetch_byte => %02x\n", b);
     return b;
 }
 
@@ -35,20 +42,17 @@ u16 fetch_word()
     u16 w;
     w = code_base[vm_pc++]<<8;
     w |= code_base[vm_pc++]; 
-    fprintf(stderr, "     fetch_word => %04x\n", w);
     return w;
 }
 
 void push_byte(u8 b)
 {
-    fprintf(stderr, "     push_byte <= %02x\n", b);
     vm_stack[vm_sp+0] = b;
     vm_sp += 1;
 }
 
 void push_word(u16 w)
 {
-    fprintf(stderr, "     push_word <= %04x\n", w);
     vm_stack[vm_sp+0] = w>>8;
     vm_stack[vm_sp+1] = w&0xff;
     vm_sp += 2;
@@ -56,7 +60,6 @@ void push_word(u16 w)
 
 void push_bool(u16 b)
 {
-    fprintf(stderr, "     push_bool <= %s\n", b ? "true" : "false");
     vm_stack[vm_sp+0] = kind_bool;
     vm_stack[vm_sp+1] = 0;
     vm_stack[vm_sp+2] = (b==0) ? 0 : 1;
@@ -65,7 +68,6 @@ void push_bool(u16 b)
 
 void push_int(i16 i)
 {
-    fprintf(stderr, "     push_int <= %d\n", i);
     vm_stack[vm_sp+0] = kind_int;
     vm_stack[vm_sp+1] = ((u16)i) >> 8;
     vm_stack[vm_sp+2] = ((u16)i) & 0xff;
@@ -74,7 +76,6 @@ void push_int(i16 i)
 
 void push_f16(u16 f)
 {
-    fprintf(stderr, "     push_f16\n");
     vm_stack[vm_sp+0] = kind_float;
     vm_stack[vm_sp+1] = f >> 8;
     vm_stack[vm_sp+2] = f & 0xff;
@@ -83,7 +84,6 @@ void push_f16(u16 f)
 
 void push_float(float f)
 {
-    fprintf(stderr, "     push_float\n");
     u16 u = f16_from_float(f);
     vm_stack[vm_sp+0] = kind_float;
     vm_stack[vm_sp+1] = u>>8;
@@ -91,11 +91,18 @@ void push_float(float f)
     vm_sp += 3;
 }
 
+void push_val(u8 kind, u16 value)
+{
+    vm_stack[vm_sp+0] = kind;
+    vm_stack[vm_sp+1] = value >> 8;
+    vm_stack[vm_sp+2] = value & 0xff;
+    vm_sp += 3;
+}
+
 u8 pop_byte()
 {
     vm_sp -= 1;
     u8 b = vm_stack[vm_sp+0];
-    fprintf(stderr, "     pop_byte => %02x\n", b);
     return b;
 }
 
@@ -105,123 +112,84 @@ u16 pop_word()
     u8 hi = vm_stack[vm_sp+0];
     u8 lo = vm_stack[vm_sp+1];
     u16 w = hi<<8 | lo;
-    fprintf(stderr, "     pop_word => %04x\n", w);
     return w;
+}
+
+void pop_val()
+{
+    vm_sp -= 3;
+    u8 k  = vm_stack[vm_sp+0];
+    u8 hi = vm_stack[vm_sp+1];
+    u8 lo = vm_stack[vm_sp+2];
+    vm_a.k = k;
+    vm_a.u = (hi<<8) | lo;
 }
 
 void pop_bool()
 {
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-    if (k != kind_bool) die("expected boolean");
-
-    vm_a.u = lo ? 1 : 0;
-    fprintf(stderr, "     pop_bool => %s\n", lo ? "true" : "false");
+    pop_val();
+    if (vm_a.k != kind_bool) die("expected boolean");
 }
 
 void pop_int()
 {
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-    if (k != kind_int) die("expected integer");
-
-    vm_a.u = (hi<<8) | lo;
-    fprintf(stderr, "     pop_int => %d\n", vm_a.i);
+    pop_val();
+    if (vm_a.k != kind_int) die("expected integer");
 }
 
 void pop_float()
 {
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-    if (k != kind_float) die("expected float");
-
-    vm_a.u = (hi<<8) | lo;
-
-    fprintf(stderr, "     pop_float => %f\n", f16_to_float(vm_a.f));
+    pop_val();
+    if (vm_a.k != kind_float) die("expected float");
 }
 
 void pop_bools()
 {
-    pop_bool(); vm_b.u = vm_a.u;
+    pop_bool(); vm_b = vm_a;
     pop_bool();
 }
 
 void pop_ints()
 {
-    pop_int(); vm_b.i = vm_a.i;
+    pop_int(); vm_b = vm_a;
     pop_int();
 }
 
-int pop_num()
+void pop_num()
 {
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-    vm_a.u = (hi<<8) | lo;
+    pop_val();
 
-    switch(k) {
+    switch(vm_a.k) {
         case kind_int:
-            fprintf(stderr, "     pop_num => %d\n", vm_a.i);
-            break;
-
         case kind_float:
-            fprintf(stderr, "     pop_float => %f\n", f16_to_float(vm_a.f));
             break;
-
         default:
             die("expected float or integer");
     }
-    return k;
 }
 
-int pop_nums()
+void pop_nums()
 {
-    int k = pop_num();
+    pop_num();
     vm_b = vm_a;
-    if (k == kind_int) {
-        pop_int();
+    pop_num();
+
+    if (vm_b.k == vm_a.k) return;
+    if (vm_b.k == kind_float) {
+        vm_a.k = kind_float;
+        vm_a.f = f16_from_float((float)vm_a.i);
     }
     else {
-        pop_float();
+        vm_b.k = kind_float;
+        vm_b.f = f16_from_float((float)vm_b.i);
     }
-    return k;
 }
 
-u8 pop_val()
+void pop_str()
 {
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-    vm_a.u = (hi<<8) | lo;
-    fprintf(stderr, "     pop_val => k:%02x v=%04x\n", k, vm_a.u);
-    return k;
-}
+    pop_val();
 
-void push_val(u8 kind, u16 value)
-{
-    fprintf(stderr, "     push_val <= k:%02x v=%04x\n", kind, value);
-    vm_stack[vm_sp+0] = kind;
-    vm_stack[vm_sp+1] = value >> 8;
-    vm_stack[vm_sp+2] = value & 0xff;
-    vm_sp += 3;
-}
-
-u8 pop_str()
-{
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-
-    switch(k) {
+    switch(vm_a.k) {
         case kind_str_0:
         case kind_str_1:
         case kind_str_n:
@@ -230,15 +198,12 @@ u8 pop_str()
         default:
             die("expected string");
     }
-
-    vm_a.u = (hi<<8) | lo;
-    fprintf(stderr, "     pop_str %04x\n", vm_a.u);
-    return k;
 }
 
 void fn_asc()
 {
-    switch(pop_str()) {
+    pop_str();
+    switch(vm_a.k) {
         case kind_str_0:
             push_int(0);
             return;
@@ -266,7 +231,8 @@ void fn_chr()
 
 void fn_len()
 {
-    switch(pop_str()) {
+    pop_str();
+    switch(vm_a.k) {
         case kind_str_0:
             push_int(0);
             return;
@@ -304,13 +270,13 @@ void fn_right()
     if (ni < 0) die("negative count");
     u16 n = (u16) ni;
 
-    u8 k = pop_str();
-    if (n == 0 || k == kind_str_0) {
+    pop_str();
+    if (n == 0 || vm_a.k == kind_str_0) {
         push_val(kind_str_0, 0);
         return;
     }
 
-    if (k == kind_str_1) {
+    if (vm_a.k == kind_str_1) {
         if (n >= 1) push_val(kind_str_1, vm_a.u);
         else push_val(kind_str_0, 0);
         return;
@@ -341,14 +307,14 @@ void fn_substr()
 
 void vm_substr(u16 pos, u16 n)
 {
-    u8 k = pop_str();
+    pop_str();
 
-    if (n == 0 || k == kind_str_0) {
+    if (n == 0 || vm_a.k == kind_str_0) {
         push_val(kind_str_0, 0);
         return;
     }
 
-    if (k == kind_str_1) {
+    if (vm_a.k == kind_str_1) {
         if (pos == 0) push_val(kind_str_1, vm_a.u);
         else push_val(kind_str_0, 0);
         return;
@@ -391,11 +357,11 @@ void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len)
 
 void fn_str()
 {
-    u8 k = pop_val();
+    pop_val();
     char buf[16];
     const char *q;
     u16 len;
-    switch(k) {
+    switch(vm_a.k) {
         case kind_bool:
             // TODO - it would make sense to put these on the heap
             // at program start to avoid repeated reallocations
@@ -415,7 +381,7 @@ void fn_str()
 
         case kind_str_0:
         case kind_str_1: 
-        case kind_str_n: push_val(k, vm_a.u); return;
+        case kind_str_n: push_val(vm_a.k, vm_a.u); return;
 
         // TODO - it would make sense to put these on the heap
         // at program start to avoid repeated reallocations
@@ -460,43 +426,57 @@ const u8* vm_str_buf(u8 kind, u16 val, u8* pch, u16* len)
     }
 }
 
+void pop_vals()
+{
+    pop_val();
+    vm_b = vm_a;
+    pop_val();
+
+    if (vm_a.k == vm_b.k) return;
+    if (vm_a.k == kind_int && vm_b.k == kind_float) {
+        vm_a.k = kind_float;
+        vm_a.f = f16_from_float((float)vm_a.i);
+        return;
+    }
+    else if (vm_a.k == kind_float && vm_b.k == kind_int) {
+        vm_b.k = kind_float;
+        vm_b.f = f16_from_float((float)vm_b.i);
+        return;
+    }
+
+    u8 isstr1 = (vm_a.k == kind_str_0 || vm_a.k == kind_str_1 || vm_a.k == kind_str_n);
+    u8 isstr2 = (vm_b.k == kind_str_0 || vm_b.k == kind_str_1 || vm_b.k == kind_str_n);
+    if (isstr1 && isstr2) return;
+
+    die("incompatible types");
+}
+
 void vm_add()
 {
-    u8 k2 = pop_val();
+    pop_vals();
 
-    if (k2 == kind_int) {
-        vm_b = vm_a;
-        pop_int();
-        // TODO check overflow?
+    // TODO check overflow?
+    if (vm_a.k == kind_int) {
         push_int(vm_a.i + vm_b.i);
         return;
     }
-    else if (k2 == kind_float) {
-        vm_b = vm_a;
-        pop_float();
-        // TODO check overflow?
+    if (vm_a.k == kind_float) {
         push_float(f16_to_float(vm_a.f) + f16_to_float(vm_b.f));
         return;
     }
-
-    if (!(k2 == kind_str_0 || k2 == kind_str_1 || k2 == kind_str_n)) die("cannot add");
-
-    vm_b = vm_a;
-    u8 k1 = pop_str();
-
-    if (k1 == kind_str_0) {
-        push_val(k2, vm_b.u);
+    if (vm_a.k == kind_str_0) {
+        push_val(vm_b.k, vm_b.u);
         return;
     }
-    if (k2 == kind_str_0) {
-        push_val(k1, vm_a.u);
+    if (vm_b.k == kind_str_0) {
+        push_val(vm_a.k, vm_a.u);
         return;
     }
 
     u8 ch1, ch2;
     u16 len1, len2;
-    const u8 *data1 = vm_str_buf(k1, vm_a.u, &ch1, &len1);
-    const u8 *data2 = vm_str_buf(k2, vm_b.u, &ch2, &len2);
+    const u8 *data1 = vm_str_buf(vm_a.k, vm_a.u, &ch1, &len1);
+    const u8 *data2 = vm_str_buf(vm_b.k, vm_b.u, &ch2, &len2);
 
     u16 len = len1+len2;
     u8 *str = heap+heap_alloc(str_data + len);
@@ -512,13 +492,12 @@ void vm_add()
 
 void vm_relop(u8 op)
 {
-    u8 k2 = pop_val();
+    pop_vals();
+
     u16 b;
 
-    switch(k2) {
+    switch(vm_a.k) {
         case kind_int:
-            vm_b = vm_a;
-            pop_int();
             switch(op) {
                 case op_le: b = vm_a.i <= vm_b.i; break;
                 case op_lt: b = vm_a.i <  vm_b.i; break;
@@ -531,9 +510,8 @@ void vm_relop(u8 op)
 
         case kind_float:
         {
-            float bf = f16_to_float(vm_a.f);
-            pop_float();
             float af = f16_to_float(vm_a.f);
+            float bf = f16_to_float(vm_b.f);
             switch(op) {
                 case op_le: b = af <= bf; break;
                 case op_lt: b = af <  bf; break;
@@ -549,13 +527,12 @@ void vm_relop(u8 op)
         case kind_str_1:
         case kind_str_n:
         {
-            vm_b = vm_a;
-            u8 k1 = pop_str();
+            pop_str();
 
             u8 ch1, ch2;
             u16 len1, len2;
-            const u8 *data1 = vm_str_buf(k1, vm_a.u, &ch1, &len1);
-            const u8 *data2 = vm_str_buf(k2, vm_b.u, &ch2, &len2);
+            const u8 *data1 = vm_str_buf(vm_a.k, vm_a.u, &ch1, &len1);
+            const u8 *data2 = vm_str_buf(vm_b.k, vm_b.u, &ch2, &len2);
             u16 prefix_len = len1;
             if (len2 < prefix_len) prefix_len = len2;
             int cmp = memcmp(data1, data2, prefix_len);
@@ -589,10 +566,11 @@ void cmd_print()
         u8 k  = *(ptr+0);
         u8 hi = *(ptr+1);
         u8 lo = *(ptr+2);
+        vm_a.k = k;
         vm_a.u = (hi<<8) | lo;
         ptr += 3;
 
-        switch(k) {
+        switch(vm_a.k) {
             case kind_bool:
                 printf(vm_a.u ? "true" : "false");
                 break;
@@ -621,7 +599,7 @@ void cmd_print()
             }
 
             default:
-                printf("%02x:%04x", k, vm_a.u);
+                printf("%02x:%04x", vm_a.k, vm_a.u);
                 break;
         }
         if (n > 0) printf(" ");
@@ -632,8 +610,8 @@ void cmd_print()
 void vm_ident_set()
 {
     u16 id = fetch_word();
-    u8 k = pop_val();
-    heap[id+ident_kind] = k;
+    pop_val();
+    heap[id+ident_kind] = vm_a.k;
     heap[id+ident_val+0] = vm_a.u >> 8;
     heap[id+ident_val+1] = vm_a.u & 0xff;
 }
@@ -650,8 +628,8 @@ void vm_ident_get()
 void vm_slot_set()
 {
     u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
-    u8 k = pop_val();
-    slot[0] = k;
+    pop_val();
+    slot[0] = vm_a.k;
     slot[1] = vm_a.u >> 8;
     slot[2] = vm_a.u & 0xff;
 }
@@ -676,7 +654,6 @@ void vm_call(u8 kind)
     if (k != kind) die("bad call");
 
     if (func[ident_arg_count] != nargs) {
-        fprintf(stderr, "     want=%d got=%d\n", func[ident_arg_count], nargs);
         die("wrong argument count");
     }
 
@@ -694,7 +671,7 @@ void vm_call(u8 kind)
 
 void vm_return_func()
 {
-    u8 k = pop_val();
+    pop_val();
 
     u16 old_pc = pop_word();
     u16 old_sp = pop_word();
@@ -702,7 +679,7 @@ void vm_return_func()
 
     vm_fp = old_fp;
     vm_sp = old_sp;
-    push_val(k, vm_a.u);
+    push_val(vm_a.k, vm_a.u);
     vm_pc = old_pc;
 }
 
@@ -727,20 +704,20 @@ u16 vm_run(const u8 *vm_pc_base)
     vm_pc = (u16)(vm_pc_base - code_base);
 
     while(1) {
-        fprintf(stderr, "pc=%04x fp=%04x sp=%04x\n", vm_pc, vm_fp, vm_sp);
+        fprintf(stderr, "pc=%04x fp=%04x sp=%04x ", vm_pc, vm_fp, vm_sp);
         u8 op = fetch_byte();
-        fprintf(stderr, "     %s\n", debug_op_name(op));
+        fprintf(stderr, "%s\n", debug_op_name(op));
 
         switch(op) {
             // operators
-            case op_neg:   pop_int(); push_int(-vm_a.i); break;
+            case op_neg:   pop_num(); if (vm_a.k == kind_int) push_int(-vm_a.i); else push_f16(vm_a.f ^ 0x8000); break;
             case op_bnot:  pop_int(); push_int(~vm_a.i); break;
             case op_lnot:  pop_bool(); push_bool(!vm_a.i); break;
 
-            case op_mul:   if (pop_nums() == kind_int) push_int(vm_a.i * vm_b.i); else push_float(f16_to_float(vm_a.f) * f16_to_float(vm_b.f)); break;
-            case op_div:   if (pop_nums() == kind_int) push_int(vm_a.i / vm_b.i); else push_float(f16_to_float(vm_a.f) / f16_to_float(vm_b.f)); break;
+            case op_mul:   pop_nums(); if (vm_a.k == kind_int) push_int(vm_a.i * vm_b.i); else push_float(f16_to_float(vm_a.f) * f16_to_float(vm_b.f)); break;
+            case op_div:   pop_nums(); if (vm_a.k == kind_int) push_int(vm_a.i / vm_b.i); else push_float(f16_to_float(vm_a.f) / f16_to_float(vm_b.f)); break;
             case op_add:   vm_add(); break;
-            case op_sub:   if (pop_nums() == kind_int) push_int(vm_a.i - vm_b.i); else push_float(f16_to_float(vm_a.f) - f16_to_float(vm_b.f)); break;
+            case op_sub:   pop_nums(); if (vm_a.k == kind_int) push_int(vm_a.i - vm_b.i); else push_float(f16_to_float(vm_a.f) - f16_to_float(vm_b.f)); break;
 
             case op_mod:   pop_ints(); push_int(vm_a.i % vm_b.i); break;
 
@@ -768,7 +745,8 @@ u16 vm_run(const u8 *vm_pc_base)
 
             // built-in functions
             case op_abs:
-                if (pop_num() == kind_int) {
+                pop_num();
+                if (vm_a.k == kind_int) {
                     push_int((vm_a.i < 0) ? -vm_a.i : vm_a.i);
                 } else {
                     push_val(kind_float, vm_a.f & 0x7fff);
@@ -776,16 +754,39 @@ u16 vm_run(const u8 *vm_pc_base)
                 break;
 
             case op_sgn:
-                if (pop_num() == kind_int) {
+                pop_num();
+                if (vm_a.k == kind_int) {
                     push_int(vm_a.i ? ((vm_a.i < 0) ? -1 : 1) : 0);
                 } else {
                     push_int((vm_a.f & 0x7fff) ? ((vm_a.f & 0x8000) ? -1 : 1) : 0);
                 }
                 break;
 
-            case op_rnd:    push_int(random() & 0x7fff); break;
-            case op_sqr:    pop_float(); push_float(sqrt(f16_to_float(vm_a.f))); break;
-            case op_int:    pop_float(); push_int((i16)f16_to_float(vm_a.f)); break;
+            case op_rnd:
+                push_int(random() & 0x7fff);
+                break;
+
+            case op_sqr:
+                pop_num();
+                // TODO int result?
+                if (vm_a.k == kind_int) push_float(sqrt((float)vm_a.i));
+                else push_float(sqrt(f16_to_float(vm_a.f)));
+                break;
+
+            // TODO - allow string?
+            case op_int:
+                pop_num();
+                if (vm_a.k == kind_int) push_int(vm_a.i);
+                else push_int((i16)f16_to_float(vm_a.f));
+                break;
+
+            // TODO - allow string?
+            case op_float:
+                pop_num();
+                if (vm_a.k == kind_float) push_f16(vm_a.f);
+                else push_float((float)vm_a.i);
+                break;
+
             case op_asc:    fn_asc(); break;
             case op_chr:    fn_chr(); break;
             case op_left:   fn_left(); break;

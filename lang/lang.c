@@ -22,7 +22,7 @@ const char* op_names[] = {
 
     "op_abs", "op_asc", "op_break",
     "op_chr", "op_else", "op_end",
-    "op_endif", "op_false", "op_func",
+    "op_endif", "op_false", "op_float", "op_func",
     "op_if", "op_input", "op_int",
     "op_left", "op_len", "op_print", "op_proc",
     "op_repeat", "op_return", "op_right",
@@ -105,6 +105,7 @@ const u8 keywords_emu[] = {
 };
 const u8 keywords_fnv[] = {
     op_false,    kw_const,      'f','a','l','s','e',
+    op_float,    kw_fn1,        'f','l','o','a','t',
     op_func,     kw_control,    'f','u','n','c',
     fail, 0
 };
@@ -179,6 +180,7 @@ void die(const char* msg)
 
 // Heap
 u16 heap_top;
+const u16 heap_max = 4096;
 u8 heap[4096];
 
 void heap_init()
@@ -188,7 +190,8 @@ void heap_init()
 
 u16 heap_alloc(u16 n)
 {
-    // TODO check for overflow
+    if (heap_top > heap_max - (n+2)) die("heap full");
+
     u16 p = heap_top;
     heap_top += n+2;
     heap[p++] = heap_top >> 8;
@@ -903,9 +906,9 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "a = 3;"
-        "b = -10;"
-        "print a+b, a-b, a*b;"
+        "a = 3.14;"
+        "b = 1;"
+        "print float(b), int(a);"
         "stop;"
     ;
 

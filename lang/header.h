@@ -23,7 +23,7 @@ enum {
     // Other keywords
     op_abs,     op_asc,     op_break,
     op_chr,     op_else,    op_end,
-    op_endif,   op_false,   op_func,
+    op_endif,   op_false,   op_float,   op_func,
     op_if,      op_input,   op_int,
     op_left,    op_len,     op_print,   op_proc,
     op_repeat,  op_return,  op_right,
