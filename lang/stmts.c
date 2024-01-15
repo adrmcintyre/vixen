@@ -21,6 +21,9 @@ u16 forward_jump_stack[forward_jump_max];
 u8 func_kind;
 u16 func_id;
 
+u8 slot_max = 64;
+u16 slot_stack[64];     // indexed by slot_num of active func
+
 void stmt_init()
 {
     control_sp = 0;
@@ -149,7 +152,7 @@ void resolve_forward_jump()
 
 void parse_func_or_proc(u8 op)
 {
-    if (control_sp != 0) parser_die("func/proc not allowed inside a control block");
+    if (control_sp != 0) parser_die("func/proc only allowed at top level");
 
     push_control(op);
     emit_forward_jump(op_jump);
@@ -183,11 +186,12 @@ void parse_func_or_proc(u8 op)
             u16 param_id; intern_ident(&param_id);
             if (heap[param_id+ident_slot_num] != 0xff) parser_die("repeated parameter name");
 
+            if (slot_num >= slot_max) die("too many local variables");
+
             heap[param_id+ident_slot_num] = slot_num;
+            slot_stack[slot_num] = param_id;
             slot_num += 1;
 
-            // TODO - some sort of stack for tracking id <-> slot association?
-            // TODO - (may need to undo some stuff at func end)
             if (lex_char(')')) break;
             if (!lex_char(',')) parser_die("missing ','");
         }
@@ -295,6 +299,16 @@ void parse_control_stmt(u8 op)
                 // TODO - compile error if some path does not end in a return.
                 emit_op(op_return_missing);
             }
+
+            // clear slot assignments
+            u8 slot_num = heap[func_id+ident_slot_count];
+            while(slot_num > 0) {
+                --slot_num;
+                u16 slot_id = slot_stack[slot_num];
+                heap[slot_id+ident_slot_num] = 0xff;
+            }
+
+            func_id = 0;
             func_kind = kind_fail;
             resolve_forward_jump();
             break;
@@ -353,8 +367,10 @@ void parse_stmt()
             else {
                 u8 slot_num = heap[id+ident_slot_num];
                 if (slot_num == 0xff) {
-                    slot_num = heap[func_id+ident_slot_count]++;
+                    slot_num = heap[func_id+ident_slot_count];
+                    heap[func_id+ident_slot_count]++;
                     heap[id+ident_slot_num] = slot_num;
+                    slot_stack[slot_num] = id;
                 }
                 emit_op(op_slot_set);
                 emit_byte(slot_num);
