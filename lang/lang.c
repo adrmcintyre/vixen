@@ -576,11 +576,31 @@ u16 lex_char(u8 ch)
     return 1;
 }
 
+u16 lex_comment()
+{
+    if (!lex_char('#')) return 0;
+
+    while(1) {
+        u8 ch = *input_ptr++;
+        if (ch == '\0' || ch == '\n') break;
+    }
+    return 1;
+}
+
+u16 lex_peek_stmt_end()
+{
+    lex_space();
+    u8 ch = *input_ptr;
+
+    if (ch==';' || ch=='\n' || ch=='#' || ch=='\0') return 1;
+    return 0;
+}
+
 // Returns 1 if currently at the end of the input stream.
 //
 // Returns 0 if there is more to consume.
 //
-u16 lex_eol()
+u16 lex_end_of_stream()
 {
     lex_space();
 
@@ -664,7 +684,6 @@ void parse_unops()
 //      <integer>
 //      <float>
 //      <string>
-//      // TODO? <char>
 u16 parse_literal()
 {
     u8 kind = lex_number();
@@ -896,13 +915,21 @@ void parse_line()
 {
     expr_init();
 
+    if (lex_char('\n')) return;
+    if (lex_comment()) return;
+
     parse_stmt();
-    if (!lex_char(';')) parser_die("missing ';'");
+
+    if (lex_comment()) return;
+    if (lex_char(';')) return;
+    if (lex_char('\n')) return;
+
+    parser_die("missing ';' or <end-of-line>");
 }
 
 void parse_finish()
 {
-    if (!lex_eol()) parser_die("unexpected characters at end of line");
+    if (!lex_end_of_stream()) parser_die("unexpected characters at end of line");
 
     if (control_sp != 0) parser_die("unfinished control block");
 }
@@ -910,11 +937,16 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "func overflow(x);"
-        "   x=overflow(1);"
-        "end;"
-        "a=overflow(x);"
-        "stop;"
+        "# a comment\n"
+        "func foo(x); y=123; end\n"
+        "func fact(x)\n"
+        "   y=99\n"
+        "   if x==0; return 1; endif\n"
+        "   return x*fact(x-1)\n"
+        "end\n"
+        "\n"
+        "print(fact(6)) # display result\n"
+        "stop\n"
     ;
 
     const u8 *p = (u8*) prog;

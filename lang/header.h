@@ -97,7 +97,7 @@ void emit_ident(u16 w);
 
 u16 lex_char(u8 ch);
 u16 lex_word();
-u16 lex_eol();
+u16 lex_peek_stmt_end();
 
 extern u8 kwop;
 extern u8 kwinfo;

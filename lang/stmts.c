@@ -278,7 +278,7 @@ void parse_control_stmt(u8 op)
     case op_return:
         if (func_kind == kind_fail) parser_die("'return' is not inside a func/proc");
         if (func_kind == kind_proc) {
-            if (!lex_eol()) parser_die("a proc cannot return a value");
+            if (!lex_peek_stmt_end()) parser_die("a proc cannot return a value");
             emit_op(op_return_proc);
         }
         else {
@@ -322,7 +322,7 @@ void parse_control_stmt(u8 op)
 //
 u8 parse_exprs()
 {
-    if (lex_eol()) return 0;
+    if (lex_peek_stmt_end()) return 0;
 
     u8 nargs = 0;
     parse_expr();
