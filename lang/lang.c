@@ -178,6 +178,12 @@ void die(const char* msg)
     exit(1);
 }
 
+void parser_die(const char* msg)
+{
+    fprintf(stderr, "PROGRAM ERROR: %s\n", msg);
+    exit(1);
+}
+
 // Heap
 u16 heap_top;
 const u16 heap_max = 4096;
@@ -374,7 +380,7 @@ u8 lex_number()
             nexp = 1;
             ch = *++p;
         }
-        if (nexp == 0) die("malformed number");
+        if (nexp == 0) parser_die("malformed number");
     }
 
     token_ptr = input_ptr;
@@ -420,9 +426,9 @@ u8 lex_string()
             else if (ch == 'n') str_char = '\n';
             else if (ch == '"') str_char = ch;
             else if (ch == '\\') str_char = ch;
-            else die("invalid string escape");
+            else parser_die("invalid string escape");
         }
-        if (ch == '\0') die("missing \"");
+        if (ch == '\0') parser_die("missing double quote \"");
         len++;
     }
 
@@ -708,7 +714,7 @@ u16 parse_paren_expr()
 
     pending_ops[pending_ops_sp++] = mark_op;
     parse_expr();
-    if (!lex_char(')')) die("expected ')'");
+    if (!lex_char(')')) parser_die("missing ')'");
 
     return 1;
 }
@@ -735,7 +741,7 @@ u16 parse_args()
             nargs += 1;
         }
         if (!lex_char(')')) {
-            die("expected ')'");
+            parser_die("missing ')'");
         }
     }
 
@@ -753,7 +759,7 @@ u16 parse_index_arg()
 
     pending_ops[pending_ops_sp++] = mark_op;
     parse_expr();
-    if (!lex_char(']')) die("expected ']'");
+    if (!lex_char(']')) parser_die("missing ']'");
     emit_op(op_index);
     
     return 1;
@@ -771,16 +777,16 @@ void parse_keyword_args()
         u8 op = kwop;
         u8 info = kwinfo;
         u16 nargs = parse_args();
-        if (nargs == 0) die("expected arguments");
-        if (nargs-1 < info) die("too few arguments");
-        if (nargs-1 > info) die("too many arguments");
+        if (nargs == 0) parser_die("missing arguments '(...)'");
+        if (nargs-1 < info) parser_die("too few arguments");
+        if (nargs-1 > info) parser_die("too many arguments");
         emit_op(op);
     }
     else if (kwinfo >= kw_cmd0 && kwinfo <= kw_cmd_any) {
-        die("unexpected command");
+        parser_die("command not allowed here");
     }
     else if (kwinfo == kw_control) {
-        die("unexpected control statement");
+        parser_die("control statement not allowed here");
     }
 }
 
@@ -799,7 +805,7 @@ void parse_terminal()
 
     if (parse_literal()) return;
 
-    if (!lex_word()) die("expected ident or literal");
+    if (!lex_word()) parser_die("expecting identifier or value");
 
     if (lookup_keyword()) {
         parse_keyword_args();
@@ -891,22 +897,23 @@ void parse_line()
     expr_init();
 
     parse_stmt();
-    if (!lex_char(';')) die("missing ;");
+    if (!lex_char(';')) parser_die("missing ';'");
 }
 
 void parse_finish()
 {
-    if (!lex_eol()) {
-        fprintf(stderr, "unexpected trailing material: %s\n", input_ptr);
-        exit(1);
-    }
-    // TODO - check control stack is empty
+    if (!lex_eol()) parser_die("unexpected characters at end of line");
+
+    if (control_sp != 0) parser_die("unfinished control block");
 }
 
 int main()
 {
     const char* prog =
-        "print float(\"123.456\");"
+        "func overflow(x);"
+        "   x=overflow(1);"
+        "end;"
+        "a=overflow(x);"
         "stop;"
     ;
 

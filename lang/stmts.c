@@ -36,7 +36,7 @@ void stmt_init()
 //
 void push_control(u8 op)
 {
-    if (control_sp == 32) die("too many nested control statements");
+    if (control_sp == 32) parser_die("too many nested control statements");
     control_stack[control_sp++] = op;
 }
 
@@ -53,7 +53,7 @@ u8 pop_control()
 //
 void begin_loop()
 {
-    if (begin_loop_sp == begin_loop_max) die("too many nested loops");
+    if (begin_loop_sp == begin_loop_max) parser_die("too many nested loops");
     begin_loop_stack[begin_loop_sp++] = (u16)(code_ptr-code_base);
 
     end_loop_stack[end_loop_sp++] = end_loop_count;
@@ -68,7 +68,7 @@ void begin_loop()
 u16 emit_end_loop_jump(u8 jump_op)
 {
     if (end_loop_sp == 0) return 0;
-    if (end_loop_sp == end_loop_max) die("control too complex");
+    if (end_loop_sp == end_loop_max) parser_die("control flow is too complicated");
     emit_op(jump_op);
     u16 ref = (u16)(code_ptr - code_base);
     end_loop_stack[end_loop_sp++] = ref >> 8;
@@ -105,7 +105,7 @@ void patch_forward_ref(u8 *ref_ptr)
 //
 void end_loop(u8 jump_op)
 {
-    if (begin_loop_sp == 0) die("not in a loop");
+    if (begin_loop_sp == 0) parser_die("unexpected end-of-loop statement");
 
     // TODO - swap following two code blocks and use same stack
 
@@ -131,7 +131,7 @@ void end_loop(u8 jump_op)
 //
 void emit_forward_jump(u8 jump_op)
 {
-    if (forward_jump_sp == forward_jump_max) die("control too complex");
+    if (forward_jump_sp == forward_jump_max) parser_die("control flow is too complicated");
     emit_op(jump_op);
     forward_jump_stack[forward_jump_sp++] = (u16)(code_ptr - code_base);
     emit_word(0);   // not yet resolved
@@ -142,29 +142,29 @@ void emit_forward_jump(u8 jump_op)
 //
 void resolve_forward_jump()
 {
-    if (forward_jump_sp == 0) die("not in a control structure");
+    if (forward_jump_sp == 0) parser_die("not in a control block");
     u16 ref = forward_jump_stack[--forward_jump_sp];
     patch_forward_ref(code_base + ref);
 }
 
-void parse_func(u8 op)
+void parse_func_or_proc(u8 op)
 {
-    if (control_sp != 0) die("func/proc not allowed inside control block");
+    if (control_sp != 0) parser_die("func/proc not allowed inside a control block");
 
     push_control(op);
     emit_forward_jump(op_jump);
 
     func_kind = (op==op_func) ? kind_func : kind_proc;
 
-    if (!lex_word()) die("expected name");
-    if (lookup_keyword()) die("unexpected reserved word");
+    if (!lex_word()) parser_die("missing name");
+    if (lookup_keyword()) parser_die("reserved word cannot be used here");
 
     // first time we've seen this, or it has only been referenced before
     if (intern_ident(&func_id) || heap[func_id+ident_kind] == kind_fail) {
         heap[func_id+ident_kind] = func_kind;
     }
     else {
-        die("already exists");
+        parser_die("name already in use");
     }
 
     u16 func_addr = (u16)(code_ptr - code_base);
@@ -173,15 +173,15 @@ void parse_func(u8 op)
     heap[func_id+ident_arg_count] = 0;
     heap[func_id+ident_slot_count] = 0;
 
-    if (!lex_char('(')) die("missing (");
+    if (!lex_char('(')) parser_die("missing '('");
 
     u8 slot_num = 0;
     if (!lex_char(')')) {
         while(1) {
-            if (!lex_word()) die("expected parameter name");
-            if (lookup_keyword()) die("unexpected reserved word");
+            if (!lex_word()) parser_die("missing parameter name");
+            if (lookup_keyword()) parser_die("reserved word cannot be used here");
             u16 param_id; intern_ident(&param_id);
-            if (heap[param_id+ident_slot_num] != 0xff) die("repeated parameter name");
+            if (heap[param_id+ident_slot_num] != 0xff) parser_die("repeated parameter name");
 
             heap[param_id+ident_slot_num] = slot_num;
             slot_num += 1;
@@ -189,7 +189,7 @@ void parse_func(u8 op)
             // TODO - some sort of stack for tracking id <-> slot association?
             // TODO - (may need to undo some stuff at func end)
             if (lex_char(')')) break;
-            if (!lex_char(',')) die("expected ,");
+            if (!lex_char(',')) parser_die("missing ','");
         }
     }
     heap[func_id+ident_arg_count] = slot_num;
@@ -210,7 +210,7 @@ void parse_control_stmt(u8 op)
 
     case op_else:
         // if <expr> ... |else| ... endif
-        if (pop_control() != op_if) die("else without if");
+        if (pop_control() != op_if) parser_die("'else' without 'if'");
         push_control(op_else);
 
         // account for following jump instruction
@@ -225,7 +225,7 @@ void parse_control_stmt(u8 op)
         {
             // if <expr> ... [else] ... |endif|
             u8 popped = pop_control();
-            if (popped != op_if && popped != op_else) die("endif without if");
+            if (popped != op_if && popped != op_else) parser_die("'endif' without 'if'");
 
             resolve_forward_jump();
             break;
@@ -241,7 +241,7 @@ void parse_control_stmt(u8 op)
 
     case op_wend:
         // while <expr> ... |wend|
-        if (pop_control() != op_while) die("wend without while");
+        if (pop_control() != op_while) parser_die("'wend' without 'while'");
         end_loop(op_jump);
         break;
 
@@ -253,7 +253,7 @@ void parse_control_stmt(u8 op)
 
     case op_until:
         // repeat ... |until <expr>|
-        if (pop_control() != op_repeat) die("until without repeat");
+        if (pop_control() != op_repeat) parser_die("'until' without 'repeat'");
         parse_expr();
         end_loop(op_jfalse);
         break;
@@ -263,18 +263,18 @@ void parse_control_stmt(u8 op)
         //
         // repeat ... |break| ... until <expr>
         //
-        if (!emit_end_loop_jump(op_jump)) die("break not in a loop");
+        if (!emit_end_loop_jump(op_jump)) parser_die("'break' is not in a loop");
         break;
 
     case op_proc:
     case op_func:
-        parse_func(op);
+        parse_func_or_proc(op);
         break;
 
     case op_return:
-        if (func_kind == kind_fail) die("return not inside func/proc");
+        if (func_kind == kind_fail) parser_die("'return' is not inside a func/proc");
         if (func_kind == kind_proc) {
-            if (!lex_eol()) die("proc cannot return a value");
+            if (!lex_eol()) parser_die("a proc cannot return a value");
             emit_op(op_return_proc);
         }
         else {
@@ -286,7 +286,7 @@ void parse_control_stmt(u8 op)
     case op_end:
         {
             u8 k = pop_control();
-            if (k != op_func && k != op_proc) die("end not after a func/proc");
+            if (k != op_func && k != op_proc) parser_die("'end' not after a func/proc");
 
             if (func_kind == kind_proc) {
                 emit_op(op_return_proc);
@@ -322,7 +322,7 @@ u8 parse_exprs()
 
 void parse_stmt()
 {
-    if (!lex_word()) die("expected statement");
+    if (!lex_word()) parser_die("bad statement");
 
     if (lookup_keyword()) {
         u8 opcode = kwop;
@@ -339,7 +339,7 @@ void parse_stmt()
             parse_control_stmt(opcode);
         }
         else {
-            die("expected command or control statement");
+            parser_die("expected a command or control statement");
         }
     }
     else {

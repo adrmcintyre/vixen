@@ -83,6 +83,8 @@ extern u8 *code_ptr;
 extern u8 heap[];
 
 void die(const char* msg);
+
+void vm_die(const char* msg);
 u16 vm_run(const u8* vm_pc_base);
 u16 f16_from_float(float f);
 float f16_to_float(u16 u);
@@ -128,6 +130,8 @@ enum {
 
 u16 heap_alloc(u16 n);
 
+u8 control_sp;
+void parser_die(const char* msg);
 void parse_expr();
 void parse_stmt();
 

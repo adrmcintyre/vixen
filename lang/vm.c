@@ -9,9 +9,6 @@ typedef short i16;
 
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
 // TODO - heap cleanup (e.g. ref counts)
-// TODO - check for resource overflows - i.e. stack / heap
-// TODO - distinguish parse / runtime failures
-// TODO - auto-convert floats <=> ints
 
 typedef struct
 {
@@ -32,6 +29,16 @@ u16 vm_pc;
 
 const u16 stack_max = 1536;
 u8 vm_stack[1536];
+
+//------------------------------------------------------------------------------
+// Utilities
+//
+
+void vm_die(const char* msg)
+{
+    printf("RUNTIME ERROR: %s!\n", msg);
+    exit(1);
+}
 
 //------------------------------------------------------------------------------
 // Instruction stream
@@ -111,7 +118,7 @@ void push_val(u8 kind, u16 value)
 
 void vm_check_stack(u16 n)
 {
-    if (vm_sp > stack_max-n) die("stack overflow");
+    if (vm_sp > stack_max-n) vm_die("stack overflow");
 }
 
 void push_val_checked(u8 kind, u16 value)
@@ -150,19 +157,19 @@ void pop_val()
 void pop_bool()
 {
     pop_val();
-    if (vm_a.k != kind_bool) die("expected boolean");
+    if (vm_a.k != kind_bool) vm_die("expected boolean");
 }
 
 void pop_int()
 {
     pop_val();
-    if (vm_a.k != kind_int) die("expected integer");
+    if (vm_a.k != kind_int) vm_die("expected integer");
 }
 
 void pop_float()
 {
     pop_val();
-    if (vm_a.k != kind_float) die("expected float");
+    if (vm_a.k != kind_float) vm_die("expected float");
 }
 
 void pop_bools()
@@ -186,7 +193,7 @@ void pop_num()
         case kind_float:
             break;
         default:
-            die("expected float or integer");
+            vm_die("expected float or integer");
     }
 }
 
@@ -218,7 +225,7 @@ void pop_str()
             break;
 
         default:
-            die("expected string");
+            vm_die("expected string");
     }
 }
 
@@ -244,7 +251,7 @@ void pop_vals()
     u8 isstr2 = (vm_b.k == kind_str_0 || vm_b.k == kind_str_1 || vm_b.k == kind_str_n);
     if (isstr1 && isstr2) return;
 
-    die("incompatible types");
+    vm_die("incompatible types");
 }
 
 // Takes:
@@ -364,7 +371,7 @@ void vm_relop(u8 op)
         }
 
         default:
-            die("non-comparable");
+            vm_die("non-comparable");
     }
 
     u16 b;
@@ -454,10 +461,10 @@ void fn_int()
                     }
                 }
             }
-            die("not a valid integer");
+            vm_die("not a valid integer");
         }
 
-        default: die("expected number or string");
+        default: vm_die("expected number or string");
     }
 }
 
@@ -493,10 +500,10 @@ void fn_float()
                     return;
                 }
             }
-            die("not a valid number");
+            vm_die("not a valid number");
         }
 
-        default: die("expected number or string");
+        default: vm_die("expected number or string");
     }
 }
 
@@ -629,7 +636,7 @@ void fn_left()
 {
     pop_int();
     i16 ni = vm_a.i;
-    if (ni < 0) die("negative count");
+    if (ni < 0) vm_die("negative count");
 
     vm_substr(0, (u16)ni);
 }
@@ -638,7 +645,7 @@ void fn_right()
 {
     pop_int();
     i16 ni = vm_a.i;
-    if (ni < 0) die("negative count");
+    if (ni < 0) vm_die("negative count");
     u16 n = (u16) ni;
 
     pop_str();
@@ -667,11 +674,11 @@ void fn_substr()
 {
     pop_int();
     i16 ni = vm_a.i;
-    if (ni < 0) die("negative count");
+    if (ni < 0) vm_die("negative count");
 
     pop_int();
     i16 posi = vm_a.i;
-    if (posi < 0) die("negative offset");
+    if (posi < 0) vm_die("negative offset");
 
     vm_substr((u16)posi, (u16)ni);
 }
@@ -835,11 +842,11 @@ void vm_call(u8 kind)
     const u8 *func = &heap[id];
 
     u8 k = func[ident_kind];
-    if (k == kind_fail) die("func/proc not defined");
-    if (k != kind) die("bad call");
+    if (k == kind_fail) vm_die("func/proc not defined");
+    if (k != kind) vm_die("bad call");
 
     if (func[ident_arg_count] != nargs) {
-        die("wrong argument count");
+        vm_die("wrong argument count");
     }
 
     u16 old_fp = vm_fp;
@@ -926,7 +933,7 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_beor:   pop_ints(); push_int(vm_a.u ^ vm_b.u); break;
 
             // shift operators
-            case op_asr:    die("asr: unimplemented"); break;
+            case op_asr:    vm_die("asr: unimplemented"); break;
             case op_lsr:    pop_ints(); push_int(vm_a.u >> vm_b.i); break;   // TODO special treatment for -ve / +ve shifts?
             case op_lsl:    pop_ints(); push_int(vm_a.u << vm_b.i); break;   // TODO special treatment for -ve / +ve shifts?
 
@@ -958,11 +965,11 @@ u16 vm_run(const u8 *vm_pc_base)
 
             // built-in procedures
             case op_print:  proc_print(); break;
-            case op_input:  die("input: unimplemented"); break;
+            case op_input:  vm_die("input: unimplemented"); break;
             case op_stop:   return 1;
 
             // accessors
-            case op_index:      die("index: unimplemented"); break;
+            case op_index:      vm_die("index: unimplemented"); break;
             case op_ident_get:  vm_ident_get(); break;
             case op_ident_set:  vm_ident_set(); break;
             case op_slot_get:   vm_slot_get(); break;
@@ -978,7 +985,7 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_call_func:      vm_call(kind_func); break;
             case op_return_func:    vm_return_func(); break;
             case op_return_proc:    vm_return_proc(); break;
-            case op_return_missing: die("missing return"); break;
+            case op_return_missing: vm_die("missing return"); break;
 
             // jumps
             case op_jump: {
@@ -994,7 +1001,7 @@ u16 vm_run(const u8 *vm_pc_base)
             }
 
             default:
-                die("unknown opcode");
+                vm_die("unknown opcode");
                 break;
         }
     }
