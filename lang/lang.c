@@ -164,8 +164,8 @@ const u8 binops[] = {
 
 const u8 prec_max  = 0xf;
 const u8 prec_mark = 0x1;
-const u16 mark_op = mark<<8 | 0x21;
-const u16 fail_op = fail<<8 | 0x0f;
+const u16 opdata_mark = mark<<8 | 0x21;
+const u16 opdata_fail = fail<<8 | 0x0f;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Utilities
@@ -493,22 +493,22 @@ u16 lex_word()
     return 1;
 }
 
-// Returns hi(result)=op, lo(result)=opinfo if an operator
+// Returns hi(result)=opcode, lo(result)=opinfo if an operator
 // is recognised, setting token_ptr and advancing input_ptr.
 //
-// Returns fail_op, leaving input_ptr unchanged on failure.
+// Returns opdata_fail, leaving input_ptr unchanged on failure.
 //
 u16 lex_op(const u8* ptr)
 {
     const u8 *inp;
-    u16 op;
+    u16 opdata;
 
 candidate_loop:
     inp = input_ptr;
     
-    op = (*ptr++) << 8;
-    op |= (*ptr++);
-    if (op == 0) return fail_op;
+    opdata = (*ptr++) << 8;
+    opdata |= (*ptr++);
+    if (opdata == 0) return opdata_fail;
 
     u8 ch = *ptr;
     int alpha = (ch >= 'a' && ch <= 'z');
@@ -518,21 +518,21 @@ candidate_loop:
         if (ch & 0x80) {
             if (alpha && ch >= 'a' && ch <= 'z') goto candidate_loop;
             input_ptr = inp;
-            return op;
+            return opdata;
         }
     }
 
     // skip to next entry
     while((ch & 0x80) == 0) ch = *++ptr;
 
-    if (ch == fail) return fail_op;
+    if (ch == fail) return opdata_fail;
     goto candidate_loop;
 }
 
 // Returns hi(result)=op, lo(result)=opinfo if a unary operator
 // is recognised, setting token_ptr and advancing input_ptr.
 //
-// Returns fail_op, leaving input_ptr unchanged on failure.
+// Returns opdata_fail, leaving input_ptr unchanged on failure.
 //
 u16 lex_unop()
 {
@@ -543,7 +543,7 @@ u16 lex_unop()
     u8 ch = *input_ptr;
     if (ch == '-' || ch == '+') {
         ch = *(input_ptr+1);
-        if ((ch >= '0' && ch <= '9') || ch == '.') return fail_op;
+        if ((ch >= '0' && ch <= '9') || ch == '.') return opdata_fail;
     }
     return lex_op(unops);
 }
@@ -551,7 +551,7 @@ u16 lex_unop()
 // Returns hi(result)=op, lo(result)=opinfo if a binary operator
 // is recognised, setting token_ptr and advancing input_ptr.
 //
-// Returns fail_op, leaving input_ptr unchanged on failure.
+// Returns opdata_fail, leaving input_ptr unchanged on failure.
 //
 u16 lex_binop()
 {
@@ -654,9 +654,9 @@ void parse_expr(); // forward decl
 void parse_unops()
 {
     while(1) {
-        u16 op = lex_unop();
-        if ((op>>8) == fail) return;
-        pending_ops[pending_ops_sp++] = op;
+        u16 opdata = lex_unop();
+        if ((opdata>>8) == fail) return;
+        pending_ops[pending_ops_sp++] = opdata;
     }
 }
 
@@ -712,7 +712,7 @@ u16 parse_paren_expr()
 {
     if (!lex_char('(')) return 0;
 
-    pending_ops[pending_ops_sp++] = mark_op;
+    pending_ops[pending_ops_sp++] = opdata_mark;
     parse_expr();
     if (!lex_char(')')) parser_die("missing ')'");
 
@@ -732,11 +732,11 @@ u16 parse_args()
 
     u16 nargs = 1;
     if (!lex_char(')')) {
-        pending_ops[pending_ops_sp++] = mark_op;
+        pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
         nargs += 1;
         while(lex_char(',')) {
-            pending_ops[pending_ops_sp++] = mark_op;
+            pending_ops[pending_ops_sp++] = opdata_mark;
             parse_expr();
             nargs += 1;
         }
@@ -757,7 +757,7 @@ u16 parse_index_arg()
 {
     if (!lex_char('[')) return 0;
 
-    pending_ops[pending_ops_sp++] = mark_op;
+    pending_ops[pending_ops_sp++] = opdata_mark;
     parse_expr();
     if (!lex_char(']')) parser_die("missing ']'");
     emit_op(op_index);
@@ -856,27 +856,27 @@ void parse_expr()
         parse_terminal();
 
         while(1) {
-            u16 op = lex_binop();
-            u8 prec = op & 0x0f;
+            u16 opdata = lex_binop();
+            u8 prec = opdata & 0x0f;
 
             while(pending_ops_sp > 0) {
-                u16 p_op = pending_ops[pending_ops_sp-1]; 
-                u8 p_prec = p_op & 0x0f;
-                if ((prec > p_prec) && (prec < prec_max)) break;
+                u16 prev_opdata = pending_ops[pending_ops_sp-1]; 
+                u8 prev_prec = prev_opdata & 0x0f;
+                if ((prec > prev_prec) && (prec < prec_max)) break;
 
                 pending_ops_sp -= 1;
 
                 // is this the mark?
-                if (p_prec == prec_mark) break;
+                if (prev_prec == prec_mark) break;
 
-                emit_op(p_op>>8);
+                emit_op(prev_opdata>>8);
             }
 
             if (prec == prec_max) return;
 
             // check arity
-            if ((op & 0xf0) > 0x10) {
-                pending_ops[pending_ops_sp++] = op;
+            if ((opdata & 0xf0) > 0x10) {
+                pending_ops[pending_ops_sp++] = opdata;
                 break;
             }
         }
