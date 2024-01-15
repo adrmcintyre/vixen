@@ -29,6 +29,8 @@ value vm_b;
 u16 vm_fp;
 u16 vm_sp;
 u16 vm_pc;
+
+const u16 stack_max = 1536;
 u8 vm_stack[1536];
 
 //------------------------------------------------------------------------------
@@ -105,6 +107,18 @@ void push_val(u8 kind, u16 value)
     vm_stack[vm_sp+1] = value >> 8;
     vm_stack[vm_sp+2] = value & 0xff;
     vm_sp += 3;
+}
+
+void vm_check_stack(u16 n)
+{
+    if (vm_sp > stack_max-n) die("stack overflow");
+}
+
+void push_val_checked(u8 kind, u16 value)
+{
+    vm_check_stack(3);
+
+    push_val(kind, value);
 }
 
 u8 pop_byte()
@@ -781,6 +795,8 @@ void vm_ident_set()
 
 void vm_ident_get()
 {
+    vm_check_stack(3);
+
     u16 id = fetch_word();
     u8 k  = heap[id+ident_kind];
     u8 hi = heap[id+ident_val+0];
@@ -799,6 +815,8 @@ void vm_slot_set()
 
 void vm_slot_get()
 {
+    vm_check_stack(3);
+
     u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
     u8 k  = slot[0];
     u8 hi = slot[1];
@@ -827,7 +845,10 @@ void vm_call(u8 kind)
     u16 old_fp = vm_fp;
     u16 old_sp = vm_sp - 3 * nargs;
     vm_fp = vm_sp - 3 * nargs;
-    vm_sp = vm_fp + 3 * func[ident_slot_count];
+    vm_sp = vm_fp;
+
+    vm_check_stack(6 + 3 * func[ident_slot_count]);
+    vm_sp = vm_sp + 3 * func[ident_slot_count];
 
     push_word(old_fp);
     push_word(old_sp);
@@ -946,11 +967,11 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_ident_set:  vm_ident_set(); break;
             case op_slot_get:   vm_slot_get(); break;
             case op_slot_set:   vm_slot_set(); break;
-            case op_lit_int:    push_int((i16)fetch_word()); break;
-            case op_lit_float:  push_f16(fetch_word()); break;
-            case op_lit_str_0:  push_val(kind_str_0, 0); break;
-            case op_lit_str_1:  push_val(kind_str_1, fetch_byte()); break;
-            case op_lit_str_n:  push_val(kind_str_n, fetch_word()); break;
+            case op_lit_int:    push_val_checked(kind_int, fetch_word()); break;
+            case op_lit_float:  push_val_checked(kind_float, fetch_word()); break;
+            case op_lit_str_0:  push_val_checked(kind_str_0, 0); break;
+            case op_lit_str_1:  push_val_checked(kind_str_1, fetch_byte()); break;
+            case op_lit_str_n:  push_val_checked(kind_str_n, fetch_word()); break;
 
             // call + return
             case op_call_proc:      vm_call(kind_proc); break;
