@@ -906,9 +906,7 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "a = 3.14;"
-        "b = 1;"
-        "print float(b), int(a);"
+        "print float(\"123.456\");"
         "stop;"
     ;
 
