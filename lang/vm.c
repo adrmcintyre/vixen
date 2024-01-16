@@ -108,6 +108,14 @@ void push_float(float f)
     vm_sp += 3;
 }
 
+void push_array(u16 a)
+{
+    vm_stack[vm_sp+0] = kind_array;
+    vm_stack[vm_sp+1] = a>>8;
+    vm_stack[vm_sp+2] = a&0xff;
+    vm_sp += 3;
+}
+
 void push_val(u8 kind, u16 value)
 {
     vm_stack[vm_sp+0] = kind;
@@ -227,6 +235,12 @@ void pop_str()
         default:
             vm_die("expected string");
     }
+}
+
+void pop_array()
+{
+    pop_val();
+    if (vm_a.k != kind_array) vm_die("expected array");
 }
 
 void pop_vals()
@@ -737,51 +751,74 @@ void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len)
 // Built-in procedures
 //
 
+void vm_print(value val)
+{
+    switch(val.k) {
+        case kind_bool:
+            printf(val.u ? "true" : "false");
+            break;
+
+        case kind_int:
+            printf("%d", val.i);
+            break;
+
+        case kind_float:
+            printf("%f", f16_to_float(val.f));
+            break;
+
+        case kind_str_0:
+            break;
+
+        case kind_str_1:
+            printf("%c", val.u & 0xff);
+            break;
+
+        case kind_str_n:
+        {
+            const u8 *str = heap + val.u;
+            u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+            fwrite(str + str_data, 1, len, stdout);
+            break;
+        }
+
+        case kind_array:
+        {
+            const u8 *array = heap + val.u;
+            u8 len = array[array_len];
+            const u8 *p = &array[array_data];
+            putchar('[');
+            while(len > 0) {
+                value elt;
+                elt.k = p[0];
+                elt.u = p[1]<<8 | p[2];
+                vm_print(elt);
+                p += 3;
+                len -= 1;
+                if (len > 0) putchar(',');
+            }
+            putchar(']');
+            break;
+        }
+
+        default:
+            printf("%02x:%04x", val.k, val.u);
+            break;
+    }
+}
+
 void proc_print()
 {
     u8 n = fetch_byte();
     vm_sp -= 3*n;
-    const u8 *ptr = &vm_stack[vm_sp];
+    const u8 *p = &vm_stack[vm_sp];
     while(n--) {
-        u8 k  = *(ptr+0);
-        u8 hi = *(ptr+1);
-        u8 lo = *(ptr+2);
-        vm_a.k = k;
-        vm_a.u = (hi<<8) | lo;
-        ptr += 3;
+        value val;
+        val.k = p[0];
+        val.u = p[1]<<8 | p[2];
+        p += 3;
 
-        switch(vm_a.k) {
-            case kind_bool:
-                printf(vm_a.u ? "true" : "false");
-                break;
+        vm_print(val);
 
-            case kind_int:
-                printf("%d", vm_a.i);
-                break;
-
-            case kind_float:
-                printf("%f", f16_to_float(vm_a.f));
-                break;
-
-            case kind_str_0:
-                break;
-
-            case kind_str_1:
-                printf("%c", vm_a.u & 0xff);
-                break;
-
-            case kind_str_n:
-            {
-                const u8 *str = heap + vm_a.u;
-                u16 len = str[str_len_hi]<<8 | str[str_len_lo];
-                fwrite(str + str_data, 1, len, stdout);
-                break;
-            }
-
-            default:
-                printf("%02x:%04x", vm_a.k, vm_a.u);
-                break;
-        }
         if (n > 0) printf(" ");
     }
     printf("\n");
@@ -829,6 +866,90 @@ void vm_slot_get()
     u8 hi = slot[1];
     u8 lo = slot[2];
     push_val(k, (hi<<8)|lo);
+}
+
+void vm_lit_array()
+{
+    u8 nargs = fetch_byte();
+    u16 array = heap_alloc(array_data + nargs * 3);
+    u8 *p = heap+array;
+    p[array_len] = nargs;
+    p += array_data;
+    p += nargs*3;
+
+    while(nargs > 0) {
+        --nargs;
+        p -= 3;
+        pop_val();
+        p[0] = vm_a.k;
+        p[1] = vm_a.u >> 8;
+        p[2] = vm_a.u & 0xff;
+    }
+
+    push_array(array);
+}
+
+// TODO allow indexing of strings
+void vm_index()
+{
+    pop_int();
+    vm_b = vm_a;
+    pop_array();
+
+    u8 *p = heap+vm_a.u;
+    // TODO - 16 bit array lengths
+    u8 len = p[array_len];
+    p += array_data;
+
+    i16 index = vm_b.i;
+    if (index < 0) index += len;
+    if (index < 0 || index >= len) die("array index out of range");
+
+    p += 3 * index;
+    
+    u8 k = p[0];
+    u16 val = p[1]<<8 | p[2];
+    push_val(k, val);
+}
+
+// TODO allow slicing of strings
+void vm_slice(u8 has_start, u8 has_end)
+{
+    i16 start = 0;
+    i16 end = 32767;
+    if (has_end) {
+        pop_int();
+        end = vm_a.i;
+    }
+    if (has_start) {
+        pop_int();
+        start = vm_a.i;
+    }
+    pop_array();
+
+    u8 *p = heap+vm_a.u;
+    u8 len = p[array_len];
+    p += array_data;
+
+    if (start < 0) start += len;
+    if (end < 0) end += len;
+
+    if (start < 0) start = 0;
+    else if (start >= len) start = len;
+
+    if (end < start) end = start;
+    if (end >= len) end = len;
+
+    u16 len2 = end-start;
+
+    u16 array2 = heap_alloc(array_data + len2 * 3);
+    u8 *q = heap+array2;
+    q[array_len] = len2;
+    q += array_data;
+
+    memcpy(q, p + start*3, len2*3);
+
+    push_array(array2);
 }
 
 //------------------------------------------------------------------------------
@@ -969,7 +1090,6 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_stop:   return 1;
 
             // accessors
-            case op_index:      vm_die("index: unimplemented"); break;
             case op_ident_get:  vm_ident_get(); break;
             case op_ident_set:  vm_ident_set(); break;
             case op_slot_get:   vm_slot_get(); break;
@@ -979,6 +1099,13 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_lit_str_0:  push_val_checked(kind_str_0, 0); break;
             case op_lit_str_1:  push_val_checked(kind_str_1, fetch_byte()); break;
             case op_lit_str_n:  push_val_checked(kind_str_n, fetch_word()); break;
+
+            case op_lit_array:      vm_lit_array(); break;
+            case op_index:          vm_index(); break;
+            case op_slice:          vm_slice(1, 1); break;
+            case op_slice_start:    vm_slice(1, 0); break;
+            case op_slice_end:      vm_slice(0, 1); break;
+            case op_slice_empty:    vm_slice(0, 0); break;
 
             // call + return
             case op_call_proc:      vm_call(kind_proc); break;

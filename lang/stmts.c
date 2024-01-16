@@ -320,7 +320,7 @@ void parse_control_stmt(u8 op)
 //
 // Returns the number of expressions.
 //
-u8 parse_exprs()
+u8 parse_cmd_args()
 {
     if (lex_peek_stmt_end()) return 0;
 
@@ -345,7 +345,7 @@ void parse_stmt()
         }
         else if (kwinfo == kw_cmd_any) {
             // TODO check arg counts
-            u8 nargs = parse_exprs();
+            u8 nargs = parse_cmd_args();
             emit_op(opcode);
             emit_byte(nargs);
         }
@@ -377,7 +377,7 @@ void parse_stmt()
             }
         }
         else {
-            u8 nargs = parse_exprs();
+            u8 nargs = parse_cmd_args();
             emit_op(op_call_proc);
             emit_byte(nargs);
             emit_ident(id);

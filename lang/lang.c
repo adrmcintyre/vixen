@@ -31,6 +31,10 @@ const char* op_names[] = {
     "op_until", "op_wend", "op_while",
 
     "op_index",
+    "op_slice",
+    "op_slice_start",
+    "op_slice_end",
+    "op_slice_empty",
     "op_call_proc",
     "op_call_func",
     "op_ident_get",
@@ -42,6 +46,7 @@ const char* op_names[] = {
     "op_lit_str_0",
     "op_lit_str_1",
     "op_lit_str_n",
+    "op_lit_array",
     "op_jump",
     "op_jfalse",
     "op_return_func",
@@ -724,6 +729,38 @@ u16 parse_literal()
     }
 }
 
+// Parses an array literal [] or [<expr>, ...], emits the expressions and 
+// operator to construct the array.
+//
+// Returns 0 if the input does not start with '['.
+//
+u16 parse_array()
+{
+    if (!lex_char('[')) {
+        return 0;
+    }
+
+    u16 nargs = 0;
+    if (!lex_char(']')) {
+        pending_ops[pending_ops_sp++] = opdata_mark;
+        parse_expr();
+        nargs += 1;
+        while(lex_char(',')) {
+            pending_ops[pending_ops_sp++] = opdata_mark;
+            parse_expr();
+            nargs += 1;
+        }
+        if (!lex_char(']')) {
+            parser_die("missing ']'");
+        }
+    }
+
+    emit_op(op_lit_array);
+    emit_byte(nargs);
+
+    return 1;
+}
+
 // Parses a bracketed expression (<expr>), emitting it and returning 1.
 // Returns 0 if the input does not start with '('.
 //
@@ -767,8 +804,13 @@ u16 parse_args()
     return nargs;
 }
 
-// Parses [<expr>], emits the expression and an index op
-// and returns 1.
+// Parses and index expression in one of these forms, and returns 1.
+//
+// [index]
+// [start:end]
+// [start:]
+// [:end]
+// [:]
 //
 // Returns 0 if the input does not start with '['.
 //
@@ -776,10 +818,42 @@ u16 parse_index_arg()
 {
     if (!lex_char('[')) return 0;
 
-    pending_ops[pending_ops_sp++] = opdata_mark;
-    parse_expr();
+    if (!lex_char(':')) {
+        pending_ops[pending_ops_sp++] = opdata_mark;
+        parse_expr();
+        if (lex_char(']')) {
+            // [index]
+            emit_op(op_index);
+            return 1;
+        }
+        else if (!lex_char(':')) {
+            parser_die("missing ']'");
+        }
+        else if (lex_char(']')) {
+            // [start:]
+            emit_op(op_slice_start);
+            return 1;
+        }
+        else {
+            // [start:end]
+            pending_ops[pending_ops_sp++] = opdata_mark;
+            parse_expr();
+            emit_op(op_slice);
+        }
+    }
+    else if (lex_char(']')) {
+        // [:]
+        emit_op(op_slice_empty);
+        return 1;
+    }
+    else {
+        // [:end]
+        pending_ops[pending_ops_sp++] = opdata_mark;
+        parse_expr();
+        emit_op(op_slice_end);
+    }
+
     if (!lex_char(']')) parser_die("missing ']'");
-    emit_op(op_index);
     
     return 1;
 }
@@ -823,6 +897,8 @@ void parse_terminal()
     if (parse_paren_expr()) return;
 
     if (parse_literal()) return;
+
+    if (parse_array()) return;
 
     if (!lex_word()) parser_die("expecting identifier or value");
 
@@ -937,15 +1013,8 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "# a comment\n"
-        "func foo(x); y=123; end\n"
-        "func fact(x)\n"
-        "   y=99\n"
-        "   if x==0; return 1; endif\n"
-        "   return x*fact(x-1)\n"
-        "end\n"
-        "\n"
-        "print(fact(6)) # display result\n"
+        "foo = [0,1,2,3,4,5,6,7,8,9,10]\n"
+        "print foo[-2:], foo[:-2]\n"
         "stop\n"
     ;
 

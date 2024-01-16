@@ -33,6 +33,10 @@ enum {
 
     // internal ops
     op_index,
+    op_slice,
+    op_slice_start,
+    op_slice_end,
+    op_slice_empty,
     op_call_proc,
     op_call_func,
     op_ident_get,
@@ -44,6 +48,7 @@ enum {
     op_lit_str_0,
     op_lit_str_1,
     op_lit_str_n,
+    op_lit_array,
     op_jump,
     op_jfalse,
     op_return_func,
@@ -59,8 +64,9 @@ enum {
     kind_str_0 = 4,
     kind_str_1 = 5,
     kind_str_n = 6,
-    kind_proc  = 7,
-    kind_func  = 8,
+    kind_array = 7,
+    kind_proc  = 8,
+    kind_func  = 9
 };
 
 enum {
@@ -126,6 +132,11 @@ enum {
     str_len_hi = 0,
     str_len_lo = 1,
     str_data   = 2
+};
+
+enum {
+    array_len = 0,
+    array_data = 1
 };
 
 u16 heap_alloc(u16 n);
