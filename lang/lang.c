@@ -35,6 +35,9 @@ const char* op_names[] = {
     "op_slice_start",
     "op_slice_end",
     "op_slice_empty",
+    "op_ident_set_indexed",
+    "op_slot_set_indexed",
+
     "op_call_proc",
     "op_call_func",
     "op_ident_get",
@@ -1013,8 +1016,12 @@ void parse_finish()
 int main()
 {
     const char* prog =
-        "foo = [0,1,2,3,4,5,6,7,8,9,10]\n"
-        "print foo[-2:], foo[:-2]\n"
+        "proc blah(arr)\n"
+        "   arr[2] = 99\n"
+        "end\n"
+        "foo = [4,5,6,7,8,9,10,11]\n"
+        "blah foo\n"
+        "print foo\n"
         "stop\n"
     ;
 

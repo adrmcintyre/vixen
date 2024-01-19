@@ -37,6 +37,9 @@ enum {
     op_slice_start,
     op_slice_end,
     op_slice_empty,
+    op_ident_set_indexed,
+    op_slot_set_indexed,
+
     op_call_proc,
     op_call_func,
     op_ident_get,

@@ -334,6 +334,26 @@ u8 parse_cmd_args()
     return nargs;
 }
 
+void parse_assign(u16 id, u16 is_indexed)
+{
+    parse_expr();
+    if (func_kind == kind_fail) {
+        emit_op(is_indexed ? op_ident_set_indexed : op_ident_set);
+        emit_ident(id);
+    }
+    else {
+        u8 slot_num = heap[id+ident_slot_num];
+        if (slot_num == 0xff) {
+            slot_num = heap[func_id+ident_slot_count];
+            heap[func_id+ident_slot_count]++;
+            heap[id+ident_slot_num] = slot_num;
+            slot_stack[slot_num] = id;
+        }
+        emit_op(is_indexed ? op_slot_set_indexed : op_slot_set);
+        emit_byte(slot_num);
+    }
+}
+
 void parse_stmt()
 {
     if (!lex_word()) parser_die("bad statement");
@@ -358,23 +378,14 @@ void parse_stmt()
     }
     else {
         u16 id; intern_ident(&id);
-        if (lex_char('=')) {
+        if (lex_char('[')) {
             parse_expr();
-            if (func_kind == kind_fail) {
-                emit_op(op_ident_set);
-                emit_ident(id);
-            }
-            else {
-                u8 slot_num = heap[id+ident_slot_num];
-                if (slot_num == 0xff) {
-                    slot_num = heap[func_id+ident_slot_count];
-                    heap[func_id+ident_slot_count]++;
-                    heap[id+ident_slot_num] = slot_num;
-                    slot_stack[slot_num] = id;
-                }
-                emit_op(op_slot_set);
-                emit_byte(slot_num);
-            }
+            if (!lex_char(']')) parser_die("missing ']'");
+            if (!lex_char('=')) parser_die("missing '='");
+            parse_assign(id, 1);
+        }
+        else if (lex_char('=')) {
+            parse_assign(id, 0);
         }
         else {
             u8 nargs = parse_cmd_args();

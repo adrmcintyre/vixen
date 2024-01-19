@@ -952,6 +952,57 @@ void vm_slice(u8 has_start, u8 has_end)
     push_array(array2);
 }
 
+void vm_ident_set_indexed()
+{
+    u16 id = fetch_word();
+    pop_val();
+    vm_b = vm_a;
+
+    pop_int();
+
+    u8 *p = heap+id;
+    if (p[ident_kind] != kind_array) vm_die("not an array");
+    u16 array = p[ident_val+0]<<8 | p[ident_val+1];
+    p = heap+array;
+
+    u8 len = p[array_len];
+    i16 index = vm_a.i;
+    if (index < 0) index += len;
+    if (index < 0 || index >= len) vm_die("index out of range");
+
+    p += array_data;
+    p += 3 * index;
+
+    p[0] = vm_b.k;
+    p[1] = vm_b.u >> 8;
+    p[2] = vm_b.u & 0xff;
+}
+
+void vm_slot_set_indexed()
+{
+    u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
+    pop_val();
+    vm_b = vm_a;
+
+    pop_int();
+
+    if (slot[0] != kind_array) vm_die("not an array");
+    u16 array = slot[1]<<8 | slot[2];
+    u8 *p = heap+array;
+
+    u8 len = p[array_len];
+    i16 index = vm_a.i;
+    if (index < 0) index += len;
+    if (index < 0 || index >= len) vm_die("index out of range");
+
+    p += array_data;
+    p += 3 * index;
+
+    p[0] = vm_b.k;
+    p[1] = vm_b.u >> 8;
+    p[2] = vm_b.u & 0xff;
+}
+
 //------------------------------------------------------------------------------
 // Call + return handlers
 //
@@ -1106,6 +1157,8 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_slice_start:    vm_slice(1, 0); break;
             case op_slice_end:      vm_slice(0, 1); break;
             case op_slice_empty:    vm_slice(0, 0); break;
+            case op_ident_set_indexed:  vm_ident_set_indexed(); break;
+            case op_slot_set_indexed:   vm_slot_set_indexed(); break;
 
             // call + return
             case op_call_proc:      vm_call(kind_proc); break;
