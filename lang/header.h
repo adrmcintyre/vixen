@@ -85,6 +85,9 @@ enum {
     kw_control = 7
 };
 
+static inline u16 ldw(const u8 *p, u16 off) { return *(p+off)<<8 | *(p+off+1); }
+static inline void stw(u8 *p, u16 off, u16 w) { *(p+off) = w>>8; *(p+off+1) = w & 0xff; }
+
 extern const u8 *prog_base;
 extern u8 *code_base;
 extern u8 *code_ptr;
@@ -132,9 +135,9 @@ enum {
 u16 intern_ident();
 
 enum {
-    str_len_hi = 0,
-    str_len_lo = 1,
-    str_data   = 2
+    str_hash   = 0,
+    str_len    = 2,
+    str_data   = 4
 };
 
 enum {

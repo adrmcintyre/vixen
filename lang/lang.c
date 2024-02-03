@@ -208,8 +208,7 @@ u16 heap_alloc(u16 n)
 
     u16 p = heap_top;
     heap_top += n+2;
-    heap[p++] = heap_top >> 8;
-    heap[p++] = heap_top & 0xff;
+    stw(heap+p, 0, heap_top); p += 2;
     return p;
 }
 
@@ -248,18 +247,18 @@ u16 intern_ident(u16 *id)
     u16 last_p = 0;
     u16 p = ident_bucket[buck];
     while(p) {
-        u16 h2 = ((u16)heap[p+ident_hash+0]<<8) | heap[p+ident_hash+1];
-        u16 len2 = heap[p+ident_len];
+        u16 h2 = ldw(heap+p, ident_hash);
+        u16 len2 = (heap+p)[ident_len];
         if (h2 != h) { }
         else if (len2 != token_len) { }
-        else if (0!=memcmp(token_ptr, &heap[p+ident_name], len2)) { }
+        else if (0 != memcmp(token_ptr, &(heap+p)[ident_name], len2)) { }
         else {
             *id = p;
             return 0;
         }
 
         last_p = p;
-        u16 chain = ((u16)heap[p+ident_chain+0]<<8) | heap[p+ident_chain+1];
+        u16 chain = ldw(heap+p, ident_chain);
         p = chain;
     }
 
@@ -271,23 +270,19 @@ u16 intern_ident(u16 *id)
     // During code gen inject the value pointer instead of the ident pointer.
     //
     p = heap_alloc(token_len + ident_name);
-    heap[p+ident_chain+0] = 0;
-    heap[p+ident_chain+1] = 0;
-    heap[p+ident_hash+0] = h >> 8;
-    heap[p+ident_hash+1] = h & 0xff;
-    heap[p+ident_kind] = kind_fail;
-    heap[p+ident_val+0] = 0;
-    heap[p+ident_val+1] = 0;
-    heap[p+ident_slot_num] = 0xff;  //doubles as slot_count for funcs
-    heap[p+ident_arg_count] = 0;    //only used for funcs/procs
-    heap[p+ident_len] = token_len;
-    memcpy(&heap[p+ident_name], token_ptr, token_len);
+    stw(heap+p, ident_chain, 0);
+    stw(heap+p, ident_hash, h);
+    (heap+p)[ident_kind] = kind_fail;
+    stw(heap+p, ident_val, 0);
+    (heap+p)[ident_slot_num] = 0xff;  //doubles as slot_count for funcs
+    (heap+p)[ident_arg_count] = 0;    //only used for funcs/procs
+    (heap+p)[ident_len] = token_len;
+    memcpy(&(heap+p)[ident_name], token_ptr, token_len);
 
     if (last_p == 0) {
         ident_bucket[buck] = p;
     } else {
-        heap[last_p] = p >> 8;
-        heap[last_p+1] = p & 0xff;
+        stw(heap+last_p, 0, p);
     }
 
     *id = p;
@@ -450,8 +445,7 @@ u8 lex_string()
     u8 *q = heap + heap_alloc(str_data + len);
     str_ptr = q;
 
-    *(q+str_len_hi) = len>>8;
-    *(q+str_len_lo) = len&0xff;
+    stw(q, str_len, len);
     q += str_data;
 
     while(1) {
@@ -514,8 +508,7 @@ u16 lex_op(const u8* ptr)
 candidate_loop:
     inp = input_ptr;
     
-    opdata = (*ptr++) << 8;
-    opdata |= (*ptr++);
+    opdata = ldw(ptr, 0); ptr += 2;
     if (opdata == 0) return opdata_fail;
 
     u8 ch = *ptr;
@@ -639,8 +632,7 @@ void emit_byte(u8 b)
 void emit_word(u16 w)
 {
     fprintf(stderr, "emit_word 0x%04x = %d\n", w, w);
-    *code_ptr++ = (w >> 8);
-    *code_ptr++ = (w & 0xff);
+    stw(code_ptr, 0, w); code_ptr += 2;
 }
 
 // Emits the specified opcode to the code stream.
@@ -654,11 +646,10 @@ void emit_op(u8 op)
 void emit_ident(u16 id)
 {
     fprintf(stderr, "emit_ident %04x = ", id);
-    fwrite(&heap[id+ident_name], 1, heap[id+ident_len], stderr);
+    fwrite(&(heap+id)[ident_name], 1, (heap+id)[ident_len], stderr);
     putc('\n', stderr);
 
-    *code_ptr++ = (id >> 8);
-    *code_ptr++ = (id & 0xff);
+    stw(code_ptr, 0, id); code_ptr += 2;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -701,21 +692,19 @@ u16 parse_literal()
 
     // TODO - maybe parse true/false literals here
     switch(kind) {
-        case kind_int:
-            {
-                int i = atoi((const char*)token_ptr);
-                emit_op(op_lit_int);
-                emit_word(i & 0xffff);
-                return 1;
-            }
-        case kind_float:
-            {
-                float f = (float)atof((const char*)token_ptr);
-                u16 f16 = f16_from_float(f);
-                emit_op(op_lit_float);
-                emit_word(f16);
-                return 1;
-            }
+        case kind_int: {
+            int i = atoi((const char*)token_ptr);
+            emit_op(op_lit_int);
+            emit_word(i & 0xffff);
+            return 1;
+        }
+        case kind_float: {
+            float f = (float)atof((const char*)token_ptr);
+            u16 f16 = f16_from_float(f);
+            emit_op(op_lit_float);
+            emit_word(f16);
+            return 1;
+        }
         case kind_str_0:
             emit_op(op_lit_str_0);
             return 1;
@@ -928,7 +917,7 @@ void parse_terminal()
     }
     else {
         // we're in a function...
-        u8 slot_num = heap[id+ident_slot_num];
+        u8 slot_num = (heap+id)[ident_slot_num];
         if (slot_num == 0xff) {
             // get from global scope if no slot defined
             emit_op(op_ident_get);

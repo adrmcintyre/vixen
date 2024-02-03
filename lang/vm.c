@@ -46,15 +46,15 @@ void vm_die(const char* msg)
 
 u8 fetch_byte()
 {
-    u8 b = code_base[vm_pc++];
+    u8 b = *(code_base+vm_pc);
+    vm_pc += 1;
     return b;
 }
 
 u16 fetch_word()
 {
-    u16 w;
-    w = code_base[vm_pc++]<<8;
-    w |= code_base[vm_pc++]; 
+    u16 w = ldw(code_base+vm_pc, 0);
+    vm_pc += 2;
     return w;
 }
 
@@ -64,64 +64,45 @@ u16 fetch_word()
 
 void push_byte(u8 b)
 {
-    vm_stack[vm_sp+0] = b;
+    *(vm_stack+vm_sp) = b;
     vm_sp += 1;
 }
 
 void push_word(u16 w)
 {
-    vm_stack[vm_sp+0] = w>>8;
-    vm_stack[vm_sp+1] = w&0xff;
+    stw(vm_stack+vm_sp, 0, w);
     vm_sp += 2;
-}
-
-void push_bool(u16 b)
-{
-    vm_stack[vm_sp+0] = kind_bool;
-    vm_stack[vm_sp+1] = 0;
-    vm_stack[vm_sp+2] = (b==0) ? 0 : 1;
-    vm_sp += 3;
-}
-
-void push_int(i16 i)
-{
-    vm_stack[vm_sp+0] = kind_int;
-    vm_stack[vm_sp+1] = ((u16)i) >> 8;
-    vm_stack[vm_sp+2] = ((u16)i) & 0xff;
-    vm_sp += 3;
-}
-
-void push_f16(u16 f)
-{
-    vm_stack[vm_sp+0] = kind_float;
-    vm_stack[vm_sp+1] = f >> 8;
-    vm_stack[vm_sp+2] = f & 0xff;
-    vm_sp += 3;
-}
-
-void push_float(float f)
-{
-    u16 u = f16_from_float(f);
-    vm_stack[vm_sp+0] = kind_float;
-    vm_stack[vm_sp+1] = u>>8;
-    vm_stack[vm_sp+2] = u&0xff;
-    vm_sp += 3;
-}
-
-void push_array(u16 a)
-{
-    vm_stack[vm_sp+0] = kind_array;
-    vm_stack[vm_sp+1] = a>>8;
-    vm_stack[vm_sp+2] = a&0xff;
-    vm_sp += 3;
 }
 
 void push_val(u8 kind, u16 value)
 {
-    vm_stack[vm_sp+0] = kind;
-    vm_stack[vm_sp+1] = value >> 8;
-    vm_stack[vm_sp+2] = value & 0xff;
-    vm_sp += 3;
+    push_byte(kind);
+    push_word(value);
+}
+
+void push_bool(u16 b)
+{
+    push_val(kind_bool, (b==0) ? 0 : 1);
+}
+
+void push_int(i16 i)
+{
+    push_val(kind_int, i);
+}
+
+void push_f16(u16 f)
+{
+    push_val(kind_float, f);
+}
+
+void push_float(float f)
+{
+    push_f16(f16_from_float(f));
+}
+
+void push_array(u16 a)
+{
+    push_val(kind_array, a);
 }
 
 void vm_check_stack(u16 n)
@@ -139,27 +120,19 @@ void push_val_checked(u8 kind, u16 value)
 u8 pop_byte()
 {
     vm_sp -= 1;
-    u8 b = vm_stack[vm_sp+0];
-    return b;
+    return *(vm_stack+vm_sp);
 }
 
 u16 pop_word()
 {
     vm_sp -= 2;
-    u8 hi = vm_stack[vm_sp+0];
-    u8 lo = vm_stack[vm_sp+1];
-    u16 w = hi<<8 | lo;
-    return w;
+    return ldw(vm_stack+vm_sp, 0);
 }
 
 void pop_val()
 {
-    vm_sp -= 3;
-    u8 k  = vm_stack[vm_sp+0];
-    u8 hi = vm_stack[vm_sp+1];
-    u8 lo = vm_stack[vm_sp+2];
-    vm_a.k = k;
-    vm_a.u = (hi<<8) | lo;
+    vm_a.u = pop_word();
+    vm_a.k = pop_byte();
 }
 
 void pop_bool()
@@ -295,7 +268,7 @@ const u8* vm_str_buf(u8 kind, u16 val, u8* pch, u16* len)
 
         default: {
             const u8 *str = heap + val;
-            *len = str[str_len_hi]<<8 | str[str_len_lo];
+            *len = ldw(str, str_len);
             return str + str_data;
         }
     }
@@ -334,8 +307,7 @@ void vm_add()
 
     u16 len = len1+len2;
     u8 *str = heap+heap_alloc(str_data + len);
-    str[str_len_hi] = len >> 8;
-    str[str_len_lo] = len & 0xff;
+    stw(str, str_len, len);
 
     u8 *p = str + str_data;
     memcpy(p, data1, len1);
@@ -540,7 +512,7 @@ void fn_asc()
 
         default: {
             u8 *str = heap + vm_a.u;
-            u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+            u16 len = ldw(str, str_len);
             if (len == 0) push_int(0);
             else push_int(str[str_data+0]);
             return;
@@ -614,8 +586,7 @@ void fn_str()
     }
 
     u8 *str = heap+heap_alloc(str_data + len);
-    str[str_len_hi] = len >> 8;
-    str[str_len_lo] = len & 0xff;
+    stw(str, str_len, len);
 
     u8 *p = str + str_data;
     memcpy(p, q, len);
@@ -636,7 +607,7 @@ void fn_len()
 
         default: {
             u8 *str = heap + vm_a.i;
-            u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+            u16 len = ldw(str, str_len);
             push_int((i16) len);
             return;
         }
@@ -675,7 +646,7 @@ void fn_right()
     }
 
     const u8 *str = heap + vm_a.u;
-    u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+    u16 len = ldw(str, str_len);
     if (n >= len) {
         n = len;
     }
@@ -713,7 +684,7 @@ void vm_substr(u16 pos, u16 n)
     }
 
     const u8 *str = heap + vm_a.u;
-    u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+    u16 len = ldw(str, str_len);
 
     if (pos >= len) {
         push_val(kind_str_0, 0);
@@ -741,8 +712,7 @@ void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len)
     if (n < len2) len2 = n;
 
     u8 *str2 = heap + heap_alloc(str_data + len2);
-    str2[str_len_hi] = len2 >> 8;
-    str2[str_len_lo] = len2 & 0xff;
+    stw(str2, str_len, len2);
     memcpy(str2+str_data, data+pos, len2);
     push_val(kind_str_n, str2-heap);
 }
@@ -776,7 +746,7 @@ void vm_print(value val)
         case kind_str_n:
         {
             const u8 *str = heap + val.u;
-            u16 len = str[str_len_hi]<<8 | str[str_len_lo];
+            u16 len = ldw(str, str_len);
             fwrite(str + str_data, 1, len, stdout);
             break;
         }
@@ -790,7 +760,7 @@ void vm_print(value val)
             while(len > 0) {
                 value elt;
                 elt.k = p[0];
-                elt.u = p[1]<<8 | p[2];
+                elt.u = ldw(p, 1);
                 vm_print(elt);
                 p += 3;
                 len -= 1;
@@ -814,7 +784,7 @@ void proc_print()
     while(n--) {
         value val;
         val.k = p[0];
-        val.u = p[1]<<8 | p[2];
+        val.u = ldw(p, 1);
         p += 3;
 
         vm_print(val);
@@ -832,9 +802,8 @@ void vm_ident_set()
 {
     u16 id = fetch_word();
     pop_val();
-    heap[id+ident_kind] = vm_a.k;
-    heap[id+ident_val+0] = vm_a.u >> 8;
-    heap[id+ident_val+1] = vm_a.u & 0xff;
+    (heap+id)[ident_kind] = vm_a.k;
+    stw(heap+id, ident_val, vm_a.u);
 }
 
 void vm_ident_get()
@@ -842,10 +811,9 @@ void vm_ident_get()
     vm_check_stack(3);
 
     u16 id = fetch_word();
-    u8 k  = heap[id+ident_kind];
-    u8 hi = heap[id+ident_val+0];
-    u8 lo = heap[id+ident_val+1];
-    push_val(k, (hi<<8)|lo);
+    u8  k = (heap+id)[ident_kind];
+    u16 w = ldw(heap+id, ident_val);
+    push_val(k, w);
 }
 
 void vm_slot_set()
@@ -853,8 +821,7 @@ void vm_slot_set()
     u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
     pop_val();
     slot[0] = vm_a.k;
-    slot[1] = vm_a.u >> 8;
-    slot[2] = vm_a.u & 0xff;
+    stw(slot, 1, vm_a.u);
 }
 
 void vm_slot_get()
@@ -863,9 +830,8 @@ void vm_slot_get()
 
     u8 *slot = vm_stack + vm_fp + (u16)fetch_byte() * 3;
     u8 k  = slot[0];
-    u8 hi = slot[1];
-    u8 lo = slot[2];
-    push_val(k, (hi<<8)|lo);
+    u16 w = ldw(slot, 1);
+    push_val(k, w);
 }
 
 void vm_lit_array()
@@ -882,8 +848,7 @@ void vm_lit_array()
         p -= 3;
         pop_val();
         p[0] = vm_a.k;
-        p[1] = vm_a.u >> 8;
-        p[2] = vm_a.u & 0xff;
+        stw(p, 1, vm_a.u);
     }
 
     push_array(array);
@@ -908,7 +873,7 @@ void vm_index()
     p += 3 * index;
     
     u8 k = p[0];
-    u16 val = p[1]<<8 | p[2];
+    u16 val = ldw(p, 1);
     push_val(k, val);
 }
 
@@ -962,7 +927,7 @@ void vm_ident_set_indexed()
 
     u8 *p = heap+id;
     if (p[ident_kind] != kind_array) vm_die("not an array");
-    u16 array = p[ident_val+0]<<8 | p[ident_val+1];
+    u16 array = ldw(p, ident_val);
     p = heap+array;
 
     u8 len = p[array_len];
@@ -974,8 +939,7 @@ void vm_ident_set_indexed()
     p += 3 * index;
 
     p[0] = vm_b.k;
-    p[1] = vm_b.u >> 8;
-    p[2] = vm_b.u & 0xff;
+    stw(p, 1, vm_b.u);
 }
 
 void vm_slot_set_indexed()
@@ -987,7 +951,7 @@ void vm_slot_set_indexed()
     pop_int();
 
     if (slot[0] != kind_array) vm_die("not an array");
-    u16 array = slot[1]<<8 | slot[2];
+    u16 array = ldw(slot, 1);
     u8 *p = heap+array;
 
     u8 len = p[array_len];
@@ -999,8 +963,7 @@ void vm_slot_set_indexed()
     p += 3 * index;
 
     p[0] = vm_b.k;
-    p[1] = vm_b.u >> 8;
-    p[2] = vm_b.u & 0xff;
+    stw(p, 1, vm_b.u);
 }
 
 //------------------------------------------------------------------------------
@@ -1033,7 +996,7 @@ void vm_call(u8 kind)
     push_word(old_sp);
     push_word(vm_pc);
 
-    vm_pc = func[ident_val+0]<<8 | func[ident_val+1];
+    vm_pc = ldw(func, ident_val);
 }
 
 void vm_return_func()

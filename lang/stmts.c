@@ -74,8 +74,7 @@ u16 emit_end_loop_jump(u8 jump_op)
     if (end_loop_sp == end_loop_max) parser_die("control flow is too complicated");
     emit_op(jump_op);
     u16 ref = (u16)(code_ptr - code_base);
-    end_loop_stack[end_loop_sp++] = ref >> 8;
-    end_loop_stack[end_loop_sp++] = ref & 0xff;
+    stw(end_loop_stack, end_loop_sp, ref); end_loop_sp += 2;
     end_loop_count++;
     emit_word(0);
     return 1;
@@ -97,8 +96,7 @@ void emit_backward_ref(u8 *ref_ptr)
 void patch_forward_ref(u8 *ref_ptr)
 {
     u16 rel = (u16)(code_ptr - (ref_ptr+2));
-    *(ref_ptr+0) = rel >> 8;
-    *(ref_ptr+1) = rel & 0xff;
+    stw(ref_ptr, 0, rel);
 }
 
 // Emits a jump instruction to repeat the current loop, and
@@ -120,9 +118,7 @@ void end_loop(u8 jump_op)
     // resolve references to end of loop
     while(end_loop_count) {
         end_loop_sp -= 2;
-        u8 ref_hi = end_loop_stack[end_loop_sp+0];
-        u8 ref_lo = end_loop_stack[end_loop_sp+1];
-        u16 ref = (ref_hi<<8) | ref_lo;
+        u16 ref = ldw(end_loop_stack, end_loop_sp);
         patch_forward_ref(code_base + ref);
         end_loop_count--;
     }
@@ -163,18 +159,17 @@ void parse_func_or_proc(u8 op)
     if (lookup_keyword()) parser_die("reserved word cannot be used here");
 
     // first time we've seen this, or it has only been referenced before
-    if (intern_ident(&func_id) || heap[func_id+ident_kind] == kind_fail) {
-        heap[func_id+ident_kind] = func_kind;
+    if (intern_ident(&func_id) || (heap+func_id)[ident_kind] == kind_fail) {
+        (heap+func_id)[ident_kind] = func_kind;
     }
     else {
         parser_die("name already in use");
     }
 
     u16 func_addr = (u16)(code_ptr - code_base);
-    heap[func_id+ident_val+0] = func_addr >> 8;
-    heap[func_id+ident_val+1] = func_addr & 0xff;
-    heap[func_id+ident_arg_count] = 0;
-    heap[func_id+ident_slot_count] = 0;
+    stw(heap+func_id, ident_val, func_addr);
+    (heap+func_id)[ident_arg_count] = 0;
+    (heap+func_id)[ident_slot_count] = 0;
 
     if (!lex_char('(')) parser_die("missing '('");
 
@@ -184,11 +179,11 @@ void parse_func_or_proc(u8 op)
             if (!lex_word()) parser_die("missing parameter name");
             if (lookup_keyword()) parser_die("reserved word cannot be used here");
             u16 param_id; intern_ident(&param_id);
-            if (heap[param_id+ident_slot_num] != 0xff) parser_die("repeated parameter name");
+            if ((heap+param_id)[ident_slot_num] != 0xff) parser_die("repeated parameter name");
 
             if (slot_num >= slot_max) die("too many local variables");
 
-            heap[param_id+ident_slot_num] = slot_num;
+            (heap+param_id)[ident_slot_num] = slot_num;
             slot_stack[slot_num] = param_id;
             slot_num += 1;
 
@@ -196,8 +191,8 @@ void parse_func_or_proc(u8 op)
             if (!lex_char(',')) parser_die("missing ','");
         }
     }
-    heap[func_id+ident_arg_count] = slot_num;
-    heap[func_id+ident_slot_count] = slot_num;
+    (heap+func_id)[ident_arg_count] = slot_num;
+    (heap+func_id)[ident_slot_count] = slot_num;
 }
 
 // Parses a control statement.
@@ -301,11 +296,11 @@ void parse_control_stmt(u8 op)
             }
 
             // clear slot assignments
-            u8 slot_num = heap[func_id+ident_slot_count];
+            u8 slot_num = (heap+func_id)[ident_slot_count];
             while(slot_num > 0) {
                 --slot_num;
                 u16 slot_id = slot_stack[slot_num];
-                heap[slot_id+ident_slot_num] = 0xff;
+                (heap+slot_id)[ident_slot_num] = 0xff;
             }
 
             func_id = 0;
@@ -342,11 +337,11 @@ void parse_assign(u16 id, u16 is_indexed)
         emit_ident(id);
     }
     else {
-        u8 slot_num = heap[id+ident_slot_num];
+        u8 slot_num = (heap+id)[ident_slot_num];
         if (slot_num == 0xff) {
-            slot_num = heap[func_id+ident_slot_count];
-            heap[func_id+ident_slot_count]++;
-            heap[id+ident_slot_num] = slot_num;
+            slot_num = (heap+func_id)[ident_slot_count];
+            (heap+func_id)[ident_slot_count]++;
+            (heap+id)[ident_slot_num] = slot_num;
             slot_stack[slot_num] = id;
         }
         emit_op(is_indexed ? op_slot_set_indexed : op_slot_set);
