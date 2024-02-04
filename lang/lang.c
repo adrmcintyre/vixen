@@ -46,9 +46,7 @@ const char* op_names[] = {
     "op_slot_set",
     "op_lit_int",
     "op_lit_float",
-    "op_lit_str_0",
-    "op_lit_str_1",
-    "op_lit_str_n",
+    "op_lit_string",
     "op_lit_array",
     "op_jump",
     "op_jfalse",
@@ -393,21 +391,10 @@ u8 lex_number()
 }
 
 // Looks for a string literal in the input.
-// Returns one of the following:
+// Creates the string if necessary and returns a pointer to its heap descriptor.
+// If no open " is found, returns 0, and input_ptr is left unchanged.
 //
-// - kind_fail
-//      no open " found, input_ptr is left unchanged
-// - kind_str_0
-//      empty string was found
-// - kind_str_1
-//      single character string was found, str_char is set to the character
-// - kind_str_n
-//      a multi character string was found, str_ptr points to its heap descriptor
-//
-const u8 *str_ptr;
-u8 str_char;
-
-u8 lex_string()
+const u8* lex_string()
 {
     lex_space();
 
@@ -415,39 +402,34 @@ u8 lex_string()
     if (ch != '"') return 0;
     input_ptr++;
 
-    const u8 *ptr = input_ptr;
-    str_ptr = ptr;
+    const u8 *input_ptr0 = input_ptr;
     u16 len = 0;
 
     while(1) {
-        ch = *ptr++;
+        ch = *input_ptr++;
         if (ch == '"') break;
-        str_char = ch;
         if (ch == '\\') {
-            ch = *++ptr;
-            if      (ch == 't') str_char = '\t';
-            else if (ch == 'n') str_char = '\n';
-            else if (ch == '"') str_char = ch;
-            else if (ch == '\\') str_char = ch;
+            ch = *++input_ptr;
+            if      (ch == 't') {}
+            else if (ch == 'n') {}
+            else if (ch == '"') {}
+            else if (ch == '\\') {}
             else parser_die("invalid string escape");
         }
         if (ch == '\0') parser_die("missing double quote \"");
         len++;
     }
 
-    input_ptr = ptr;
-
-    if (len == 0) return kind_str_0;
-    if (len == 1) return kind_str_1;
-
-    ptr = str_ptr;
+    // TODO - intern if len <= 1
 
     u8 *q = heap + heap_alloc(str_data + len);
-    str_ptr = q;
+    const u8 *str = q;
 
+    stw(q, str_hash, 0);
     stw(q, str_len, len);
     q += str_data;
 
+    const u8 *ptr = input_ptr0;
     while(1) {
         ch = *ptr++;
         if (ch == '"') break;
@@ -459,7 +441,7 @@ u8 lex_string()
         *q++ = ch;
     }
 
-    return kind_str_n;
+    return str;
 }
 
 // Returns 1 if a word was recognised, setting token_ptr and
@@ -685,40 +667,31 @@ void parse_unops()
 //      <string>
 u16 parse_literal()
 {
+    // TODO - maybe parse true/false literals here
     u8 kind = lex_number();
-    if (kind == kind_fail) {
-        kind = lex_string();
+
+    if (kind == kind_int) {
+        int i = atoi((const char*)token_ptr);
+        emit_op(op_lit_int);
+        emit_word(i & 0xffff);
+        return 1;
+    }
+    if (kind == kind_float) {
+        float f = (float)atof((const char*)token_ptr);
+        u16 f16 = f16_from_float(f);
+        emit_op(op_lit_float);
+        emit_word(f16);
+        return 1;
     }
 
-    // TODO - maybe parse true/false literals here
-    switch(kind) {
-        case kind_int: {
-            int i = atoi((const char*)token_ptr);
-            emit_op(op_lit_int);
-            emit_word(i & 0xffff);
-            return 1;
-        }
-        case kind_float: {
-            float f = (float)atof((const char*)token_ptr);
-            u16 f16 = f16_from_float(f);
-            emit_op(op_lit_float);
-            emit_word(f16);
-            return 1;
-        }
-        case kind_str_0:
-            emit_op(op_lit_str_0);
-            return 1;
-        case kind_str_1:
-            emit_op(op_lit_str_1);
-            emit_byte(str_char);
-            return 1;
-        case kind_str_n:
-            emit_op(op_lit_str_n);
-            emit_word((u16)(str_ptr - heap));
-            return 1;
-        default:
-            return 0;
+    const u8 *str = lex_string();
+    if (str) {
+        emit_op(op_lit_string);
+        emit_word((u16)(str - heap));
+        return 1;
     }
+
+    return 0;
 }
 
 // Parses an array literal [] or [<expr>, ...], emits the expressions and 
@@ -1011,6 +984,9 @@ int main()
         "foo = [4,5,6,7,8,9,10,11]\n"
         "blah foo\n"
         "print foo\n"
+        "z = \"hello\"\n"
+        "z = z + \" world\"\n"
+        "print z\n"
         "stop\n"
     ;
 

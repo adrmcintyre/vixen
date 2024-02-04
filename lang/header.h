@@ -48,9 +48,7 @@ enum {
     op_slot_set,
     op_lit_int,
     op_lit_float,
-    op_lit_str_0,
-    op_lit_str_1,
-    op_lit_str_n,
+    op_lit_string,
     op_lit_array,
     op_jump,
     op_jfalse,
@@ -60,16 +58,14 @@ enum {
 };
 
 enum {
-    kind_fail  = 0,
-    kind_bool  = 1,
-    kind_int   = 2,
-    kind_float = 3,
-    kind_str_0 = 4,
-    kind_str_1 = 5,
-    kind_str_n = 6,
-    kind_array = 7,
-    kind_proc  = 8,
-    kind_func  = 9
+    kind_fail   = 0,
+    kind_bool   = 1,
+    kind_int    = 2,
+    kind_float  = 3,
+    kind_string = 4,
+    kind_array  = 5,
+    kind_proc   = 6,
+    kind_func   = 7
 };
 
 enum {

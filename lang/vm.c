@@ -198,16 +198,7 @@ void pop_nums()
 void pop_str()
 {
     pop_val();
-
-    switch(vm_a.k) {
-        case kind_str_0:
-        case kind_str_1:
-        case kind_str_n:
-            break;
-
-        default:
-            vm_die("expected string");
-    }
+    if (vm_a.k != kind_string) vm_die("expected string");
 }
 
 void pop_array()
@@ -234,44 +225,23 @@ void pop_vals()
         return;
     }
 
-    u8 isstr1 = (vm_a.k == kind_str_0 || vm_a.k == kind_str_1 || vm_a.k == kind_str_n);
-    u8 isstr2 = (vm_b.k == kind_str_0 || vm_b.k == kind_str_1 || vm_b.k == kind_str_n);
-    if (isstr1 && isstr2) return;
+    if (vm_a.k == kind_string && vm_b.k == kind_string) return;
 
     vm_die("incompatible types");
 }
 
 // Takes:
-//      (kind, val) - a string value
-//      pch [out] - single char temp buffer
+//      val - a string value
 //      len [out] - length of string
 //
 // Returns a pointer to the string contents and sets len
-// to its length. If kind is kind_str_1, the returned pointer
-// will equal pch, and *pch will be updated to contain the
-// single character.
+// to its length.
 //
-// This allows string operations to treat all three string
-// kinds uniformly.
-//
-const u8* vm_str_buf(u8 kind, u16 val, u8* pch, u16* len)
+const u8* vm_str_data(u16 val, u16* len)
 {
-    switch(kind) {
-        case kind_str_0:
-            *len = 0;
-            return pch;
-
-        case kind_str_1:
-            *pch = val;
-            *len = 1;
-            return pch;
-
-        default: {
-            const u8 *str = heap + val;
-            *len = ldw(str, str_len);
-            return str + str_data;
-        }
-    }
+    const u8 *str = heap + val;
+    *len = ldw(str, str_len);
+    return str + str_data;
 }
 
 //------------------------------------------------------------------------------
@@ -291,19 +261,18 @@ void vm_add()
         push_float(f16_to_float(vm_a.f) + f16_to_float(vm_b.f));
         return;
     }
-    if (vm_a.k == kind_str_0) {
+    u16 len1, len2;
+    const u8 *data1 = vm_str_data(vm_a.u, &len1);
+    const u8 *data2 = vm_str_data(vm_b.u, &len2);
+
+    if (len1 == 0) {
         push_val(vm_b.k, vm_b.u);
         return;
     }
-    if (vm_b.k == kind_str_0) {
+    if (len2 == 0) {
         push_val(vm_a.k, vm_a.u);
         return;
     }
-
-    u8 ch1, ch2;
-    u16 len1, len2;
-    const u8 *data1 = vm_str_buf(vm_a.k, vm_a.u, &ch1, &len1);
-    const u8 *data2 = vm_str_buf(vm_b.k, vm_b.u, &ch2, &len2);
 
     u16 len = len1+len2;
     u8 *str = heap+heap_alloc(str_data + len);
@@ -313,7 +282,7 @@ void vm_add()
     memcpy(p, data1, len1);
     p += len1;
     memcpy(p, data2, len2);
-    push_val(kind_str_n, str-heap);
+    push_val(kind_string, str-heap);
 }
 
 //------------------------------------------------------------------------------
@@ -338,23 +307,22 @@ void vm_relop(u8 op)
             break;
         }
 
-        case kind_str_0:
-        case kind_str_1:
-        case kind_str_n: {
-            pop_str();
-
-            u8 ch1, ch2;
-            u16 len1, len2;
-            const u8 *data1 = vm_str_buf(vm_a.k, vm_a.u, &ch1, &len1);
-            const u8 *data2 = vm_str_buf(vm_b.k, vm_b.u, &ch2, &len2);
-            u16 prefix_len = len1;
-            if (len2 < prefix_len) prefix_len = len2;
-            cmp = memcmp(data1, data2, prefix_len);
-            if (cmp == 0 && len1 != len2) {
-                cmp = (len1 < len2) ? -1 : 1;
+        case kind_string:
+            if (vm_a.u == vm_b.u) {
+                cmp = 0;
+            }
+            else {
+                u16 len1, len2;
+                const u8 *data1 = vm_str_data(vm_a.u, &len1);
+                const u8 *data2 = vm_str_data(vm_b.u, &len2);
+                u16 prefix_len = len1;
+                if (len2 < prefix_len) prefix_len = len2;
+                cmp = memcmp(data1, data2, prefix_len);
+                if (cmp == 0 && len1 != len2) {
+                    cmp = (len1 < len2) ? -1 : 1;
+                }
             }
             break;
-        }
 
         default:
             vm_die("non-comparable");
@@ -426,14 +394,11 @@ void fn_int()
             push_int((i16)f16_to_float(vm_a.f));
             break;
 
-        case kind_str_0:
-        case kind_str_1:
-        case kind_str_n: {
-            u8 ch;
+        case kind_string: {
             u16 len;
-            const u8 *data = vm_str_buf(vm_a.k, vm_a.u, &ch, &len);
+            const u8 *data = vm_str_data(vm_a.u, &len);
             // number of digits in "-32768"
-            if (len <= 6) {
+            if (len > 0 && len <= 6) {
                 char buf[8];
                 memcpy(buf, data, len);
                 buf[len] = '\0';
@@ -467,14 +432,11 @@ void fn_float()
             push_f16(vm_a.f);
             break;
 
-        case kind_str_0:
-        case kind_str_1:
-        case kind_str_n: {
-            u8 ch;
+        case kind_string: {
             u16 len;
-            const u8 *data = vm_str_buf(vm_a.k, vm_a.u, &ch, &len);
+            const u8 *data = vm_str_data(vm_a.u, &len);
             // reasonable upper bound for max digits
-            if (len < 32) {
+            if (len > 0 && len < 32) {
                 char buf[32];
                 memcpy(buf, data, len);
                 buf[len] = '\0';
@@ -500,30 +462,19 @@ void fn_float()
 void fn_asc()
 {
     pop_str();
-    switch(vm_a.k) {
-        case kind_str_0:
-            // TODO - return -1 instead? error?
-            push_int(0);
-            return;
-
-        case kind_str_1:
-            push_int(vm_a.u);
-            return;
-
-        default: {
-            u8 *str = heap + vm_a.u;
-            u16 len = ldw(str, str_len);
-            if (len == 0) push_int(0);
-            else push_int(str[str_data+0]);
-            return;
-        }
-    }
+    u8 *str = heap + vm_a.u;
+    u16 len = ldw(str, str_len);
+    if (len == 0) push_int(0);
+    else push_int(str[str_data+0]);
 }
 
 void fn_chr()
 {
-    pop_int();
-    push_val(kind_str_1, vm_a.u & 0xff);
+    vm_die("not implemented");
+
+    // TODO intern single character string
+    //pop_int();
+    //push_val(kind_string, vm_a.u & 0xff);
 }
 
 void fn_str()
@@ -538,11 +489,11 @@ void fn_str()
             // at program start to avoid repeated reallocations
             if (vm_a.u != 0) {
                 len = 4;
-                q = "true";
+                q = "True";
             }
             else {
                 len = 5;
-                q = "false";
+                q = "False";
             }
             break;
 
@@ -556,9 +507,7 @@ void fn_str()
             q = buf;
             break;
 
-        case kind_str_0:
-        case kind_str_1: 
-        case kind_str_n:
+        case kind_string:
             push_val(vm_a.k, vm_a.u);
             return;
 
@@ -580,42 +529,26 @@ void fn_str()
             break;
     }
 
-    if (len == 1) {
-        push_val(kind_str_1, q[0]);
-        return;
-    }
+    // TODO intern if len <= 1
 
     u8 *str = heap+heap_alloc(str_data + len);
     stw(str, str_len, len);
 
     u8 *p = str + str_data;
     memcpy(p, q, len);
-    push_val(kind_str_n, str-heap);
+    push_val(kind_string, str-heap);
 }
 
 void fn_len()
 {
     pop_str();
-    switch(vm_a.k) {
-        case kind_str_0:
-            push_int(0);
-            return;
-
-        case kind_str_1:
-            push_int(1);
-            return;
-
-        default: {
-            u8 *str = heap + vm_a.i;
-            u16 len = ldw(str, str_len);
-            push_int((i16) len);
-            return;
-        }
-    }
+    u8 *str = heap + vm_a.i;
+    u16 len = ldw(str, str_len);
+    push_int((i16) len);
 }
 
 void vm_substr(u16 pos, u16 n);
-void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len);
+void vm_substr_helper(const u8 *str, u16 pos, u16 n, u16 len);
 
 void fn_left()
 {
@@ -634,16 +567,6 @@ void fn_right()
     u16 n = (u16) ni;
 
     pop_str();
-    if (n == 0 || vm_a.k == kind_str_0) {
-        push_val(kind_str_0, 0);
-        return;
-    }
-
-    if (vm_a.k == kind_str_1) {
-        if (n >= 1) push_val(kind_str_1, vm_a.u);
-        else push_val(kind_str_0, 0);
-        return;
-    }
 
     const u8 *str = heap + vm_a.u;
     u16 len = ldw(str, str_len);
@@ -652,7 +575,7 @@ void fn_right()
     }
     u16 pos = len - n;
 
-    return vm_substr_cont(str, pos, n, len);
+    return vm_substr_helper(str, pos, n, len);
 }
 
 void fn_substr()
@@ -672,49 +595,30 @@ void vm_substr(u16 pos, u16 n)
 {
     pop_str();
 
-    if (n == 0 || vm_a.k == kind_str_0) {
-        push_val(kind_str_0, 0);
-        return;
-    }
-
-    if (vm_a.k == kind_str_1) {
-        if (pos == 0) push_val(kind_str_1, vm_a.u);
-        else push_val(kind_str_0, 0);
-        return;
-    }
-
     const u8 *str = heap + vm_a.u;
     u16 len = ldw(str, str_len);
 
-    if (pos >= len) {
-        push_val(kind_str_0, 0);
-        return;
-    }
-
-    vm_substr_cont(str, pos, n, len);
+    vm_substr_helper(str, pos, n, len);
 }
 
-void vm_substr_cont(const u8 *str, u16 pos, u16 n, u16 len)
+void vm_substr_helper(const u8 *str, u16 pos, u16 n, u16 len)
 {
     if (pos == 0 && n >= len) {
-        push_val(kind_str_n, vm_a.u);
+        push_val(kind_string, vm_a.u);
         return;
     }
 
     const u8 *data = str + str_data;
 
-    if (n == 1 || pos == len-1) {
-        push_val(kind_str_1, data[pos]);
-        return;
-    }
-
     u16 len2 = len-pos;
     if (n < len2) len2 = n;
+
+    // TODO intern if len2 <= 1
 
     u8 *str2 = heap + heap_alloc(str_data + len2);
     stw(str2, str_len, len2);
     memcpy(str2+str_data, data+pos, len2);
-    push_val(kind_str_n, str2-heap);
+    push_val(kind_string, str2-heap);
 }
 
 //------------------------------------------------------------------------------
@@ -725,7 +629,7 @@ void vm_print(value val)
 {
     switch(val.k) {
         case kind_bool:
-            printf(val.u ? "true" : "false");
+            printf(val.u ? "True" : "False");
             break;
 
         case kind_int:
@@ -736,14 +640,7 @@ void vm_print(value val)
             printf("%f", f16_to_float(val.f));
             break;
 
-        case kind_str_0:
-            break;
-
-        case kind_str_1:
-            printf("%c", val.u & 0xff);
-            break;
-
-        case kind_str_n:
+        case kind_string:
         {
             const u8 *str = heap + val.u;
             u16 len = ldw(str, str_len);
@@ -1110,9 +1007,7 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_slot_set:   vm_slot_set(); break;
             case op_lit_int:    push_val_checked(kind_int, fetch_word()); break;
             case op_lit_float:  push_val_checked(kind_float, fetch_word()); break;
-            case op_lit_str_0:  push_val_checked(kind_str_0, 0); break;
-            case op_lit_str_1:  push_val_checked(kind_str_1, fetch_byte()); break;
-            case op_lit_str_n:  push_val_checked(kind_str_n, fetch_word()); break;
+            case op_lit_string: push_val_checked(kind_string, fetch_word()); break;
 
             case op_lit_array:      vm_lit_array(); break;
             case op_index:          vm_index(); break;
