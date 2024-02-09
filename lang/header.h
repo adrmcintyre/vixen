@@ -8,30 +8,51 @@ enum {
     fail = 0x80,
     mark = 0x81,
 
-    // Operators
-    op_neg, op_bnot, op_lnot,
-    op_mul, op_div, op_mod,
-    op_add, op_sub,
+    // Arithmetic operators
+    op_neg, op_mul, op_div, op_mod, op_add, op_sub,
+    
+    // Relational operators
+    op_le, op_lt, op_gt, op_ge, op_eq, op_ne,
+
+    // Bitwise operators
+    op_bnot, op_band, op_bor, op_beor,
+
+    // Shift operators
     op_asr, op_lsr, op_lsl,
-    op_le, op_lt, op_gt, op_ge,
-    op_eq, op_ne,
-    op_band,
-    op_bor, op_beor,
-    op_land,
-    op_lor,
+    
+    // Logical operators
+    op_lnot, op_land, op_lor,
 
-    // Other keywords
-    op_abs,     op_asc,     op_break,
-    op_chr,     op_else,    op_end,
-    op_endif,   op_false,   op_float,   op_func,
-    op_if,      op_input,   op_int,
-    op_left,    op_len,     op_print,   op_proc,
-    op_repeat,  op_return,  op_right,
-    op_rnd,     op_sgn,     op_sqr,
-    op_stop,    op_str,     op_substr,  op_true,
-    op_until,   op_wend,    op_while,
+    // Constants
+    op_false, op_true, op_nan, op_inf,
 
-    // internal ops
+    // Built in functions
+    op_abs, op_sgn, op_rnd,
+    op_sqr, op_int, op_float,
+    op_asc, op_chr, op_str, op_len,
+    op_left, op_right, op_substr,
+
+    // Statements
+    op_print, op_input, op_stop,
+
+    // Control structure tokens
+    op_func, op_proc, op_return, op_end,
+    op_if, op_else, op_endif,
+    op_repeat, op_until,
+    op_while, op_wend,
+    op_break,
+
+    // Internal ops
+    op_ident_get,
+    op_ident_set,
+    op_slot_get,
+    op_slot_set,
+
+    op_lit_int,
+    op_lit_float,
+    op_lit_string,
+    op_lit_array,
+
     op_index,
     op_slice,
     op_slice_start,
@@ -42,19 +63,12 @@ enum {
 
     op_call_proc,
     op_call_func,
-    op_ident_get,
-    op_ident_set,
-    op_slot_get,
-    op_slot_set,
-    op_lit_int,
-    op_lit_float,
-    op_lit_string,
-    op_lit_array,
-    op_jump,
-    op_jfalse,
-    op_return_func,
     op_return_proc,
-    op_return_missing
+    op_return_func,
+    op_return_missing,
+
+    op_jump,
+    op_jfalse
 };
 
 enum {
@@ -89,6 +103,16 @@ extern u8 *code_base;
 extern u8 *code_ptr;
 
 extern u8 heap[];
+extern u8 *interned_string_empty;
+extern u8 *interned_string_true;
+extern u8 *interned_string_false;
+extern u8 *interned_string_array;
+extern u8 *interned_string_proc;
+extern u8 *interned_string_func;
+extern u8 *interned_string_unknown;
+u8 *string_from_char(u8 ch);
+u8 *string_from_data(const u8 *data, u16 len);
+
 
 void die(const char* msg);
 

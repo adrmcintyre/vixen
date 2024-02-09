@@ -9,26 +9,50 @@ const char* op_names[] = {
     "fail",
     "mark",
 
-    "op_neg", "op_bnot", "op_lnot",
-    "op_mul", "op_div", "op_mod",
-    "op_add", "op_sub",
-    "op_asr", "op_lsr", "op_lsl",
-    "op_le", "op_lt", "op_gt", "op_ge",
-    "op_eq", "op_ne",
-    "op_band",
-    "op_bor", "op_beor",
-    "op_land",
-    "op_lor",
+    // Arithmetic operators
+    "op_neg", "op_mul", "op_div", "op_mod", "op_add", "op_sub",
+    
+    // Relational operators
+    "op_le", "op_lt", "op_gt", "op_ge", "op_eq", "op_ne",
 
-    "op_abs", "op_asc", "op_break",
-    "op_chr", "op_else", "op_end",
-    "op_endif", "op_false", "op_float", "op_func",
-    "op_if", "op_input", "op_int",
-    "op_left", "op_len", "op_print", "op_proc",
-    "op_repeat", "op_return", "op_right",
-    "op_rnd", "op_sgn", "op_sqr",
-    "op_stop", "op_str", "op_substr", "op_true",
-    "op_until", "op_wend", "op_while",
+    // Bitwise operators
+    "op_bnot", "op_band", "op_bor", "op_beor",
+
+    // Shift operators
+    "op_asr", "op_lsr", "op_lsl",
+    
+    // Logical operators
+    "op_lnot", "op_land", "op_lor",
+
+    // Constants
+    "op_false", "op_true", "op_nan", "op_inf",
+
+    // Built in functions
+    "op_abs", "op_sgn", "op_rnd",
+    "op_sqr", "op_int", "op_float",
+    "op_asc", "op_chr", "op_str", "op_len",
+    "op_left", "op_right", "op_substr",
+
+    // Statements
+    "op_print", "op_input", "op_stop",
+
+    // Control structure tokens
+    "op_func", "op_proc", "op_return", "op_end",
+    "op_if", "op_else", "op_endif",
+    "op_repeat", "op_until",
+    "op_while", "op_wend",
+    "op_break",
+
+    // Internal ops
+    "op_ident_get",
+    "op_ident_set",
+    "op_slot_get",
+    "op_slot_set",
+
+    "op_lit_int",
+    "op_lit_float",
+    "op_lit_string",
+    "op_lit_array",
 
     "op_index",
     "op_slice",
@@ -40,19 +64,12 @@ const char* op_names[] = {
 
     "op_call_proc",
     "op_call_func",
-    "op_ident_get",
-    "op_ident_set",
-    "op_slot_get",
-    "op_slot_set",
-    "op_lit_int",
-    "op_lit_float",
-    "op_lit_string",
-    "op_lit_array",
-    "op_jump",
-    "op_jfalse",
-    "op_return_func",
     "op_return_proc",
-    "op_return_missing"
+    "op_return_func",
+    "op_return_missing",
+
+    "op_jump",
+    "op_jfalse"
 };
 
 const char* debug_op_name(u8 op)
@@ -68,6 +85,8 @@ const u8 keywords_hpx[] = {
     fail, 0
 };
 const u8 keywords_aiqy[] = {
+    op_inf,      kw_const,      'I','n','f',
+
     op_abs,      kw_fn1,        'a','b','s',
     op_asc,      kw_fn1,        'a','s','c',
 
@@ -95,10 +114,10 @@ const u8 keywords_cks[] = {
     fail, 0
 };
 const u8 keywords_dlt[] = {
+    op_true,     kw_const,      'T','r','u','e',
+
     op_left,     kw_fn2,        'l','e','f','t',
     op_len,      kw_fn1,        'l','e','n',
-
-    op_true,     kw_const,      't','r','u','e',
     fail, 0
 };
 const u8 keywords_emu[] = {
@@ -110,7 +129,8 @@ const u8 keywords_emu[] = {
     fail, 0
 };
 const u8 keywords_fnv[] = {
-    op_false,    kw_const,      'f','a','l','s','e',
+    op_false,    kw_const,      'F','a','l','s','e',
+    op_nan,      kw_const,      'N','a','N',
     op_float,    kw_fn1,        'f','l','o','a','t',
     op_func,     kw_control,    'f','u','n','c',
     fail, 0
@@ -132,13 +152,16 @@ const u8* keywords[] = {
     keywords_gow
 };
 
+// Note: the lexer expects operators with common prefixes
+// to occur with the longest prefix first in these tables.
 const u8 unops[] = {
     op_neg,  0x1b, '-',
     op_bnot, 0x1b, '~',
     op_lnot, 0x1b, 'n','o','t',
-    0x00,    0x00
+    fail,    0x00
 };
 
+// see note for unops
 const u8 binops[] = {
     op_mul,  0x2a, '*',
     op_div,  0x2a, '/',
@@ -149,15 +172,15 @@ const u8 binops[] = {
 
     op_asr,  0x28, '>','>','>',
     op_lsr,  0x28, '>','>',
-    op_lsl,  0x28, '<','<',
+    op_ge,   0x27, '>','=',
+    op_gt,   0x27, '>',
 
+    op_lsl,  0x28, '<','<',
+    op_ne,   0x26, '<','>',
     op_le,   0x27, '<','=',
     op_lt,   0x27, '<',
-    op_gt,   0x27, '>',
-    op_ge,   0x27, '>','=',
 
     op_eq,   0x26, '=','=',
-    op_ne,   0x26, '<','>',
 
     op_band, 0x25, '&',
     op_bor,  0x24, '|',
@@ -165,7 +188,7 @@ const u8 binops[] = {
 
     op_land, 0x23, 'a','n','d',
     op_lor,  0x22, 'o','r',
-    0x00,    0x00
+    fail,    0x00
 };
 
 const u8 prec_max  = 0xf;
@@ -350,7 +373,6 @@ u8 lex_number()
 {
     lex_space();
 
-    // TODO - recognise [+-]Inf / NaN ?
     const u8 *p = input_ptr;
     u8 digits = 0;
     u8 dp = 0;
@@ -390,6 +412,28 @@ u8 lex_number()
     return (dp || nexp) ? kind_float : kind_int;
 }
 
+
+u8 *interned_string_empty;
+u8 *interned_string_true;
+u8 *interned_string_false;
+u8 *interned_string_array;
+u8 *interned_string_proc;
+u8 *interned_string_func;
+u8 *interned_string_unknown;
+
+void strings_init()
+{
+    interned_string_empty   = string_from_data((const u8*)"", 0);
+    interned_string_true    = string_from_data((const u8*)"True", 4);
+    interned_string_false   = string_from_data((const u8*)"False", 5);
+    interned_string_array   = string_from_data((const u8*)"<array>", 7);
+    interned_string_proc    = string_from_data((const u8*)"<proc>", 6);
+    interned_string_func    = string_from_data((const u8*)"<func>", 6);
+    interned_string_unknown = string_from_data((const u8*)"<unknown>", 9);
+}
+
+u8 *string_bucket[256] = {};
+
 // Looks for a string literal in the input.
 // Creates the string if necessary and returns a pointer to its heap descriptor.
 // If no open " is found, returns 0, and input_ptr is left unchanged.
@@ -404,15 +448,18 @@ const u8* lex_string()
 
     const u8 *input_ptr0 = input_ptr;
     u16 len = 0;
+    u8 ch0 = 0;
 
+    // TODO - hex escapes?
     while(1) {
         ch = *input_ptr++;
         if (ch == '"') break;
+        ch0 = ch;
         if (ch == '\\') {
             ch = *++input_ptr;
-            if      (ch == 't') {}
-            else if (ch == 'n') {}
-            else if (ch == '"') {}
+            if      (ch == 't')  {ch0 = '\t';}
+            else if (ch == 'n')  {ch0 = '\n';}
+            else if (ch == '"')  {}
             else if (ch == '\\') {}
             else parser_die("invalid string escape");
         }
@@ -420,10 +467,14 @@ const u8* lex_string()
         len++;
     }
 
-    // TODO - intern if len <= 1
+    if (len == 0) return interned_string_empty;
+    if (len == 1) {
+        u8* str = string_bucket[ch0];
+        if (str) return str;
+    }
 
     u8 *q = heap + heap_alloc(str_data + len);
-    const u8 *str = q;
+    u8 *str = q;
 
     stw(q, str_hash, 0);
     stw(q, str_len, len);
@@ -441,6 +492,34 @@ const u8* lex_string()
         *q++ = ch;
     }
 
+    if (len == 1) string_bucket[ch0] = str;
+
+    return str;
+}
+
+u8 *string_from_char(u8 ch)
+{
+    u8 *str = string_bucket[ch];
+    if (str == 0) {
+        str = heap + heap_alloc(str_data + 1);
+        stw(str, str_hash, 0);
+        stw(str, str_len, 1);
+        str[str_data] = ch;
+        string_bucket[ch] = str;
+    }
+    return str;
+}
+
+u8 *string_from_data(const u8 *data, u16 len)
+{
+    if (len == 0) return interned_string_empty;
+    if (len == 1) {
+        return string_from_char(*data);
+    }
+    u8 *str = heap + heap_alloc(str_data + len);
+    stw(str, str_hash, 0);
+    stw(str, str_len, len);
+    memcpy(str+str_data, data, len);
     return str;
 }
 
@@ -482,22 +561,24 @@ u16 lex_word()
 //
 // Returns opdata_fail, leaving input_ptr unchanged on failure.
 //
-u16 lex_op(const u8* ptr)
+u16 lex_op(const u8* ops)
 {
     const u8 *inp;
     u16 opdata;
+    printf("lex_op\n");
 
 candidate_loop:
     inp = input_ptr;
     
-    opdata = ldw(ptr, 0); ptr += 2;
+    opdata = ldw(ops, 0); ops += 2;
     if (opdata == 0) return opdata_fail;
+    printf("  opdata=%04x\n",opdata);
 
-    u8 ch = *ptr;
+    u8 ch = *ops;
     int alpha = (ch >= 'a' && ch <= 'z');
     while(1) {
         if (ch != *inp++) break;
-        ch = *++ptr;
+        ch = *++ops;
         if (ch & 0x80) {
             if (alpha && ch >= 'a' && ch <= 'z') goto candidate_loop;
             input_ptr = inp;
@@ -506,7 +587,7 @@ candidate_loop:
     }
 
     // skip to next entry
-    while((ch & 0x80) == 0) ch = *++ptr;
+    while((ch & 0x80) == 0) ch = *++ops;
 
     if (ch == fail) return opdata_fail;
     goto candidate_loop;
@@ -947,6 +1028,7 @@ void parse_start()
 {
     heap_init();
     intern_init();
+    strings_init();
     stmt_init();
     code_ptr = malloc(4096);
     code_base = code_ptr;
@@ -984,9 +1066,12 @@ int main()
         "foo = [4,5,6,7,8,9,10,11]\n"
         "blah foo\n"
         "print foo\n"
-        "z = \"hello\"\n"
+        "z = \"he\" + \"l\" + \"l\" + \"o\"\n"
         "z = z + \" world\"\n"
         "print z\n"
+        "func fu()\n"
+        "end\n"
+        "print str(Inf)\n"
         "stop\n"
     ;
 

@@ -470,72 +470,63 @@ void fn_asc()
 
 void fn_chr()
 {
-    vm_die("not implemented");
-
-    // TODO intern single character string
-    //pop_int();
-    //push_val(kind_string, vm_a.u & 0xff);
+    pop_int();
+    u8 ch = vm_a.u & 0xff;
+    u8 *str = string_from_char(ch);
+    push_val(kind_string, str-heap);
 }
 
 void fn_str()
 {
     pop_val();
-    char buf[16];
-    const char *q;
+    u8 buf[16];
+    u8 *str;
     u16 len;
     switch(vm_a.k) {
         case kind_bool:
-            // TODO - it would make sense to put these on the heap
-            // at program start to avoid repeated reallocations
             if (vm_a.u != 0) {
-                len = 4;
-                q = "True";
+                str = interned_string_true;
+            } else {
+                str = interned_string_false;
             }
-            else {
-                len = 5;
-                q = "False";
-            }
-            break;
+            push_val(kind_string, str - heap);
+            return;
 
         case kind_int:
-            len = sprintf(buf, "%d", vm_a.i);
-            q = buf;
+            len = sprintf((char*)buf, "%d", vm_a.i);
             break;
 
         case kind_float:
-            len = sprintf(buf, "%f", f16_to_float(vm_a.f));
-            q = buf;
+            len = sprintf((char*)buf, "%f", f16_to_float(vm_a.f));
             break;
 
         case kind_string:
             push_val(vm_a.k, vm_a.u);
             return;
 
-        // TODO - it would make sense to put these on the heap
-        // at program start to avoid repeated reallocations
+        case kind_array:
+            str = interned_string_array;
+            push_val(kind_string, str - heap);
+            return;
+
+        // TODO - could be friendlier and produce the symbol name
         case kind_proc:
-            len = 6;
-            q = "<proc>";
-            break;
+            str = interned_string_proc;
+            push_val(kind_string, str - heap);
+            return;
 
         case kind_func:
-            len = 6;
-            q = "<func>";
-            break;
+            str = interned_string_func;
+            push_val(kind_string, str - heap);
+            return;
 
         default:
-            len = 9;
-            q = "<unknown>";
-            break;
+            str = interned_string_unknown;
+            push_val(kind_string, str - heap);
+            return;
     }
 
-    // TODO intern if len <= 1
-
-    u8 *str = heap+heap_alloc(str_data + len);
-    stw(str, str_len, len);
-
-    u8 *p = str + str_data;
-    memcpy(p, q, len);
+    str = string_from_data(buf, len);
     push_val(kind_string, str-heap);
 }
 
@@ -613,11 +604,7 @@ void vm_substr_helper(const u8 *str, u16 pos, u16 n, u16 len)
     u16 len2 = len-pos;
     if (n < len2) len2 = n;
 
-    // TODO intern if len2 <= 1
-
-    u8 *str2 = heap + heap_alloc(str_data + len2);
-    stw(str2, str_len, len2);
-    memcpy(str2+str_data, data+pos, len2);
+    u8 *str2 = string_from_data(data+pos, len2);
     push_val(kind_string, str2-heap);
 }
 
@@ -977,6 +964,8 @@ u16 vm_run(const u8 *vm_pc_base)
             // constants
             case op_false:  push_bool(0); break;
             case op_true:   push_bool(1); break;
+            case op_inf:    push_float(1.0 / 0.0); break;
+            case op_nan:    push_float(0.0/ 0.0); break;
 
             // built-in math functions
             case op_abs:    fn_abs(); break;
@@ -1005,11 +994,12 @@ u16 vm_run(const u8 *vm_pc_base)
             case op_ident_set:  vm_ident_set(); break;
             case op_slot_get:   vm_slot_get(); break;
             case op_slot_set:   vm_slot_set(); break;
+
             case op_lit_int:    push_val_checked(kind_int, fetch_word()); break;
             case op_lit_float:  push_val_checked(kind_float, fetch_word()); break;
             case op_lit_string: push_val_checked(kind_string, fetch_word()); break;
+            case op_lit_array:  vm_lit_array(); break;
 
-            case op_lit_array:      vm_lit_array(); break;
             case op_index:          vm_index(); break;
             case op_slice:          vm_slice(1, 1); break;
             case op_slice_start:    vm_slice(1, 0); break;
@@ -1021,8 +1011,8 @@ u16 vm_run(const u8 *vm_pc_base)
             // call + return
             case op_call_proc:      vm_call(kind_proc); break;
             case op_call_func:      vm_call(kind_func); break;
-            case op_return_func:    vm_return_func(); break;
             case op_return_proc:    vm_return_proc(); break;
+            case op_return_func:    vm_return_func(); break;
             case op_return_missing: vm_die("missing return"); break;
 
             // jumps
