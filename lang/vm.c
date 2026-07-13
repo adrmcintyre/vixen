@@ -13,10 +13,11 @@ static const size_t sizeof_Value = 3;
 Value vm_a;
 Value vm_b;
 
-u16 vm_sp_max;
 u16 vm_sp;
 u16 vm_fp;
 u16 vm_pc;
+
+u16 vm_sp_max; // not a register
 
 //------------------------------------------------------------------------------
 // Utilities

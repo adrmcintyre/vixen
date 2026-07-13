@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 
 #define trace(msg) fprintf(stderr,"[trace] %s\n", msg)
 
@@ -146,12 +147,47 @@ typedef struct {
     u8 data[];
 } Array;
 
+// Gross memory map
+static const size_t mem_size = 65536;
+static const u16 heap_max = 0x1000;
+static const u16 code_max = 0x1000;
+static const u16 vm_stack_max = 1536;
+
+static const size_t mem_heap_offset = 0x0000;
+static const size_t mem_code_offset = 0x1000;
+static const size_t mem_vm_stack_offset = 0x2000;
+
 extern u8* mem_base;
+extern u8* heap_base;
+extern u8* code_base;
+extern u8* vm_stack_base;
+
 extern const u8* prog_base;
 extern u8* code_base;
 extern u8* code_ptr;
 
-extern u8 heap[];
+// Utils
+void die(const char* msg);
+u16 hash_mem(const u8* p, u16 len);
+
+// Keywords
+extern OpData kw;
+bool lookup_keyword();
+
+// Operators
+extern const u8 binops[];
+extern const u8 unops[];
+
+// Heap
+void heap_init();
+u8* heap_alloc(u16 n);
+
+// Identifiers
+void intern_init();
+Ident* intern_ident(bool* is_new);
+
+// Strings
+extern String* string_bucket[];
 extern String* interned_string_empty;
 extern String* interned_string_true;
 extern String* interned_string_false;
@@ -159,43 +195,45 @@ extern String* interned_string_array;
 extern String* interned_string_proc;
 extern String* interned_string_func;
 extern String* interned_string_unknown;
+void strings_init();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, u16 len);
 
-void die(const char* msg);
+// Lexer
+extern const u8* input_ptr;
+extern const u8* token_ptr;
+bool lex_char(u8 ch);
+bool lex_word();
+bool lex_peek_stmt_end();
+Kind lex_number();
+String* lex_string();
+bool lex_comment();
+bool lex_end_of_stream();
 
-extern u8* vm_stack_base;
-const u16 vm_stack_max;
+// Code generation
+extern bool opt_emit_log;
+void emit_op(Op op);
+void emit_byte(u8 b);
+void emit_word(u16 w);
+void emit_ident(Ident* ident);
+
+// Statement parser
+Kind func_kind;
+u8 control_sp;
+void parse_stmt();
+void stmt_init();
+
+// Parser
+void parse_start();
+void parse_line();
+void parse_finish();
+void parser_die(const char* msg);
+void parse_expr();
+
+// Virtual machine
 void vm_die(const char* msg);
 u16 vm_run(const u8* vm_pc_base);
 u16 f16_from_float(float f);
 float f16_to_float(u16 u);
 const char* debug_op_name(u8 op);
 
-extern bool opt_emit_log;
-
-void emit_op(Op op);
-void emit_byte(u8 b);
-void emit_word(u16 w);
-void emit_ident(Ident* ident);
-
-bool lex_char(u8 ch);
-bool lex_word();
-bool lex_peek_stmt_end();
-
-extern OpData kw;
-bool lookup_keyword();
-
-Ident* intern_ident(bool* is_new);
-
-u8* heap_alloc(u16 n);
-
-u8 control_sp;
-void parser_die(const char* msg);
-void parse_expr();
-void parse_stmt();
-
-
-Kind func_kind;
-
-void stmt_init();
