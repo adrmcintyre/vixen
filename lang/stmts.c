@@ -2,7 +2,7 @@
 #include "header.h"
 
 u8 control_sp;
-u8 control_stack[32];
+Op control_stack[32];
 
 const u8 begin_loop_max = 32;
 u8 begin_loop_sp = 0;                   // nesting depth of loops
@@ -18,11 +18,11 @@ const u8 forward_jump_max = 32;
 u16 forward_jump_sp = 0;
 u16 forward_jump_stack[forward_jump_max];
 
-u8 func_kind;
-u16 func_id;
+Kind func_kind;
+Ident* func_ident;
 
 u8 slot_max = 64;
-u16 slot_stack[64];     // indexed by slot_num of active func
+Ident* slot_stack[64];     // indexed by slot_num of active func
 
 void stmt_init()
 {
@@ -32,12 +32,12 @@ void stmt_init()
     end_loop_count = 0;
     forward_jump_sp = 0;
     func_kind = kind_fail;
-    func_id = 0;
+    func_ident = 0;
 }
 
 // Records the beginning of a control structure.
 //
-void push_control(u8 op)
+void push_control(Op op)
 {
     if (control_sp == 32) parser_die("too many nested control statements");
     control_stack[control_sp++] = op;
@@ -46,7 +46,7 @@ void push_control(u8 op)
 // Pops and returns the op corresponding to the most recently started
 // control structure. Returns fail if not inside a control structure.
 //
-u8 pop_control()
+Op pop_control()
 {
     if (control_sp == 0) return fail;
     return control_stack[--control_sp];
@@ -57,7 +57,7 @@ u8 pop_control()
 void begin_loop()
 {
     if (begin_loop_sp == begin_loop_max) parser_die("too many nested loops");
-    begin_loop_stack[begin_loop_sp++] = (u16)(code_ptr-code_base);
+    begin_loop_stack[begin_loop_sp++] = to_p16(code_ptr);
 
     end_loop_stack[end_loop_sp++] = end_loop_count;
     end_loop_count = 0;
@@ -68,13 +68,14 @@ void begin_loop()
 //
 // Returns 1 on success, or 0 if not in a loop.
 //
-u16 emit_end_loop_jump(u8 jump_op)
+u8 emit_end_loop_jump(Op jump_op)
 {
     if (end_loop_sp == 0) return 0;
     if (end_loop_sp == end_loop_max) parser_die("control flow is too complicated");
     emit_op(jump_op);
-    u16 ref = (u16)(code_ptr - code_base);
-    stw(end_loop_stack, end_loop_sp, ref); end_loop_sp += 2;
+    u16 ref = to_p16(code_ptr);
+    *(u16*) &end_loop_stack[end_loop_sp] = ref;
+    end_loop_sp += sizeof(u16);
     end_loop_count++;
     emit_word(0);
     return 1;
@@ -83,9 +84,9 @@ u16 emit_end_loop_jump(u8 jump_op)
 // Emits a backward ref to the given location relative to the
 // byte immediately following the emitted ref.
 //
-void emit_backward_ref(u8 *ref_ptr)
+void emit_backward_ref(u16 ref)
 {
-    u16 rel = (u16)(ref_ptr - (code_ptr+2));
+    u16 rel = (u16)(ref - to_p16(code_ptr+2));
     emit_word(rel);
 }
 
@@ -93,10 +94,10 @@ void emit_backward_ref(u8 *ref_ptr)
 // code position relative to the byte immediately following the
 // updated ref.
 //
-void patch_forward_ref(u8 *ref_ptr)
+void patch_forward_ref(u16 ref_ptr)
 {
-    u16 rel = (u16)(code_ptr - (ref_ptr+2));
-    stw(ref_ptr, 0, rel);
+    u16 rel = (u16)(to_p16(code_ptr) - (ref_ptr+2));
+    *(u16*) (from_p16(ref_ptr)) = rel;
 }
 
 // Emits a jump instruction to repeat the current loop, and
@@ -113,13 +114,13 @@ void end_loop(u8 jump_op)
     // jump to start of loop
     u16 ref = begin_loop_stack[--begin_loop_sp];
     emit_op(jump_op);
-    emit_backward_ref(code_base + ref);
+    emit_backward_ref(ref);
 
     // resolve references to end of loop
     while(end_loop_count) {
-        end_loop_sp -= 2;
-        u16 ref = ldw(end_loop_stack, end_loop_sp);
-        patch_forward_ref(code_base + ref);
+        end_loop_sp -= sizeof(u16);
+        u16 ref = *(u16*) &end_loop_stack[end_loop_sp];
+        patch_forward_ref(ref);
         end_loop_count--;
     }
     end_loop_count = end_loop_stack[--end_loop_sp];
@@ -132,7 +133,7 @@ void emit_forward_jump(u8 jump_op)
 {
     if (forward_jump_sp == forward_jump_max) parser_die("control flow is too complicated");
     emit_op(jump_op);
-    forward_jump_stack[forward_jump_sp++] = (u16)(code_ptr - code_base);
+    forward_jump_stack[forward_jump_sp++] = to_p16(code_ptr);
     emit_word(0);   // not yet resolved
 }
 
@@ -143,10 +144,10 @@ void resolve_forward_jump()
 {
     if (forward_jump_sp == 0) parser_die("not in a control block");
     u16 ref = forward_jump_stack[--forward_jump_sp];
-    patch_forward_ref(code_base + ref);
+    patch_forward_ref(ref);
 }
 
-void parse_func_or_proc(u8 op)
+void parse_func_or_proc(Op op)
 {
     if (control_sp != 0) parser_die("func/proc only allowed at top level");
 
@@ -159,17 +160,19 @@ void parse_func_or_proc(u8 op)
     if (lookup_keyword()) parser_die("reserved word cannot be used here");
 
     // first time we've seen this, or it has only been referenced before
-    if (intern_ident(&func_id) || (heap+func_id)[ident_kind] == kind_fail) {
-        (heap+func_id)[ident_kind] = func_kind;
+    bool is_new;
+    func_ident = intern_ident(&is_new);
+    if (is_new || func_ident->val.k == kind_fail) {
+        func_ident->val.k = func_kind;
     }
     else {
         parser_die("name already in use");
     }
 
-    u16 func_addr = (u16)(code_ptr - code_base);
-    stw(heap+func_id, ident_val, func_addr);
-    (heap+func_id)[ident_arg_count] = 0;
-    (heap+func_id)[ident_slot_count] = 0;
+    u16 func_addr = to_p16(code_ptr);
+    func_ident->val.u = func_addr;
+    func_ident->args = 0;
+    func_ident->slot = 0;
 
     if (!lex_char('(')) parser_die("missing '('");
 
@@ -178,26 +181,26 @@ void parse_func_or_proc(u8 op)
         while(1) {
             if (!lex_word()) parser_die("missing parameter name");
             if (lookup_keyword()) parser_die("reserved word cannot be used here");
-            u16 param_id; intern_ident(&param_id);
-            if ((heap+param_id)[ident_slot_num] != 0xff) parser_die("repeated parameter name");
+            Ident* parent_ident = intern_ident(0);
+            if (parent_ident->slot != 0xff) parser_die("repeated parameter name");
 
             if (slot_num >= slot_max) die("too many local variables");
 
-            (heap+param_id)[ident_slot_num] = slot_num;
-            slot_stack[slot_num] = param_id;
+            parent_ident->slot = slot_num;
+            slot_stack[slot_num] = parent_ident;
             slot_num += 1;
 
             if (lex_char(')')) break;
             if (!lex_char(',')) parser_die("missing ','");
         }
     }
-    (heap+func_id)[ident_arg_count] = slot_num;
-    (heap+func_id)[ident_slot_count] = slot_num;
+    func_ident->args = slot_num;
+    func_ident->slot = slot_num;
 }
 
 // Parses a control statement.
 //
-void parse_control_stmt(u8 op)
+void parse_control_stmt(Op op)
 {
     switch(op) {
     case op_if:
@@ -223,7 +226,7 @@ void parse_control_stmt(u8 op)
     case op_endif:
         {
             // if <expr> ... [else] ... |endif|
-            u8 popped = pop_control();
+            Op popped = pop_control();
             if (popped != op_if && popped != op_else) parser_die("'endif' without 'if'");
 
             resolve_forward_jump();
@@ -284,7 +287,7 @@ void parse_control_stmt(u8 op)
 
     case op_end:
         {
-            u8 k = pop_control();
+            Op k = pop_control();
             if (k != op_func && k != op_proc) parser_die("'end' not after a func/proc");
 
             if (func_kind == kind_proc) {
@@ -296,18 +299,21 @@ void parse_control_stmt(u8 op)
             }
 
             // clear slot assignments
-            u8 slot_num = (heap+func_id)[ident_slot_count];
+            u8 slot_num = func_ident->slot;
             while(slot_num > 0) {
                 --slot_num;
-                u16 slot_id = slot_stack[slot_num];
-                (heap+slot_id)[ident_slot_num] = 0xff;
+                Ident* slot_ident = slot_stack[slot_num];
+                slot_ident->slot = 0xff;
             }
 
-            func_id = 0;
+            func_ident = 0;
             func_kind = kind_fail;
             resolve_forward_jump();
             break;
         }
+
+    default:
+        die("unreachable");
     }
 }
 
@@ -329,20 +335,19 @@ u8 parse_cmd_args()
     return nargs;
 }
 
-void parse_assign(u16 id, u16 is_indexed)
+void parse_assign(Ident* ident, u8 is_indexed)
 {
     parse_expr();
     if (func_kind == kind_fail) {
         emit_op(is_indexed ? op_ident_set_indexed : op_ident_set);
-        emit_ident(id);
+        emit_ident(ident);
     }
     else {
-        u8 slot_num = (heap+id)[ident_slot_num];
+        u8 slot_num = ident->slot;
         if (slot_num == 0xff) {
-            slot_num = (heap+func_id)[ident_slot_count];
-            (heap+func_id)[ident_slot_count]++;
-            (heap+id)[ident_slot_num] = slot_num;
-            slot_stack[slot_num] = id;
+            slot_num = func_ident->slot++;
+            ident->slot = slot_num;
+            slot_stack[slot_num] = ident;
         }
         emit_op(is_indexed ? op_slot_set_indexed : op_slot_set);
         emit_byte(slot_num);
@@ -354,17 +359,17 @@ void parse_stmt()
     if (!lex_word()) parser_die("bad statement");
 
     if (lookup_keyword()) {
-        u8 opcode = kwop;
-        if (kwinfo == kw_cmd0) {
+        Op opcode = kw.op;
+        if (kw.info == info_cmd0) {
             emit_op(opcode);
         }
-        else if (kwinfo == kw_cmd_any) {
+        else if (kw.info == info_cmd_any) {
             // TODO check arg counts
             u8 nargs = parse_cmd_args();
             emit_op(opcode);
             emit_byte(nargs);
         }
-        else if (kwinfo == kw_control) {
+        else if (kw.info == info_control) {
             parse_control_stmt(opcode);
         }
         else {
@@ -372,21 +377,21 @@ void parse_stmt()
         }
     }
     else {
-        u16 id; intern_ident(&id);
+        Ident* ident = intern_ident(0);
         if (lex_char('[')) {
             parse_expr();
             if (!lex_char(']')) parser_die("missing ']'");
             if (!lex_char('=')) parser_die("missing '='");
-            parse_assign(id, 1);
+            parse_assign(ident, 1);
         }
         else if (lex_char('=')) {
-            parse_assign(id, 0);
+            parse_assign(ident, 0);
         }
         else {
             u8 nargs = parse_cmd_args();
             emit_op(op_call_proc);
             emit_byte(nargs);
-            emit_ident(id);
+            emit_ident(ident);
         }
     }
 }
