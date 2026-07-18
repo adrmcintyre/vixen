@@ -48,6 +48,7 @@ const char* debug_op_names[] = {
     "op_lit_float",
     "op_lit_string",
     "op_lit_array",
+    "op_lit_dict",
 
     "op_index",
     "op_slice",

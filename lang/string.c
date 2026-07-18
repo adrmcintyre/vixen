@@ -5,6 +5,7 @@ String* interned_string_empty;
 String* interned_string_true;
 String* interned_string_false;
 String* interned_string_array;
+String* interned_string_dict;
 String* interned_string_proc;
 String* interned_string_func;
 String* interned_string_unknown;
@@ -17,6 +18,7 @@ void strings_init()
     interned_string_true    = string_from_data((const u8*) "True", 4);
     interned_string_false   = string_from_data((const u8*) "False", 5);
     interned_string_array   = string_from_data((const u8*) "<array>", 7);
+    interned_string_dict    = string_from_data((const u8*) "<dict>", 6);
     interned_string_proc    = string_from_data((const u8*) "<proc>", 6);
     interned_string_func    = string_from_data((const u8*) "<func>", 6);
     interned_string_unknown = string_from_data((const u8*) "<unknown>", 9);
@@ -50,4 +52,28 @@ String* string_from_data(const u8* data, u16 len)
     return str;
 }
 
+u16 string_hash(u16 s)
+{
+    String* string = (String*)from_p16(s);
+    u16 h = string->hash;
+    if (!h) {
+        h = hash_mem(string->data, string->len);
+        string->hash = h;
+    }
+    return h;
+}
+
+const char* string_data(u16 s)
+{
+    String* string = (String*)from_p16(s);
+    return (const char*)string->data;
+}
+
+int string_eq(u16 s1, u16 s2)
+{
+    String *string1 = (String*)from_p16(s1);
+    String *string2 = (String*)from_p16(s2);
+    return string1->len == string2->len &&
+        0 == memcmp(string1->data, string2->data, string1->len);
+}
 

@@ -102,6 +102,39 @@ bool parse_array()
     return true;
 }
 
+u16 parse_dict()
+{
+    if (!lex_char('{')) {
+        return 0;
+    }
+
+    u16 nargs = 0;
+    if (!lex_char('}')) {
+        pending_ops[pending_ops_sp++] = opdata_mark;
+        parse_expr();
+        if (!lex_char(':')) parser_die("missing ':'");
+        parse_expr();
+
+        nargs += 1;
+        while(lex_char(',')) {
+            pending_ops[pending_ops_sp++] = opdata_mark;
+            parse_expr();
+            if (!lex_char(':')) parser_die("missing ':'");
+            parse_expr();
+
+            nargs += 1;
+        }
+        if (!lex_char('}')) {
+            parser_die("missing '}'");
+        }
+    }
+
+    emit_op(op_lit_dict);
+    emit_word(nargs);
+
+    return 1;
+}
+
 // Parses a bracketed expression (<expr>), emitting it and returning 1.
 // Returns 0 if the input does not start with '('.
 //
@@ -240,6 +273,8 @@ void parse_terminal()
     if (parse_literal()) return;
 
     if (parse_array()) return;
+
+    if (parse_dict()) return;
 
     if (!lex_word()) parser_die("expecting identifier or value");
 

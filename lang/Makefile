@@ -1,8 +1,8 @@
 .PHONY: all
 all: lang
 
-lang: *.c
-	gcc -o $@ $^ -I.
+lang: *.c *.h
+	gcc -o $@ *.c -I.
 
 .PHONY: clean
 clean:

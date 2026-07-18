@@ -1,8 +1,12 @@
+#if !defined GUARD_HEADER_H
+#define GUARD_HEADER_H
+
 #include <stdbool.h>
 #include <stddef.h>
 
 #define trace(msg) fprintf(stderr,"[trace] %s\n", msg)
 
+typedef signed char i8;
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef signed short i16;
@@ -58,6 +62,7 @@ typedef enum {
     op_lit_float,
     op_lit_string,
     op_lit_array,
+    op_lit_dict,
 
     op_index,
     op_slice,
@@ -102,8 +107,9 @@ typedef enum {
     kind_float  = 3,
     kind_string = 4,
     kind_array  = 5,
-    kind_proc   = 6,
-    kind_func   = 7
+    kind_dict   = 6,
+    kind_proc   = 7,
+    kind_func   = 8
 } Kind;
 
 typedef struct {
@@ -192,12 +198,15 @@ extern String* interned_string_empty;
 extern String* interned_string_true;
 extern String* interned_string_false;
 extern String* interned_string_array;
+extern String* interned_string_dict;
 extern String* interned_string_proc;
 extern String* interned_string_func;
 extern String* interned_string_unknown;
 void strings_init();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, u16 len);
+u16 string_hash(u16 s);
+int string_eq(u16 s1, u16 s2);
 
 // Lexer
 extern const u8* input_ptr;
@@ -237,3 +246,4 @@ u16 f16_from_float(float f);
 float f16_to_float(u16 u);
 const char* debug_op_name(u8 op);
 
+#endif

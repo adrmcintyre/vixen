@@ -40,7 +40,7 @@ u16 hash_mem(const u8* p, u16 len)
 {
     u16 h = 0;
     while(len--) h = h * 101 + *p++;
-    return h & 0x7fff;
+    return h & 0x7fff | 0x8000;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,6 +65,10 @@ int main()
         "func fu()\n"
         "end\n"
         "print str(Inf)\n"
+        "d={\"foo\":123, \"bar\":\"quux\"}\n"
+        "print d[\"bar\"]\n"
+        "print d[\"foo\"]\n"
+        "print d[\"missing\"]\n"
         "stop\n"
     ;
 

@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "header.h"
+#include "dict.h"
 
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
 // TODO - heap cleanup (e.g. ref counts)
@@ -110,6 +111,11 @@ void push_array(Array* a)
     push_val(kind_array, to_p16(a));
 }
 
+void push_dict(Dict* d)
+{
+    push_val(kind_dict, to_p16(d));
+}
+
 void vm_check_stack(u16 n)
 {
     if (vm_sp > vm_sp_max-n) vm_die("stack overflow");
@@ -210,6 +216,12 @@ void pop_array()
 {
     pop_val();
     if (vm_a.k != kind_array) vm_die("expected array");
+}
+
+void pop_dict()
+{
+    pop_val();
+    if (vm_a.k != kind_dict) vm_die("expected dict");
 }
 
 void pop_vals()
@@ -497,6 +509,10 @@ void fn_str()
             push_val(kind_string, to_p16(interned_string_array));
             return;
 
+        case kind_dict:
+            push_val(kind_string, to_p16(interned_string_dict));
+            return;
+
         // TODO - could be friendlier and produce the symbol name
         case kind_proc:
             push_val(kind_string, to_p16(interned_string_proc));
@@ -629,6 +645,13 @@ void vm_print(Value val)
             break;
         }
 
+        case kind_dict:
+        {
+            //TODO
+            printf("{...}");
+            break;
+        }
+
         default:
             printf("%02x:%04x", val.k, val.u);
             break;
@@ -704,22 +727,57 @@ void vm_lit_array()
     push_array(array);
 }
 
+void vm_lit_dict()
+{
+    u16 nargs = fetch_word();
+
+    Dict *dict = dict_new_presized(nargs);
+    vm_sp -= nargs * 2 * sizeof_Value;
+    u8 *item = from_p16(vm_sp);
+
+    while (nargs--) {
+        Value key_val = get_value(item);
+        item += sizeof_Value;
+        Value value = get_value(item);
+        item += sizeof_Value;
+     
+        u16 key = key_val.u;
+        u16 hash = string_hash(key);
+        dict_set_item(dict, key, hash, value);
+    }
+
+    push_dict(dict);
+}
+
 // TODO allow indexing of strings
 void vm_index()
 {
-    pop_int();
-    vm_b = vm_a;
-    pop_array();
+    pop_val();
+    if (vm_a.k == kind_int) {
+        vm_b = vm_a;
+        pop_array();
 
-    Array* array = (Array*) from_p16(vm_a.u);
-    u8 len = array->len;
+        Array* array = (Array*) from_p16(vm_a.u);
+        u8 len = array->len;
 
-    i16 index = vm_b.i;
-    if (index < 0) index += len;
-    if (index < 0 || index >= len) die("array index out of range");
+        i16 index = vm_b.i;
+        if (index < 0) index += len;
+        if (index < 0 || index >= len) die("array index out of range");
 
-    Value elt = get_value(array->data + index*sizeof_Value);
-    push_val(elt.k, elt.u);
+        Value elt = get_value(array->data + index*sizeof_Value);
+        push_val(elt.k, elt.u);
+    }
+    else if (vm_a.k == kind_string) {
+        vm_b = vm_a;
+        pop_dict();
+
+        Dict* dict = (Dict*) from_p16(vm_a.u);
+        u16 key = vm_b.u;
+        u16 hash = string_hash(key);
+
+        Value elt = dict_get_item(dict, key, hash);
+        push_val(elt.k, elt.u);
+    }
 }
 
 // TODO allow slicing of strings
@@ -949,6 +1007,7 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_lit_float:  push_val_checked(kind_float, fetch_word()); break;
             case op_lit_string: push_val_checked(kind_string, fetch_word()); break;
             case op_lit_array:  vm_lit_array(); break;
+            case op_lit_dict:   vm_lit_dict(); break;
 
             case op_index:          vm_index(); break;
             case op_slice:          vm_slice(1, 1); break;
