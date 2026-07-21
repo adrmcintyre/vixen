@@ -1,15 +1,18 @@
 Interpreter
 ===========
 
-g = 99
+Scopes:
+    g = 99
 
-func foo(x, y)
-    h = g + x       <- is h a slot? does g reference the global?
-    g = y * 2       <- is g global or a slot?
-    z = x * 2       <- does z introduce a slot?
-    z = w           <- what does w refer to??? compile error?
-    return x + z    <- x, z refer to slots
-end
+    func foo(x, y)
+        z = w           <- z is a slot, w is global
+        h = g + x       <- h is a slot, g is global
+        g = g + 1       <- left g is a slot, right g is global
+        return x + z    <- x, z refer to slots
+    end
+
+    w = 123
+
 
 outside a func,
     all sets/gets reference globals

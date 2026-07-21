@@ -226,6 +226,13 @@ static i16 dict_lookup(Dict *dict, u16 key, u16 hash, Value *value_addr)
     return ix;
 }
 
+int dict_has_item(Dict* dict, u16 key, u16 hash)
+{
+    DictKeys* keys = dict->keys;
+    i16 ix = dictkeys_lookup(keys, key, hash);
+    return ix >= 0;
+}
+
 // Internal function to find slot for an item from its hash
 // when it is known that the key is not present in the dict.
 static u16 dictkeys_find_empty_slot(DictKeys *keys, u16 hash)
@@ -351,7 +358,7 @@ Value dict_get_item(Dict *dict, u16 key, u16 hash)
     i16 ix = dict_lookup(dict, key, hash, &value);
     (void)ix;
 
-    return value;  // borrowed reference
+    return value;
 }
 
 void dict_set_item(Dict* dict, u16 key, u16 hash, Value value)
@@ -450,6 +457,36 @@ u16 dict_length(Dict* dict)
 {
     return dict->used;
 }
+
+u16 dict_iter_init(Dict* dict)
+{
+    return 0;
+}
+
+u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value)
+{
+    DictKeys *keys = dict->keys;
+    while (1) {
+        if (iter >= keys->nentries) {
+            return 0;
+        }
+
+        DictEntry* entry = DK_ENTRIES(keys) + iter;
+        iter += 1;
+        // skip deleted entries
+        if (entry->value.k == kind_fail) {
+            continue;
+        }
+
+        key->k = kind_string;
+        key->u = entry->key;
+        value->k = entry->value.k;
+        value->u = entry->value.u;
+        break;
+    }
+    return iter;
+}
+
 
 //void dict_dump(Dict* dict)
 //{

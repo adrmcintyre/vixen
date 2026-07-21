@@ -77,7 +77,7 @@ String* lex_string()
     input_ptr++;
 
     const u8* input_ptr0 = input_ptr;
-    u16 len = 0;
+    i16 len = 0;
     u8 ch0 = 0;
 
     // TODO - hex escapes?

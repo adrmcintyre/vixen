@@ -39,7 +39,7 @@ String* string_from_char(u8 ch)
     return str;
 }
 
-String* string_from_data(const u8* data, u16 len)
+String* string_from_data(const u8* data, i16 len)
 {
     if (len == 0) return interned_string_empty;
     if (len == 1) {
@@ -77,3 +77,14 @@ int string_eq(u16 s1, u16 s2)
         0 == memcmp(string1->data, string2->data, string1->len);
 }
 
+String* string_get_slice(String* string, i16 start, i16 end)
+{
+    i16 len = string->len;
+
+    slice_adjust(&start, &end, &len);
+
+    String* string2 = (String*) heap_alloc(sizeof(String) + len);
+    string2->len = len;
+    memcpy(string2->data, string->data + start, len);
+    return string2;
+}

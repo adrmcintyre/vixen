@@ -48,29 +48,24 @@ u16 hash_mem(const u8* p, u16 len)
 //
 const u8* prog_base;
 
-int main()
+int main(int argc, char *argv[])
 {
     mem_init();
 
-    const char* prog =
-        "proc blah(arr)\n"
-        "   arr[2] = 99\n"
-        "end\n"
-        "foo = [4,5,6,7,8,9,10,11]\n"
-        "blah foo\n"
-        "print foo\n"
-        "z = \"he\" + \"l\" + \"l\" + \"o\"\n"
-        "z = z + \" world\"\n"
-        "print z\n"
-        "func fu()\n"
-        "end\n"
-        "print str(Inf)\n"
-        "d={\"foo\":123, \"bar\":\"quux\"}\n"
-        "print d[\"bar\"]\n"
-        "print d[\"foo\"]\n"
-        "print d[\"missing\"]\n"
-        "stop\n"
-    ;
+    const char* filename = "test.lang";
+    if (argc > 1) {
+        filename = argv[1];
+    }
+    FILE *fp = fopen(filename, "r");
+    size_t prog_max = 65536;
+    char *prog = malloc(prog_max+1);
+    size_t n = fread(prog, 1, prog_max, fp);
+    if (ferror(fp)) {
+        perror("could not read program");
+        exit(1);
+    }
+    fclose(fp);
+    prog[n] = '\0';
 
     const u8* p = (u8*) prog;
     prog_base = p;

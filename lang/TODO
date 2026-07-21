@@ -1,9 +1,0 @@
-
-Ref counting of strings, arrays, dicts?
-
-Other dict operations:
-    del
-    set
-    . operator ???
-
-How to represent missing element - None?

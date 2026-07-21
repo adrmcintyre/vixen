@@ -37,11 +37,11 @@ void parse_unops()
     }
 }
 
-// Parses a literal:
+// Parses an atom:
 //      <integer>
 //      <float>
 //      <string>
-bool parse_literal()
+bool parse_atom()
 {
     // TODO - maybe parse true/false literals here
     Kind kind = lex_number();
@@ -178,7 +178,8 @@ u16 parse_args()
     return nargs;
 }
 
-// Parses and index expression in one of these forms, and returns 1.
+// Parses an index expression in one of these forms, and returns
+// a Subscript value indicating which was found.
 //
 // [index]
 // [start:end]
@@ -186,50 +187,44 @@ u16 parse_args()
 // [:end]
 // [:]
 //
-// Returns 0 if the input does not start with '['.
-//
-bool parse_index_arg()
+extern Subscript parse_index_arg()
 {
-    if (!lex_char('[')) return false;
+    if (!lex_char('[')) return ss_none;
 
     if (!lex_char(':')) {
         pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
         if (lex_char(']')) {
             // [index]
-            emit_op(op_index);
-            return true;
+            return ss_index;
         }
         else if (!lex_char(':')) {
             parser_die("missing ']'");
         }
         else if (lex_char(']')) {
             // [start:]
-            emit_op(op_slice_start);
-            return true;
+            return ss_start;
         }
         else {
             // [start:end]
             pending_ops[pending_ops_sp++] = opdata_mark;
             parse_expr();
-            emit_op(op_slice);
+            if (!lex_char(']')) parser_die("missing ']'");
+            return ss_both;
         }
     }
     else if (lex_char(']')) {
         // [:]
-        emit_op(op_slice_empty);
-        return true;
+        return ss_empty;
     }
     else {
         // [:end]
         pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
-        emit_op(op_slice_end);
+        if (!lex_char(']')) parser_die("missing ']'");
+        return ss_end;
     }
-
-    if (!lex_char(']')) parser_die("missing ']'");
-    
-    return true;
+    return ss_none;
 }
 
 // Parses the <expr-list> (if needed) for a recently recognised keyword,
@@ -270,7 +265,7 @@ void parse_terminal()
 {
     if (parse_paren_expr()) return;
 
-    if (parse_literal()) return;
+    if (parse_atom()) return;
 
     if (parse_array()) return;
 
@@ -314,7 +309,15 @@ void parse_terminal()
         }
     }
 
-    parse_index_arg();
+    switch(parse_index_arg()) {
+        case ss_none:  break;
+        case ss_index: emit_op(op_get_index); break;
+        case ss_empty: emit_op(op_get_slice_empty); break;
+        case ss_start: emit_op(op_get_slice_start); break;
+        case ss_end:   emit_op(op_get_slice_end); break;
+        case ss_both:  emit_op(op_get_slice); break;
+        default: die("unreachable");
+    }
 }
 
 // Parses an <expr>, consisting of one or more <terminal>s each preceded 

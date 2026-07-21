@@ -1,0 +1,11 @@
+x = 3
+
+func zog()
+    x = x + 1
+    return x
+end
+
+print "zog=",zog()
+print "x=",x
+
+stop

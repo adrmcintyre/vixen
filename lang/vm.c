@@ -5,11 +5,10 @@
 
 #include "header.h"
 #include "dict.h"
+#include "array.h"
 
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
 // TODO - heap cleanup (e.g. ref counts)
-
-static const size_t sizeof_Value = 3;
 
 Value vm_a;
 Value vm_b;
@@ -30,12 +29,12 @@ void vm_die(const char* msg)
     exit(1);
 }
 
-Value get_value(const u8* p)
+extern Value get_value(const u8* p)
 {
     return (Value){.k = *p, .u = *(u16*)(p+1)};
 }
 
-void set_value(u8* p, Value v)
+extern void set_value(u8* p, Value v)
 {
     *p = v.k;
     *(u16*)(p+1) = v.u;
@@ -106,6 +105,11 @@ void push_float(float f)
     push_f16(f16_from_float(f));
 }
 
+void push_string(String* s)
+{
+    push_val(kind_string, to_p16(s));
+}
+
 void push_array(Array* a)
 {
     push_val(kind_array, to_p16(a));
@@ -149,7 +153,10 @@ void pop_val()
 void pop_bool()
 {
     pop_val();
-    if (vm_a.k != kind_bool) vm_die("expected boolean");
+    if (vm_a.k != kind_bool) {
+        vm_a.k = kind_bool;
+        vm_a.u = 1;
+    }
 }
 
 void pop_int()
@@ -242,8 +249,6 @@ void pop_vals()
         return;
     }
 
-    if (vm_a.k == kind_string && vm_b.k == kind_string) return;
-
     vm_die("incompatible types");
 }
 
@@ -253,40 +258,54 @@ void pop_vals()
 
 void vm_add()
 {
+    //TODO - maybe even + and - for dictionaries?
     pop_vals();
 
-    // TODO check overflow?
-    if (vm_a.k == kind_int) {
-        push_int(vm_a.i + vm_b.i);
-        return;
+    switch (vm_a.k) {
+        case kind_int: {
+            // TODO check overflow?
+            push_int(vm_a.i + vm_b.i);
+            return;
+        }
+        case kind_float: {
+            push_float(f16_to_float(vm_a.f) + f16_to_float(vm_b.f));
+            return;
+        }
+        case kind_string: {
+            String* str1 = (String*) from_p16(vm_a.u);
+            if (str1->len == 0) {
+                push_val(vm_b.k, vm_b.u);
+                return;
+            }
+
+            String* str2 = (String*) from_p16(vm_b.u);
+            if (str2->len == 0) {
+                push_val(vm_a.k, vm_a.u);
+                return;
+            }
+
+            i16 len = str1->len + str2->len;
+            String* str = (String*) heap_alloc(sizeof(String) + len);
+            str->len = len;
+
+            u8* ptr = str->data;
+            memcpy(ptr, str1->data, str1->len);
+            ptr += str1->len;
+            memcpy(ptr, str2->data, str2->len);
+
+            push_val(kind_string, to_p16(str));
+            return;
+        }
+        case kind_array: {
+            Array* arr1 = (Array*) from_p16(vm_a.u);
+            Array* arr2 = (Array*) from_p16(vm_b.u);
+            Array* array = array_append(arr1, arr2);
+            push_array(array);
+            return;
+        }
+        default:
+            die("expected numbers or strings or arrays");
     }
-    if (vm_a.k == kind_float) {
-        push_float(f16_to_float(vm_a.f) + f16_to_float(vm_b.f));
-        return;
-    }
-
-    String* str1 = (String*) from_p16(vm_a.u);
-    if (str1->len == 0) {
-        push_val(vm_b.k, vm_b.u);
-        return;
-    }
-
-    String* str2 = (String*) from_p16(vm_b.u);
-    if (str2->len == 0) {
-        push_val(vm_a.k, vm_a.u);
-        return;
-    }
-
-    u16 len = str1->len + str2->len;
-    String* str = (String*) heap_alloc(sizeof(String) + len);
-    str->len = len;
-
-    u8* ptr = str->data;
-    memcpy(ptr, str1->data, str1->len);
-    ptr += str1->len;
-    memcpy(ptr, str2->data, str2->len);
-
-    push_val(kind_string, to_p16(str));
 }
 
 //------------------------------------------------------------------------------
@@ -316,11 +335,14 @@ void vm_relop(u8 op)
                 cmp = 0;
             }
             else {
-                u16 len1, len2;
                 String* str1 = (String*) from_p16(vm_a.u);
                 String* str2 = (String*) from_p16(vm_b.u);
-                u16 prefix_len = len1;
-                if (len2 < prefix_len) prefix_len = len2;
+                i16 len1 = str1->len;
+                i16 len2 = str2->len;
+                i16 prefix_len = len1;
+                if (prefix_len > len2) {
+                    prefix_len = len2;
+                }
                 cmp = memcmp(str1->data, str2->data, prefix_len);
                 if (cmp == 0 && len1 != len2) {
                     cmp = (len1 < len2) ? -1 : 1;
@@ -399,8 +421,8 @@ void fn_int()
             break;
 
         case kind_string: {
-            u16 len;
             const String* str = (String*) from_p16(vm_a.u);
+            u16 len = str->len;
             // number of digits in "-32768"
             if (len > 0 && len <= 6) {
                 char buf[8];
@@ -437,8 +459,8 @@ void fn_float()
             break;
 
         case kind_string: {
-            u16 len;
             String* str = (String*) from_p16(vm_a.u);
+            u16 len = str->len;
             // reasonable upper bound for max digits
             if (len > 0 && len < 32) {
                 char buf[32];
@@ -532,11 +554,34 @@ void fn_str()
 
 void fn_len()
 {
-    pop_str();
-    String* str = (String*) from_p16(vm_a.u);
-    push_int((i16) str->len);
+    pop_val();
+    i16 n;
+    switch (vm_a.k) {
+        case kind_string: {
+            String* str = (String*) from_p16(vm_a.u);
+            n = (i16) str->len;
+            break;
+        }
+        case kind_array: {
+            Array* arr = (Array*) from_p16(vm_a.u);
+            n = (i16) arr->len;
+            break;
+        }
+        case kind_dict: {
+            Dict* dict = (Dict*) from_p16(vm_a.u);
+            n = (i16) dict_length(dict);
+            break;
+        }
+        default:
+            die("expected string or array or dict");
+        }
+        push_int(n);
 }
 
+// TODO - add push, pop for arrays and slice assignment
+
+// TODO - all of substr, left, right can be done away
+// with now that we can slice strings...
 void vm_substr(u16 pos, u16 n);
 void vm_substr_helper(String* str, u16 pos, u16 n, u16 len);
 
@@ -633,8 +678,8 @@ void vm_print(Value val)
         case kind_array:
         {
             Array* array = (Array*) from_p16(val.u);
-            u8 len = array->len;
-            u8* elt = array->data;
+            u16 len = array->len;
+            u8* elt = from_p16(array->dataptr);
             putchar('[');
             while(len--) {
                 vm_print(get_value(elt));
@@ -647,8 +692,23 @@ void vm_print(Value val)
 
         case kind_dict:
         {
-            //TODO
-            printf("{...}");
+            Dict* dict = (Dict*) from_p16(val.u);
+            Value key, value;
+            putchar('{');
+            u16 iter = dict_iter_init(dict);
+            iter = dict_iter_item(dict, iter, &key, &value);
+            if (iter) {
+                vm_print(key);
+                putchar(':');
+                vm_print(value);
+                while (0 != (iter = dict_iter_item(dict, iter, &key, &value))) {
+                    putchar(',');
+                    vm_print(key);
+                    putchar(':');
+                    vm_print(value);
+                }
+            }
+            putchar('}');
             break;
         }
 
@@ -694,7 +754,7 @@ void vm_slot_set()
 {
     u8 slot = fetch_byte();
     pop_val();
-    u8* pslot = from_p16(vm_fp) + slot * sizeof_Value;
+    u8* pslot = from_p16(vm_fp + slot * sizeof_Value);
     set_value(pslot, vm_a);
 }
 
@@ -706,7 +766,7 @@ void vm_slot_get()
     vm_check_stack(sizeof_Value);
 
     u8 slot = fetch_byte();
-    u8* frame = from_p16(vm_fp);
+    u8* frame = from_p16(vm_fp + slot * sizeof_Value);
     Value item = get_value(frame);
     push_val(item.k, item.u);
 }
@@ -714,9 +774,8 @@ void vm_slot_get()
 void vm_lit_array()
 {
     u8 nargs = fetch_byte();
-    Array* array = (Array*) heap_alloc(sizeof(Array) + nargs * sizeof_Value);
-    array->len = nargs;
-    u8* elt = array->data + nargs * sizeof_Value;
+    Array* array = array_new_presized(nargs, 0);
+    u8* elt = from_p16(array->dataptr + nargs * sizeof_Value);
 
     while(nargs--) {
         pop_val();
@@ -749,39 +808,144 @@ void vm_lit_dict()
     push_dict(dict);
 }
 
-// TODO allow indexing of strings
-void vm_index()
+void vm_in()
 {
     pop_val();
-    if (vm_a.k == kind_int) {
-        vm_b = vm_a;
-        pop_array();
+    vm_b = vm_a;
+    pop_val();
 
-        Array* array = (Array*) from_p16(vm_a.u);
-        u8 len = array->len;
+    switch (vm_b.k) {
+        case kind_array: {
+            vm_die("'in' operator not implemented for arrays");
+            break;
+        }
+        case kind_dict: {
+            if (vm_a.k != kind_string) {
+                die("expected string");
+            }
 
-        i16 index = vm_b.i;
-        if (index < 0) index += len;
-        if (index < 0 || index >= len) die("array index out of range");
-
-        Value elt = get_value(array->data + index*sizeof_Value);
-        push_val(elt.k, elt.u);
-    }
-    else if (vm_a.k == kind_string) {
-        vm_b = vm_a;
-        pop_dict();
-
-        Dict* dict = (Dict*) from_p16(vm_a.u);
-        u16 key = vm_b.u;
-        u16 hash = string_hash(key);
-
-        Value elt = dict_get_item(dict, key, hash);
-        push_val(elt.k, elt.u);
+            Dict* dict = (Dict*) from_p16(vm_b.u);
+            u16 key = vm_a.u;
+            u16 hash = string_hash(key);
+            int exists = dict_has_item(dict, key, hash);
+            push_bool(exists);
+            break;
+        }
+        default:
+            vm_die("expected array or dict");
     }
 }
 
-// TODO allow slicing of strings
-void vm_slice(u8 has_start, u8 has_end)
+void vm_get_index()
+{
+    pop_val();
+    vm_b = vm_a;
+    pop_val();
+
+    switch (vm_a.k) {
+        case kind_string: {
+            if (vm_b.k != kind_int) {
+                die("expected int");
+            }
+            String* string = (String*)from_p16(vm_a.u);
+            i16 len = string->len;
+            i16 index = vm_b.i;
+            if (index < 0 || index >= len) die("string index out of range");
+            u8 ch = string->data[index];
+            String* result = string_from_char(ch);
+            push_string(result);
+            break;
+        }
+        case kind_array: {
+            if (vm_b.k != kind_int) {
+                die("expected int");
+            }
+
+            Array* array = (Array*) from_p16(vm_a.u);
+            i16 len = (i16) array->len;
+
+            i16 index = vm_b.i;
+            if (index < 0) index += len;
+            if (index < 0 || index >= len) die("array index out of range");
+
+            Value elt = get_value(from_p16(array->dataptr + index * sizeof_Value));
+            push_val(elt.k, elt.u);
+            break;
+        }
+        case kind_dict: {
+            if (vm_b.k != kind_string) {
+                die("expected string");
+            }
+
+            Dict* dict = (Dict*) from_p16(vm_a.u);
+            u16 key = vm_b.u;
+            u16 hash = string_hash(key);
+
+            Value elt = dict_get_item(dict, key, hash);
+            if (elt.k == kind_fail) {
+                push_bool(0);
+            }
+            else {
+                push_val(elt.k, elt.u);
+            }
+            break;
+        }
+        default:
+            vm_die("expected string or array or dict");
+    }
+}
+
+void vm_set_index()
+{
+    pop_val();
+    vm_b = vm_a;
+
+    pop_val();
+    switch (vm_a.k) {
+        case kind_array: {
+            Array* array = (Array*) from_p16(vm_a.u);
+            pop_int();
+            i16 len = array->len;
+            i16 index = vm_a.i;
+            if (index < 0) index += len;
+            if (index < 0 || index >= len) vm_die("index out of range");
+
+            set_value(from_p16(array->dataptr + index * sizeof_Value), vm_b);
+            break;
+        }
+        case kind_dict: {
+            Dict* dict = (Dict*) from_p16(vm_a.u);
+            pop_str();
+            u16 key = vm_a.u;
+            u16 hash = string_hash(key);
+            if (vm_b.k == kind_bool && !vm_b.u) {
+                // TODO separate del operator?
+                dict_delete(dict, key, hash);
+            } else {
+                dict_set_item(dict, key, hash, vm_b);
+            }
+            break;
+        }
+        default: die("expected array or dict");
+    }
+
+}
+
+extern void slice_adjust(i16 *start, i16 *end, i16 *len)
+{
+    if (*start < 0) *start += *len;
+    if (*end < 0) *end += *len;
+
+    if (*start < 0) *start = 0;
+    else if (*start >= *len) *start = *len;
+
+    if (*end < *start) *end = *start;
+    if (*end >= *len) *end = *len;
+
+    *len = *end - *start;
+}
+
+void vm_get_slice(u8 has_start, u8 has_end)
 {
     i16 start = 0;
     i16 end = 32767;
@@ -793,68 +957,46 @@ void vm_slice(u8 has_start, u8 has_end)
         pop_int();
         start = vm_a.i;
     }
+    pop_val();
+
+    switch (vm_a.k) {
+        case kind_string: {
+            String* string = (String*) from_p16(vm_a.u);
+            String* string2 = string_get_slice(string, start, end);
+            push_string(string2);
+            break;
+        }
+        case kind_array: {
+            Array* array = (Array*) from_p16(vm_a.u);
+            Array* array2 = array_get_slice(array, start, end);
+            push_array(array2);
+            break;
+        }
+        default:
+            die("expected string or array");
+    }
+}
+
+void vm_set_slice(u8 has_start, u8 has_end)
+{
     pop_array();
+    Array* src = (Array*) from_p16(vm_a.u);
 
-    Array* array = (Array*) from_p16(vm_a.u);
-    u8 len = array->len;
-    u8* data = array->data;
+    pop_array();
+    Array* dst = (Array*) from_p16(vm_a.u);
 
-    if (start < 0) start += len;
-    if (end < 0) end += len;
+    i16 start = 0;
+    i16 end = 32767;
+    if (has_end) {
+        pop_int();
+        end = vm_a.i;
+    }
+    if (has_start) {
+        pop_int();
+        start = vm_a.i;
+    }
 
-    if (start < 0) start = 0;
-    else if (start >= len) start = len;
-
-    if (end < start) end = start;
-    if (end >= len) end = len;
-
-    u16 len2 = end-start;
-
-    Array* array2 = (Array*) heap_alloc(sizeof(Array) + len2 * sizeof_Value);
-    array2->len = len2;
-    memcpy(array2->data, array->data + start*sizeof_Value, len2 * sizeof_Value);
-
-    push_array(array2);
-}
-
-void vm_ident_set_indexed()
-{
-    Ident* ident = (Ident*) fetch_ptr();
-    pop_val();
-    vm_b = vm_a;
-
-    pop_int();
-
-    if (ident->val.k != kind_array) vm_die("not an array");
-    Array* array = (Array*) from_p16(ident->val.u);
-
-    u8 len = array->len;
-    i16 index = vm_a.i;
-    if (index < 0) index += len;
-    if (index < 0 || index >= len) vm_die("index out of range");
-
-    set_value(array->data + index*sizeof_Value, vm_b);
-}
-
-void vm_slot_set_indexed()
-{
-    u8* frame = from_p16(vm_fp);
-    u8 slot = fetch_byte();
-    Value item = get_value(frame + slot*sizeof_Value);
-    pop_val();
-    vm_b = vm_a;
-
-    pop_int();
-
-    if (item.k != kind_array) vm_die("not an array");
-    Array* array = (Array*) from_p16(item.u);
-
-    u8 len = array->len;
-    i16 index = vm_a.i;
-    if (index < 0) index += len;
-    if (index < 0 || index >= len) vm_die("index out of range");
-
-    set_value(array->data + index*sizeof_Value, vm_b);
+    array_set_slice(dst, start, end, src);
 }
 
 //------------------------------------------------------------------------------
@@ -953,6 +1095,9 @@ u16 vm_run(const u8 *vm_pc_start)
                 vm_relop(op);
                 break;
 
+            // existence
+            case op_in: vm_in(); break;
+
             // bitwise operators
             case op_bnot:   pop_int(); push_int(~vm_a.i); break;
             case op_band:   pop_ints(); push_int(vm_a.u & vm_b.u); break;
@@ -965,9 +1110,34 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_lsl:    pop_ints(); push_int(vm_a.u << vm_b.i); break;   // TODO special treatment for -ve / +ve shifts?
 
             // logical operators
-            case op_lnot:   pop_bool(); push_bool(!vm_a.i); break;
-            case op_land:   pop_bools(); push_bool(vm_a.u && vm_b.u); break;
-            case op_lor:    pop_bools(); push_bool(vm_a.u || vm_b.u); break;
+            case op_lnot: 
+                pop_bool();
+                push_bool(!vm_a.u);
+                break;
+
+            case op_land: 
+                pop_val();
+                vm_b = vm_a;
+                pop_bool();
+                if (vm_a.u) {
+                    push_val(vm_b.k, vm_b.u); 
+                }
+                else {
+                    push_bool(0); 
+                }
+                break;
+
+            case op_lor:
+                pop_val(); 
+                vm_b = vm_a;
+                pop_val();
+                if (vm_a.k == kind_bool && !vm_a.u) {
+                    push_val(vm_b.k, vm_b.u); 
+                }
+                else {
+                    push_val(vm_a.k, vm_a.u); 
+                }
+                break;
 
             // constants
             case op_false:  push_bool(0); break;
@@ -1009,13 +1179,17 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_lit_array:  vm_lit_array(); break;
             case op_lit_dict:   vm_lit_dict(); break;
 
-            case op_index:          vm_index(); break;
-            case op_slice:          vm_slice(1, 1); break;
-            case op_slice_start:    vm_slice(1, 0); break;
-            case op_slice_end:      vm_slice(0, 1); break;
-            case op_slice_empty:    vm_slice(0, 0); break;
-            case op_ident_set_indexed:  vm_ident_set_indexed(); break;
-            case op_slot_set_indexed:   vm_slot_set_indexed(); break;
+            case op_get_index:          vm_get_index(); break;
+            case op_get_slice:          vm_get_slice(1, 1); break;
+            case op_get_slice_start:    vm_get_slice(1, 0); break;
+            case op_get_slice_end:      vm_get_slice(0, 1); break;
+            case op_get_slice_empty:    vm_get_slice(0, 0); break;
+
+            case op_set_index:          vm_set_index(); break;
+            case op_set_slice:          vm_set_slice(1, 1); break;
+            case op_set_slice_start:    vm_set_slice(1, 0); break;
+            case op_set_slice_end:      vm_set_slice(0, 1); break;
+            case op_set_slice_empty:    vm_set_slice(0, 0); break;
 
             // call + return
             case op_call_proc:      vm_call(kind_proc); break;

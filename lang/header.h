@@ -24,6 +24,9 @@ typedef enum {
     // Relational operators
     op_le, op_lt, op_gt, op_ge, op_eq, op_ne,
 
+    // existence operator
+    op_in,
+
     // Bitwise operators
     op_bnot, op_band, op_bor, op_beor,
 
@@ -64,13 +67,17 @@ typedef enum {
     op_lit_array,
     op_lit_dict,
 
-    op_index,
-    op_slice,
-    op_slice_start,
-    op_slice_end,
-    op_slice_empty,
-    op_ident_set_indexed,
-    op_slot_set_indexed,
+    op_get_index,
+    op_get_slice,
+    op_get_slice_start,
+    op_get_slice_end,
+    op_get_slice_empty,
+
+    op_set_index,
+    op_set_slice,
+    op_set_slice_start,
+    op_set_slice_end,
+    op_set_slice_empty,
 
     op_call_proc,
     op_call_func,
@@ -121,6 +128,8 @@ typedef struct {
     };
 } Value;
 
+static const size_t sizeof_Value = 3;
+
 typedef struct Ident Ident;
 
 typedef struct Ident {
@@ -143,14 +152,15 @@ typedef struct Ident {
 } Ident;
 
 typedef struct {
+    i16 len;
     u16 hash;
-    u16 len;
     u8 data[];
 } String;
 
 typedef struct {
-    u8 len;
-    u8 data[];
+    i16 len;
+    u16 cap;
+    u16 dataptr;
 } Array;
 
 // Gross memory map
@@ -204,9 +214,10 @@ extern String* interned_string_func;
 extern String* interned_string_unknown;
 void strings_init();
 String* string_from_char(u8 ch);
-String* string_from_data(const u8* data, u16 len);
+String* string_from_data(const u8* data, i16 len);
 u16 string_hash(u16 s);
 int string_eq(u16 s1, u16 s2);
+String* string_get_slice(String* string, i16 start, i16 end);
 
 // Lexer
 extern const u8* input_ptr;
@@ -238,6 +249,15 @@ void parse_line();
 void parse_finish();
 void parser_die(const char* msg);
 void parse_expr();
+typedef enum {
+    ss_none,
+    ss_index,
+    ss_empty,
+    ss_start,
+    ss_end,
+    ss_both,
+} Subscript;
+Subscript parse_index_arg();
 
 // Virtual machine
 void vm_die(const char* msg);
@@ -245,5 +265,8 @@ u16 vm_run(const u8* vm_pc_base);
 u16 f16_from_float(float f);
 float f16_to_float(u16 u);
 const char* debug_op_name(u8 op);
+Value get_value(const u8* p);
+void set_value(u8* p, Value v);
+void slice_adjust(i16 *start, i16 *end, i16 *len);
 
 #endif

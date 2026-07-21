@@ -335,11 +335,11 @@ u8 parse_cmd_args()
     return nargs;
 }
 
-void parse_assign(Ident* ident, u8 is_indexed)
+void parse_assign(Ident* ident)
 {
     parse_expr();
     if (func_kind == kind_fail) {
-        emit_op(is_indexed ? op_ident_set_indexed : op_ident_set);
+        emit_op(op_ident_set);
         emit_ident(ident);
     }
     else {
@@ -349,7 +349,7 @@ void parse_assign(Ident* ident, u8 is_indexed)
             ident->slot = slot_num;
             slot_stack[slot_num] = ident;
         }
-        emit_op(is_indexed ? op_slot_set_indexed : op_slot_set);
+        emit_op(op_slot_set);
         emit_byte(slot_num);
     }
 }
@@ -378,20 +378,43 @@ void parse_stmt()
     }
     else {
         Ident* ident = intern_ident(0);
-        if (lex_char('[')) {
-            parse_expr();
-            if (!lex_char(']')) parser_die("missing ']'");
-            if (!lex_char('=')) parser_die("missing '='");
-            parse_assign(ident, 1);
-        }
-        else if (lex_char('=')) {
-            parse_assign(ident, 0);
+        Subscript ss = parse_index_arg();
+        if (ss == ss_none) {
+            if (lex_char('=')) {
+                parse_assign(ident);
+            }
+            else {
+                u8 nargs = parse_cmd_args();
+                emit_op(op_call_proc);
+                emit_byte(nargs);
+                emit_ident(ident);
+            }
         }
         else {
-            u8 nargs = parse_cmd_args();
-            emit_op(op_call_proc);
-            emit_byte(nargs);
-            emit_ident(ident);
+            if (func_kind == kind_fail) {
+                emit_op(op_ident_get);
+                emit_ident(ident);
+            } else {
+                u8 slot_num = ident->slot;
+                if (slot_num == 0xff) {
+                    slot_num = func_ident->slot++;
+                    ident->slot = slot_num;
+                    slot_stack[slot_num] = ident;
+                }
+                emit_op(op_slot_get);
+                emit_byte(slot_num);
+            }
+            if (!lex_char('=')) parser_die("missing '='");
+            parse_expr();
+
+            switch (ss) {
+            case ss_index: emit_op(op_set_index); break;
+            case ss_empty: emit_op(op_set_slice_empty); break;
+            case ss_start: emit_op(op_set_slice_start); break;
+            case ss_end:   emit_op(op_set_slice_end); break;
+            case ss_both:  emit_op(op_set_slice); break;
+            default: die("unreachable");
+            }
         }
     }
 }
