@@ -1,7 +1,7 @@
 #include "header.h"
 
 typedef struct {
-    u16 key;     // must be a String with a known hash
+    Value key;
     Value value;
 } DictEntry;
 
@@ -37,10 +37,10 @@ typedef struct {
 extern Dict* dict_new();
 extern Dict* dict_new_presized(u16 minused);
 extern Dict* dict_new_from_items(Value* keys_and_values, u16 length);
-extern Value dict_get_item(Dict *dict, u16 key, u16 hash);
-extern void dict_set_item(Dict* dict, u16 key, u16 hash, Value value);
-extern int dict_has_item(Dict* dict, u16 key, u16 hash);
-extern int dict_delete(Dict* dict, u16 key, u16 hash);
+extern Value dict_get_item(Dict *dict, Value key);
+extern void dict_set_item(Dict* dict, Value key, Value value);
+extern int dict_has_item(Dict* dict, Value key);
+extern int dict_delete(Dict* dict, Value key);
 extern u16 dict_length(Dict* dict);
 extern u16 dict_iter_init(Dict* dict);
 extern u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value);

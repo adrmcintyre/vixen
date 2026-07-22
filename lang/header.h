@@ -54,6 +54,7 @@ typedef enum {
     op_repeat, op_until,
     op_while, op_wend,
     op_break,
+    op_class,
 
     // Internal ops
     op_ident_get,
@@ -91,15 +92,15 @@ typedef enum {
 
 typedef enum {
     // these entries double as argument counts
-    info_fn0 = 0,
-    info_fn1 = 1,
-    info_fn2 = 2,
-    info_fn3 = 3,
+    info_fn0,
+    info_fn1,
+    info_fn2,
+    info_fn3,
 
-    info_const   = 4,
-    info_cmd0    = 5,
-    info_cmd_any = 6,
-    info_control = 7
+    info_const,
+    info_cmd0,
+    info_cmd_any,
+    info_control,
 } OpInfo;
 
 typedef struct {
@@ -108,15 +109,18 @@ typedef struct {
 } OpData;
 
 typedef enum {
-    kind_fail   = 0,
-    kind_bool   = 1,
-    kind_int    = 2,
-    kind_float  = 3,
-    kind_string = 4,
-    kind_array  = 5,
-    kind_dict   = 6,
-    kind_proc   = 7,
-    kind_func   = 8
+    kind_fail,
+    kind_bool,
+    kind_int,
+    kind_float,
+    kind_string,
+    kind_array,
+    kind_dict,
+    kind_ident_proxy,
+    kind_ident,
+    kind_proc,
+    kind_func,
+    kind_class,
 } Kind;
 
 typedef struct {
@@ -130,11 +134,13 @@ typedef struct {
 
 static const size_t sizeof_Value = 3;
 
-typedef struct Ident Ident;
-
-typedef struct Ident {
-    Ident* chain;
+typedef struct {
     u16 hash;
+    i16 len;
+    u16 ptr;
+} IdentProxy;
+
+typedef struct {
     Value val;
 
     // make this a u16 offset into the frame instead
@@ -147,13 +153,16 @@ typedef struct Ident {
 
     // number of args for func
     u8 args;
-    u8 len;
+
+    // TODO use a String* instead?
+    u16 hash;
+    i16 len;
     u8 name[];
 } Ident;
 
 typedef struct {
-    i16 len;
     u16 hash;
+    i16 len;
     u8 data[];
 } String;
 
@@ -199,8 +208,10 @@ void heap_init();
 u8* heap_alloc(u16 n);
 
 // Identifiers
-void intern_init();
-Ident* intern_ident(bool* is_new);
+void ident_init();
+Ident* ident_intern(bool* is_new);
+int ident_eq(Ident* a, Ident* b);
+int ident_proxy_eq(Ident* ident, IdentProxy* proxy);
 
 // Strings
 extern String* string_bucket[];
@@ -215,8 +226,7 @@ extern String* interned_string_unknown;
 void strings_init();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, i16 len);
-u16 string_hash(u16 s);
-int string_eq(u16 s1, u16 s2);
+int string_eq(String* s1, String* s2);
 String* string_get_slice(String* string, i16 start, i16 end);
 
 // Lexer

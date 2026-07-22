@@ -27,6 +27,7 @@ const u8 keywords_bjrz[] = {
 };
 const u8 keywords_cks[] = {
     op_chr,      info_fn1,      'c','h','r',
+    op_class,    info_control,  'c','l','a','s','s',
 
     op_sgn,      info_fn1,      's','g','n',
     op_sqr,      info_fn1,      's','q','r',

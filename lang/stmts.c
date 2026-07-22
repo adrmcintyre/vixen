@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "header.h"
+#include "dict.h"
 
 u8 control_sp;
 Op control_stack[32];
@@ -20,6 +21,7 @@ u16 forward_jump_stack[forward_jump_max];
 
 Kind func_kind;
 Ident* func_ident;
+Ident* class_ident;
 
 u8 slot_max = 64;
 Ident* slot_stack[64];     // indexed by slot_num of active func
@@ -33,6 +35,7 @@ void stmt_init()
     forward_jump_sp = 0;
     func_kind = kind_fail;
     func_ident = 0;
+    class_ident = 0;
 }
 
 // Records the beginning of a control structure.
@@ -147,9 +150,30 @@ void resolve_forward_jump()
     patch_forward_ref(ref);
 }
 
+void parse_class()
+{
+    if (control_sp != 0) parser_die("class only allowed at top level");
+    if (class_ident != 0) parser_die("class not allowed inside class");
+    if (!lex_word()) parser_die("missing name");
+    if (lookup_keyword()) parser_die("reserved word cannot be used here");
+
+    bool is_new;
+    Ident* ident = ident_intern(&is_new);
+    if (is_new || ident->val.k == kind_fail) {
+        ident->val.k = kind_class;
+        Dict* dict = dict_new();
+        ident->val.u = to_p16(dict);
+    }
+    else {
+        parser_die("name already in use");
+    }
+
+    class_ident = ident;
+}
+
 void parse_func_or_proc(Op op)
 {
-    if (control_sp != 0) parser_die("func/proc only allowed at top level");
+    if (control_sp != 0) parser_die("func/proc only allowed at top level or class level");
 
     push_control(op);
     emit_forward_jump(op_jump);
@@ -161,7 +185,7 @@ void parse_func_or_proc(Op op)
 
     // first time we've seen this, or it has only been referenced before
     bool is_new;
-    func_ident = intern_ident(&is_new);
+    func_ident = ident_intern(&is_new);
     if (is_new || func_ident->val.k == kind_fail) {
         func_ident->val.k = func_kind;
     }
@@ -181,7 +205,7 @@ void parse_func_or_proc(Op op)
         while(1) {
             if (!lex_word()) parser_die("missing parameter name");
             if (lookup_keyword()) parser_die("reserved word cannot be used here");
-            Ident* parent_ident = intern_ident(0);
+            Ident* parent_ident = ident_intern(0);
             if (parent_ident->slot != 0xff) parser_die("repeated parameter name");
 
             if (slot_num >= slot_max) die("too many local variables");
@@ -196,6 +220,50 @@ void parse_func_or_proc(Op op)
     }
     func_ident->args = slot_num;
     func_ident->slot = slot_num;
+}
+
+void parse_return()
+{
+    if (func_kind == kind_fail) parser_die("'return' is not inside a func/proc");
+    if (func_kind == kind_proc) {
+        if (!lex_peek_stmt_end()) parser_die("a proc cannot return a value");
+        emit_op(op_return_proc);
+    }
+    else {
+        parse_expr();
+        emit_op(op_return_func);
+    }
+}
+        
+void parse_end()
+{
+    if (control_sp == 0 && class_ident != 0) {
+        class_ident = 0;
+        return;
+    }
+
+    Op k = pop_control();
+    if (k != op_func && k != op_proc) parser_die("'end' not after a func/proc");
+
+    if (func_kind == kind_proc) {
+        emit_op(op_return_proc);
+    }
+    else {
+        // TODO - compile error if some path does not end in a return.
+        emit_op(op_return_missing);
+    }
+
+    // clear slot assignments
+    u8 slot_num = func_ident->slot;
+    while(slot_num > 0) {
+        --slot_num;
+        Ident* slot_ident = slot_stack[slot_num];
+        slot_ident->slot = 0xff;
+    }
+
+    func_ident = 0;
+    func_kind = kind_fail;
+    resolve_forward_jump();
 }
 
 // Parses a control statement.
@@ -268,49 +336,22 @@ void parse_control_stmt(Op op)
         if (!emit_end_loop_jump(op_jump)) parser_die("'break' is not in a loop");
         break;
 
+    case op_class:
+        parse_class();
+        break;
+
     case op_proc:
     case op_func:
         parse_func_or_proc(op);
         break;
 
     case op_return:
-        if (func_kind == kind_fail) parser_die("'return' is not inside a func/proc");
-        if (func_kind == kind_proc) {
-            if (!lex_peek_stmt_end()) parser_die("a proc cannot return a value");
-            emit_op(op_return_proc);
-        }
-        else {
-            parse_expr();
-            emit_op(op_return_func);
-        }
+        parse_return();
         break;
 
     case op_end:
-        {
-            Op k = pop_control();
-            if (k != op_func && k != op_proc) parser_die("'end' not after a func/proc");
-
-            if (func_kind == kind_proc) {
-                emit_op(op_return_proc);
-            }
-            else {
-                // TODO - compile error if some path does not end in a return.
-                emit_op(op_return_missing);
-            }
-
-            // clear slot assignments
-            u8 slot_num = func_ident->slot;
-            while(slot_num > 0) {
-                --slot_num;
-                Ident* slot_ident = slot_stack[slot_num];
-                slot_ident->slot = 0xff;
-            }
-
-            func_ident = 0;
-            func_kind = kind_fail;
-            resolve_forward_jump();
-            break;
-        }
+        parse_end();
+        break;
 
     default:
         die("unreachable");
@@ -377,7 +418,7 @@ void parse_stmt()
         }
     }
     else {
-        Ident* ident = intern_ident(0);
+        Ident* ident = ident_intern(0);
         Subscript ss = parse_index_arg();
         if (ss == ss_none) {
             if (lex_char('=')) {

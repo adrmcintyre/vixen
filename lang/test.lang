@@ -1,11 +1,16 @@
-x = 3
-
-func zog()
-    x = x + 1
-    return x
+class Test
 end
 
-print "zog=",zog()
-print "x=",x
+func blah(x)
+    a = x * 3
+    return a * a
+end
+
+a = 12
+print "blah=", blah(a)
+print "a=", a
+
+d = {"a": 123, True: 345, 99: 9801, 2.71: 3.14}
+print d
 
 stop

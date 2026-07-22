@@ -278,7 +278,7 @@ void parse_terminal()
         return;
     }
 
-    Ident* ident = intern_ident(0);
+    Ident* ident = ident_intern(0);
 
     u16 nargs = parse_args();
     if (nargs) {
@@ -361,7 +361,7 @@ void parse_start()
 {
     // TODO should be somewhere better for this...
     heap_init();
-    intern_init();
+    ident_init();
     strings_init();
     stmt_init();
 

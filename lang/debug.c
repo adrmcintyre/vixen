@@ -40,6 +40,7 @@ const char* debug_op_names[] = {
     "op_repeat", "op_until",
     "op_while", "op_wend",
     "op_break",
+    "op_class",
 
     // Internal ops
     "op_ident_get",

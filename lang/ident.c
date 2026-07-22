@@ -1,39 +1,42 @@
 #include <string.h>
 #include "header.h"
+#include "dict.h"
 
-const u8 ident_bucket_count = 32;
-Ident* ident_bucket[ident_bucket_count];
+Dict* ident_dict;
+Value ident_proxy_key;
 
-void intern_init()
+extern void ident_init()
 {
-    for(u8 i=0; i<ident_bucket_count; i++) ident_bucket[i] = 0;
+    ident_dict = dict_new();
+
+    // In practice this could be statically allocated
+    ident_proxy_key.k = kind_ident_proxy;
+    ident_proxy_key.u = to_p16(heap_alloc(sizeof(IdentProxy)));
 }
 
 // Looks up token_ptr..input_ptr in the interned symbol table, creating
 // a new entry if not found. On exit, sets ident to the new or existing entry.
 // Returns 1 if a new entry was created, or 0 otherwise.
-Ident* intern_ident(bool* is_new)
+extern Ident* ident_intern(bool* is_new)
 {
-    u16 token_len = input_ptr-token_ptr;
-    u16 token_hash = hash_mem(token_ptr, token_len);
-    u8 buck = token_hash & (ident_bucket_count-1);
+    i16 len = input_ptr-token_ptr;
+    u16 hash = hash_mem(token_ptr, len);
 
-    Ident* last_ident = 0;
-    Ident* ident = ident_bucket[buck];
-    while(ident) {
-        u16 hash = ident->hash;
-        u16 len = ident->len;
-        if (hash != token_hash) { }
-        else if (len != token_len) { }
-        else if (0 != memcmp(token_ptr, &ident->name, len)) { }
-        else {
-            if (is_new != 0) *is_new = false;
-            return ident;
-        }
+    // We reference the token directly from the program text
+    // using a buffer that only gets allocated once to avoid
+    // a heap allocation on every lookup.
+    IdentProxy* ref = (IdentProxy*) from_p16(ident_proxy_key.u);
+    ref->hash = hash;
+    ref->len = len;
+    ref->ptr = to_p16(token_ptr);
 
-        last_ident = ident;
-        ident = ident->chain;
+    Value item = dict_get_item(ident_dict, ident_proxy_key);
+    if (item.k != kind_fail) {
+        if (is_new != 0) *is_new = false;
+        return (Ident*) from_p16(item.u);
     }
+
+    // Ident doesn't exist - now we can allocate it for real.
 
     // TODO - point to name in program text instead of copying it?
     //
@@ -42,23 +45,40 @@ Ident* intern_ident(bool* is_new)
     //
     // During code gen inject the value pointer instead of the ident pointer.
     //
-    ident = (Ident*) heap_alloc(sizeof(Ident) + token_len);
-    ident->chain = 0;
-    ident->hash = token_hash;
+    Ident* ident = (Ident*) heap_alloc(sizeof(Ident) + len);
+    ident->hash = hash;
     ident->val.k = kind_fail;
     ident->val.u = 0;
     ident->slot = 0xff; // doubles as slot_count for funcs
     ident->args = 0;    // only used for funcs/procs
-    ident->len = token_len;
-    memcpy(ident->name, token_ptr, token_len);
+    ident->len = len;
+    memcpy(ident->name, token_ptr, len);
 
-    if (last_ident == 0) {
-        ident_bucket[buck] = ident;
-    }
-    else {
-        last_ident->chain = ident;
-    }
+    item.k = kind_ident;
+    item.u = to_p16(ident);
+    dict_set_item(ident_dict, item, item);
 
     if (is_new != 0) *is_new = true;
     return ident;
+}
+
+extern int ident_eq(Ident* a, Ident* b)
+{
+    return 
+        (a->hash == b->hash) &&
+        (a->len != b->len) &&
+        (0 == memcmp(a->name, b->name, a->len));
+
+}
+
+extern int ident_proxy_eq(Ident* ident, IdentProxy* proxy)
+{
+    if ((ident->hash != proxy->hash) ||
+        (ident->len != proxy->len))
+    {
+        return false;
+    }
+
+    const u8* prog_token = prog_base + proxy->ptr;
+    return (0 == memcmp(ident->name, prog_token, ident->len));
 }

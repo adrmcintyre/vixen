@@ -31,10 +31,10 @@ String* string_from_char(u8 ch)
     String* str = string_bucket[ch];
     if (str == 0) {
         str = (String*) heap_alloc(sizeof(String) + 1);
-        str->hash = 0;
         str->len = 1;
         str->data[0] = ch;
         string_bucket[ch] = str;
+        str->hash = hash_mem(str->data, str->len);
     }
     return str;
 }
@@ -46,9 +46,9 @@ String* string_from_data(const u8* data, i16 len)
         return string_from_char(*data);
     }
     String* str = (String*) heap_alloc(sizeof(String) + len);
-    str->hash = 0;
     str->len = len;
     memcpy(str->data, data, len);
+    str->hash = hash_mem(str->data, str->len);
     return str;
 }
 
@@ -69,12 +69,11 @@ const char* string_data(u16 s)
     return (const char*)string->data;
 }
 
-int string_eq(u16 s1, u16 s2)
+int string_eq(String* s1, String* s2)
 {
-    String *string1 = (String*)from_p16(s1);
-    String *string2 = (String*)from_p16(s2);
-    return string1->len == string2->len &&
-        0 == memcmp(string1->data, string2->data, string1->len);
+    return s1->hash == s2->hash &&
+        s1->len == s2->len &&
+        0 == memcmp(s1->data, s2->data, s1->len);
 }
 
 String* string_get_slice(String* string, i16 start, i16 end)
@@ -86,5 +85,6 @@ String* string_get_slice(String* string, i16 start, i16 end)
     String* string2 = (String*) heap_alloc(sizeof(String) + len);
     string2->len = len;
     memcpy(string2->data, string->data + start, len);
+    string2->hash = hash_mem(string2->data, string2->len);
     return string2;
 }

@@ -165,20 +165,77 @@ static u16 dictkeys_look_index(DictKeys *keys, u16 hash, i16 index)
     }
 }
 
-// Return 1 for equality, 0 for disequality.
-static int entries_check_lookup(DictEntry* entries, i16 ix, u16 key, u16 hash)
+// Requires entry_key and lookup_key to already have had their hashes computed.
+static int keys_eq(Value entry_key, Value lookup_key)
 {
-    DictEntry *entry = &(entries)[ix];
-    if (entry->key == key) {
-        return 1;
-    }
-    if (string_hash(entry->key) != hash) {
+    if (entry_key.k != lookup_key.k) {
+        if (lookup_key.k == kind_ident_proxy && entry_key.k == kind_ident) {
+            Ident* ident = (Ident*) from_p16(entry_key.u);
+            IdentProxy* proxy = (IdentProxy*) from_p16(lookup_key.u);
+            return ident_proxy_eq(ident, proxy);
+        }
         return 0;
     }
-    return string_eq(entry->key, key);
+    if (entry_key.u == lookup_key.u) {
+        return 1;
+    }
+    switch (entry_key.k) {
+        case kind_bool:
+        case kind_int:
+        case kind_float:
+            return 0;
+        case kind_string: {
+            String* sa = (String*) from_p16(entry_key.u);
+            String* sb = (String*) from_p16(lookup_key.u);
+            return string_eq(sa, sb);
+        }
+        case kind_ident: {
+            Ident* ia = (Ident*) from_p16(entry_key.u);
+            Ident* ib = (Ident*) from_p16(lookup_key.u);
+            return ident_eq(ia, ib);
+        }
+        default:
+            // silence warnings
+            die("unhandled key kind");
+            return 0;
+    }
 }
 
-static i16 dictkeys_lookup(DictKeys* keys, u16 key, u16 hash)
+// Returns hash of v.
+static u16 key_hash(Value v)
+{
+    switch (v.k) {
+        case kind_bool:
+        case kind_int:
+        case kind_float:
+            return v.u;
+        case kind_string: {
+            String* string = (String*) from_p16(v.u);
+            return string->hash;
+        }
+        case kind_ident_proxy: {
+            IdentProxy* proxy = (IdentProxy*) from_p16(v.u);
+            return proxy->hash;
+        }
+        case kind_ident: {
+            Ident* ident = (Ident*) from_p16(v.u);
+            return ident->hash;
+        }
+        default:
+            // silence warnings
+            die("unhandled key kind");
+            return 0;
+    }
+}
+
+// Return 1 for equality, 0 for disequality.
+static int entries_check_lookup(DictEntry* entries, i16 ix, Value key)
+{
+    DictEntry *entry = &(entries)[ix];
+    return keys_eq(entry->key, key);
+}
+
+static i16 dictkeys_lookup(DictKeys* keys, Value key, u16 hash)
 {
     DictEntry* entries = DK_ENTRIES(keys);
     u16 mask = keys->mask;
@@ -188,7 +245,7 @@ static i16 dictkeys_lookup(DictKeys* keys, u16 key, u16 hash)
     while (1) {
         ix = dictkeys_get_index(keys, i);
         if (ix >= 0) {
-            if (entries_check_lookup(entries, ix, key, hash)) {
+            if (entries_check_lookup(entries, ix, key)) {
                 return ix;
             }
         }
@@ -211,7 +268,7 @@ static i16 dictkeys_lookup(DictKeys* keys, u16 key, u16 hash)
 // All arithmetic on hash should ignore overflow.
 // 
 // When the key isn't found a IX_EMPTY is returned.
-static i16 dict_lookup(Dict *dict, u16 key, u16 hash, Value *value_addr)
+static i16 dict_lookup(Dict *dict, Value key, u16 hash, Value *value_addr)
 {
     DictKeys* keys = dict->keys;
     i16 ix = dictkeys_lookup(keys, key, hash);
@@ -226,8 +283,9 @@ static i16 dict_lookup(Dict *dict, u16 key, u16 hash, Value *value_addr)
     return ix;
 }
 
-int dict_has_item(Dict* dict, u16 key, u16 hash)
+int dict_has_item(Dict* dict, Value key)
 {
+    u16 hash = key_hash(key);
     DictKeys* keys = dict->keys;
     i16 ix = dictkeys_lookup(keys, key, hash);
     return ix >= 0;
@@ -254,7 +312,7 @@ static void dictkeys_build_indices(DictKeys *keys, DictEntry *entry, u16 n)
 {
     u16 mask = keys->mask;
     for (i16 ix = 0; ix != n; ix++, entry++) {
-        u16 hash = string_hash(entry->key);
+        u16 hash = key_hash(entry->key);
         u16 i = hash & mask;
         for (u16 perturb = hash; dictkeys_get_index(keys, i) != IX_EMPTY;) {
             perturb >>= PERTURB_SHIFT;
@@ -306,7 +364,7 @@ static void dict_insert_resize(Dict *dict)
 
 // Internal routine to insert a new item into the table.
 // Used both by the internal resize routine and by the public insert routine.
-static void dict_insert(Dict *dict, u16 key, u16 hash, Value value)
+static void dict_insert(Dict *dict, Value key, u16 hash, Value value)
 {
     Value old_value;
     i16 ix = dict_lookup(dict, key, hash, &old_value);
@@ -337,7 +395,7 @@ static void dict_insert(Dict *dict, u16 key, u16 hash, Value value)
 }
 
 // Same as dict_insert, but specialized for keys = EMPTY_KEYS.
-static void dict_insert_empty(Dict *dict, u16 key, u16 hash, Value value)
+static void dict_insert_empty(Dict *dict, Value key, u16 hash, Value value)
 {
     DictKeys *newkeys = dictkeys_new(MINSIZE);
     dict->keys = newkeys;
@@ -352,8 +410,9 @@ static void dict_insert_empty(Dict *dict, u16 key, u16 hash, Value value)
     dict->keys->nentries++;
 }
 
-Value dict_get_item(Dict *dict, u16 key, u16 hash)
+Value dict_get_item(Dict *dict, Value key)
 {
+    u16 hash = key_hash(key);
     Value value;
     i16 ix = dict_lookup(dict, key, hash, &value);
     (void)ix;
@@ -361,8 +420,9 @@ Value dict_get_item(Dict *dict, u16 key, u16 hash)
     return value;
 }
 
-void dict_set_item(Dict* dict, u16 key, u16 hash, Value value)
+void dict_set_item(Dict* dict, Value key, Value value)
 {
+    u16 hash = key_hash(key);
     if (dict->keys == EMPTY_DICT_KEYS) {
         dict_insert_empty(dict, key, hash, value);
     } else {
@@ -408,16 +468,13 @@ Dict* dict_new_from_items(Value* keys_and_values, u16 length)
     kvs = keys_and_values;
 
     for (u16 i = 0; i < length; i++) {
-        u16 key = kvs->u;
+        Value key = *kvs;
         kvs++;
-
-        String* string = (String*)from_p16(key);
-        u16 hash = string->hash;
 
         Value value = *kvs;
         kvs++;
 
-        dict_set_item(dict, key, hash, value);
+        dict_set_item(dict, key, value);
     }
 
     return dict;
@@ -436,13 +493,14 @@ static void dict_delete_common(
     DictEntry *entry = &DK_ENTRIES(dict->keys)[ix];
     // TODO
     // dec_ref(entry->value);
-    entry->key = 0;
+    entry->key.k = kind_fail;
     entry->value.k = kind_fail;
 }
 
 // Returns 1 on deletion, 0 on key not present.
-int dict_delete(Dict* dict, u16 key, u16 hash)
+int dict_delete(Dict* dict, Value key)
 {
+    u16 hash = key_hash(key);
     Value old_value;
     i16 ix = dict_lookup(dict, key, hash, &old_value);
     if (ix == IX_EMPTY || old_value.k == kind_fail) {
@@ -478,8 +536,8 @@ u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value)
             continue;
         }
 
-        key->k = kind_string;
-        key->u = entry->key;
+        key->k = entry->key.k;
+        key->u = entry->key.u;
         value->k = entry->value.k;
         value->u = entry->value.u;
         break;
@@ -488,28 +546,5 @@ u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value)
 }
 
 
-//void dict_dump(Dict* dict)
-//{
-//    DictKeys *keys = dict->keys;
-//    DictEntry *entries = DK_ENTRIES(keys);
-//
-//    printf("used=%d\n", dict->used);
-//    printf("  mask=0x%04x\n", keys->mask);
-//    printf("  usable=%d\n", keys->usable);
-//    printf("  nentries=%d\n", keys->nentries);
-//    printf("  index_bytes=%d\n", keys->index_bytes);
-//    printf("  keys:\n");
-//    for(int i=0; i<=keys->mask; i++) {
-//        printf("    [%d] %d\n", i, keys->indices[i]);
-//    }
-//    printf("  entries:\n");
-//    for(int i=0; i<keys->nentries; i++) {
-//        printf("    [%d]: key='%s' value=", i, string_data(entries[i].key));
-//        value_print(entries[i].value);
-//        printf("\n");
-//    }
-//}
-
 // Pop also useful - delete, but return value of deleted key.
 // Maybe also keys() and values().
-// Perhaps even iteration...

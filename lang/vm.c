@@ -795,14 +795,12 @@ void vm_lit_dict()
     u8 *item = from_p16(vm_sp);
 
     while (nargs--) {
-        Value key_val = get_value(item);
+        Value key = get_value(item);
         item += sizeof_Value;
         Value value = get_value(item);
         item += sizeof_Value;
      
-        u16 key = key_val.u;
-        u16 hash = string_hash(key);
-        dict_set_item(dict, key, hash, value);
+        dict_set_item(dict, key, value);
     }
 
     push_dict(dict);
@@ -820,14 +818,12 @@ void vm_in()
             break;
         }
         case kind_dict: {
-            if (vm_a.k != kind_string) {
-                die("expected string");
+            if (!(vm_a.k == kind_string || vm_a.k == kind_int || vm_a.k == kind_float || vm_a.k == kind_bool)) {
+                die("expected string or int or float or bool");
             }
 
             Dict* dict = (Dict*) from_p16(vm_b.u);
-            u16 key = vm_a.u;
-            u16 hash = string_hash(key);
-            int exists = dict_has_item(dict, key, hash);
+            int exists = dict_has_item(dict, vm_a);
             push_bool(exists);
             break;
         }
@@ -873,20 +869,17 @@ void vm_get_index()
             break;
         }
         case kind_dict: {
-            if (vm_b.k != kind_string) {
-                die("expected string");
+            if (!(vm_b.k == kind_string || vm_b.k == kind_int || vm_b.k == kind_float || vm_b.k == kind_bool)) {
+                die("expected string or int or float or bool");
             }
 
             Dict* dict = (Dict*) from_p16(vm_a.u);
-            u16 key = vm_b.u;
-            u16 hash = string_hash(key);
-
-            Value elt = dict_get_item(dict, key, hash);
-            if (elt.k == kind_fail) {
+            Value item = dict_get_item(dict, vm_b);
+            if (item.k == kind_fail) {
                 push_bool(0);
             }
             else {
-                push_val(elt.k, elt.u);
+                push_val(item.k, item.u);
             }
             break;
         }
@@ -915,14 +908,16 @@ void vm_set_index()
         }
         case kind_dict: {
             Dict* dict = (Dict*) from_p16(vm_a.u);
-            pop_str();
-            u16 key = vm_a.u;
-            u16 hash = string_hash(key);
+            pop_val();
+            if (!(vm_a.k == kind_string || vm_a.k == kind_int || vm_a.k == kind_float || vm_a.k == kind_bool)) {
+                die("expected string or int or float or bool");
+            }
+
             if (vm_b.k == kind_bool && !vm_b.u) {
-                // TODO separate del operator?
-                dict_delete(dict, key, hash);
+                // TODO separate del operator
+                dict_delete(dict, vm_a);
             } else {
-                dict_set_item(dict, key, hash, vm_b);
+                dict_set_item(dict, vm_a, vm_b);
             }
             break;
         }

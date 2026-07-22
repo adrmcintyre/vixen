@@ -2,7 +2,7 @@
 all: lang
 
 lang: *.c *.h
-	gcc -o $@ *.c -I.
+	gcc -g -o $@ *.c -I.
 
 .PHONY: clean
 clean:
