@@ -10,6 +10,8 @@
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
 // TODO - heap cleanup (e.g. ref counts)
 
+bool opt_trace_vm = false;
+
 Value vm_a;
 Value vm_b;
 
@@ -25,7 +27,7 @@ u16 vm_sp_max; // not a register
 
 void vm_die(const char* msg)
 {
-    printf("RUNTIME ERROR: %s!\n", msg);
+    fprintf(stderr, "RUNTIME ERROR: %s!\n", msg);
     exit(1);
 }
 
@@ -1088,8 +1090,9 @@ void vm_return_proc()
 
 u16 vm_run(const u8 *vm_pc_start)
 {
-    fprintf(stderr, "\n");
-    fprintf(stderr, "RUNNING\n");
+    if (opt_trace_vm) {
+        fprintf(stderr, "\nRUNNING\n");
+    }
 
     vm_sp = to_p16(vm_stack_base);
     vm_sp_max = vm_sp + vm_stack_max;
@@ -1097,9 +1100,13 @@ u16 vm_run(const u8 *vm_pc_start)
     vm_pc = to_p16(vm_pc_start);
 
     while(1) {
-        fprintf(stderr, "pc=%04x fp=%04x sp=%04x ", vm_pc, vm_fp, vm_sp);
+        if (opt_trace_vm) {
+            fprintf(stderr, "pc=%04x fp=%04x sp=%04x ", vm_pc, vm_fp, vm_sp);
+        }
         Op op = (Op) fetch_byte();
-        fprintf(stderr, "%s\n", debug_op_name(op));
+        if (opt_trace_vm) {
+            fprintf(stderr, "%s\n", debug_op_name(op));
+        }
 
         switch(op) {
             // arithmetic operators

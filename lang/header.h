@@ -4,8 +4,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define trace(msg) fprintf(stderr,"[trace] %s\n", msg)
-
 typedef signed char i8;
 typedef unsigned char u8;
 typedef unsigned short u16;
@@ -243,7 +241,7 @@ bool lex_comment();
 bool lex_end_of_stream();
 
 // Code generation
-extern bool opt_emit_log;
+extern bool opt_trace_emit;
 void emit_op(Op op);
 void emit_byte(u8 b);
 void emit_word(u16 w);
@@ -272,6 +270,7 @@ typedef enum {
 Subscript parse_index_arg();
 
 // Virtual machine
+extern bool opt_trace_vm;
 void vm_die(const char* msg);
 u16 vm_run(const u8* vm_pc_base);
 u16 f16_from_float(float f);

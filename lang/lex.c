@@ -2,6 +2,7 @@
 
 const OpData opdata_fail = { .op = fail, .info = 0x0f };
 
+const u8* prog_base;
 const u8* input_ptr;
 const u8* token_ptr;
 
