@@ -180,6 +180,7 @@ static int keys_eq(Value entry_key, Value lookup_key)
         return 1;
     }
     switch (entry_key.k) {
+        case kind_none:
         case kind_bool:
         case kind_int:
         case kind_float:
@@ -205,6 +206,7 @@ static int keys_eq(Value entry_key, Value lookup_key)
 static u16 key_hash(Value v)
 {
     switch (v.k) {
+        case kind_none:
         case kind_bool:
         case kind_int:
         case kind_float:

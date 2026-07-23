@@ -54,6 +54,7 @@ const u8 keywords_emu[] = {
 const u8 keywords_fnv[] = {
     op_false,    info_const,    'F','a','l','s','e',
     op_nan,      info_const,    'N','a','N',
+    op_none,     info_const,    'N','o','n','e',
     op_float,    info_fn1,      'f','l','o','a','t',
     op_func,     info_control,  'f','u','n','c',
     fail, 0

@@ -23,7 +23,7 @@ const char* debug_op_names[] = {
     "op_lnot", "op_land", "op_lor",
 
     // Constants
-    "op_false", "op_true", "op_nan", "op_inf",
+    "op_none", "op_false", "op_true", "op_nan", "op_inf",
 
     // Built in functions
     "op_abs", "op_sgn", "op_rnd",

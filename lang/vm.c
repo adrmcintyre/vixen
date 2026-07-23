@@ -153,9 +153,10 @@ void pop_val()
 void pop_bool()
 {
     pop_val();
+    // convert None, False to False, everything else to True
     if (vm_a.k != kind_bool) {
+        vm_a.u = vm_a.k != kind_none;
         vm_a.k = kind_bool;
-        vm_a.u = 1;
     }
 }
 
@@ -507,6 +508,10 @@ void fn_str()
     u8 buf[16];
     u16 len;
     switch(vm_a.k) {
+        case kind_none:
+            push_val(kind_string, to_p16(interned_string_none));
+            break;
+
         case kind_bool:
             if (vm_a.u != 0) {
                 push_val(kind_string, to_p16(interned_string_true));
@@ -656,6 +661,10 @@ void vm_substr_helper(String* str, u16 pos, u16 n, u16 len)
 void vm_print(Value val)
 {
     switch(val.k) {
+        case kind_none:
+            printf("None");
+            break;
+
         case kind_bool:
             printf(val.u ? "True" : "False");
             break;
@@ -818,10 +827,16 @@ void vm_in()
             break;
         }
         case kind_dict: {
-            if (!(vm_a.k == kind_string || vm_a.k == kind_int || vm_a.k == kind_float || vm_a.k == kind_bool)) {
-                die("expected string or int or float or bool");
+            switch (vm_a.k) {
+                case kind_none: 
+                case kind_bool:
+                case kind_int:
+                case kind_float:
+                case kind_string:
+                    break;
+                default:
+                    die("expected string or int or float or bool or none");
             }
-
             Dict* dict = (Dict*) from_p16(vm_b.u);
             int exists = dict_has_item(dict, vm_a);
             push_bool(exists);
@@ -869,8 +884,15 @@ void vm_get_index()
             break;
         }
         case kind_dict: {
-            if (!(vm_b.k == kind_string || vm_b.k == kind_int || vm_b.k == kind_float || vm_b.k == kind_bool)) {
-                die("expected string or int or float or bool");
+            switch (vm_a.k) {
+                case kind_none: 
+                case kind_bool:
+                case kind_int:
+                case kind_float:
+                case kind_string:
+                    break;
+                default:
+                    die("expected string or int or float or bool or none");
             }
 
             Dict* dict = (Dict*) from_p16(vm_a.u);
@@ -909,11 +931,19 @@ void vm_set_index()
         case kind_dict: {
             Dict* dict = (Dict*) from_p16(vm_a.u);
             pop_val();
-            if (!(vm_a.k == kind_string || vm_a.k == kind_int || vm_a.k == kind_float || vm_a.k == kind_bool)) {
-                die("expected string or int or float or bool");
+
+            switch (vm_a.k) {
+                case kind_none: 
+                case kind_bool:
+                case kind_int:
+                case kind_float:
+                case kind_string:
+                    break;
+                default:
+                    die("expected string or int or float or bool or none");
             }
 
-            if (vm_b.k == kind_bool && !vm_b.u) {
+            if (vm_b.k == kind_none) {
                 // TODO separate del operator
                 dict_delete(dict, vm_a);
             } else {
@@ -1113,12 +1143,12 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_land: 
                 pop_val();
                 vm_b = vm_a;
-                pop_bool();
-                if (vm_a.u) {
-                    push_val(vm_b.k, vm_b.u); 
+                pop_val();
+                if (vm_a.k == kind_none || vm_a.k == kind_bool && !vm_a.u) {
+                    push_val(vm_a.k, vm_a.u); 
                 }
                 else {
-                    push_bool(0); 
+                    push_val(vm_b.k, vm_b.u); 
                 }
                 break;
 
@@ -1126,7 +1156,7 @@ u16 vm_run(const u8 *vm_pc_start)
                 pop_val(); 
                 vm_b = vm_a;
                 pop_val();
-                if (vm_a.k == kind_bool && !vm_a.u) {
+                if (vm_a.k == kind_bool && !vm_a.u || vm_a.k == kind_none) {
                     push_val(vm_b.k, vm_b.u); 
                 }
                 else {
@@ -1135,6 +1165,7 @@ u16 vm_run(const u8 *vm_pc_start)
                 break;
 
             // constants
+            case op_none:   push_val(kind_none, 0); break;
             case op_false:  push_bool(0); break;
             case op_true:   push_bool(1); break;
             case op_inf:    push_float(1.0 / 0.0); break;

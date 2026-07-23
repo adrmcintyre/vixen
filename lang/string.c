@@ -2,6 +2,7 @@
 #include <string.h>
 
 String* interned_string_empty;
+String* interned_string_none;
 String* interned_string_true;
 String* interned_string_false;
 String* interned_string_array;
@@ -15,6 +16,7 @@ String* string_bucket[256];
 void strings_init()
 {
     interned_string_empty   = string_from_data((const u8*) "", 0);
+    interned_string_none    = string_from_data((const u8*) "None", 4);
     interned_string_true    = string_from_data((const u8*) "True", 4);
     interned_string_false   = string_from_data((const u8*) "False", 5);
     interned_string_array   = string_from_data((const u8*) "<array>", 7);

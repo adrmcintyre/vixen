@@ -37,7 +37,7 @@ typedef enum {
     op_lnot, op_land, op_lor,
 
     // Constants
-    op_false, op_true, op_nan, op_inf,
+    op_none, op_false, op_true, op_nan, op_inf,
 
     // Built in functions
     op_abs, op_sgn, op_rnd,
@@ -110,6 +110,7 @@ typedef struct {
 
 typedef enum {
     kind_fail,
+    kind_none,
     kind_bool,
     kind_int,
     kind_float,
@@ -216,6 +217,7 @@ int ident_proxy_eq(Ident* ident, IdentProxy* proxy);
 // Strings
 extern String* string_bucket[];
 extern String* interned_string_empty;
+extern String* interned_string_none;
 extern String* interned_string_true;
 extern String* interned_string_false;
 extern String* interned_string_array;
