@@ -1,3 +1,6 @@
+#if !defined GUARD_DICT_H
+#define GUARD_DICT_H
+
 #include "header.h"
 
 typedef struct {
@@ -44,3 +47,5 @@ extern int dict_delete(Dict* dict, Value key);
 extern u16 dict_length(Dict* dict);
 extern u16 dict_iter_init(Dict* dict);
 extern u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value);
+
+#endif

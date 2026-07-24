@@ -1,14 +1,11 @@
-
-func f()
-    w = 123
-    return w
+class Test
 end
 
-func g()
-    return w
-end
+o1 = Test{say:Test{foo:2}, hello:22}
+print o1.say.foo, o1.hello
 
-print f()
-print g()
+k = Test
+o2 = k{clever:"boy"}
+print o2.clever
 
 stop

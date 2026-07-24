@@ -451,6 +451,9 @@ void parse_stmt()
             case op_get_slice:
                 emit_op(op_set_slice);
                 break;
+            case op_get_prop:
+                emit_op(op_set_prop);
+                break;
             default:
                 die("invalid asssignment");
         }

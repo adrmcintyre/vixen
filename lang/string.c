@@ -9,6 +9,7 @@ String* interned_string_array;
 String* interned_string_dict;
 String* interned_string_func;
 String* interned_string_class;
+String* interned_string_object;
 String* interned_string_unknown;
 
 String* string_bucket[256];
@@ -23,6 +24,7 @@ void strings_init()
     interned_string_dict    = string_from_data((const u8*) "<dict>", 6);
     interned_string_func    = string_from_data((const u8*) "<func>", 6);
     interned_string_class   = string_from_data((const u8*) "<class>", 7);
+    interned_string_class   = string_from_data((const u8*) "<object>", 8);
     interned_string_unknown = string_from_data((const u8*) "<unknown>", 9);
 
     for(int i=0; i<256; i++) string_bucket[i] = 0;

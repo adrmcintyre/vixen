@@ -53,6 +53,7 @@ const char* debug_op_names[] = {
     "op_lit_string",
     "op_lit_array",
     "op_lit_dict",
+    "op_lit_ident",
 
     "op_get_index",
     "op_get_slice",
@@ -65,6 +66,10 @@ const char* debug_op_names[] = {
     "op_set_slice_start",
     "op_set_slice_end",
     "op_set_slice_empty",
+
+    "op_construct",
+    "op_get_prop",
+    "op_set_prop",
 
     "op_call",
     "op_return_none",

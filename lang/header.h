@@ -65,6 +65,7 @@ typedef enum {
     op_lit_string,
     op_lit_array,
     op_lit_dict,
+    op_lit_ident,
 
     op_get_index,
     op_get_slice,
@@ -77,6 +78,10 @@ typedef enum {
     op_set_slice_start,
     op_set_slice_end,
     op_set_slice_empty,
+
+    op_lit_object,
+    op_get_prop,
+    op_set_prop,
 
     op_call,
     op_return_none,
@@ -116,6 +121,7 @@ typedef enum {
     kind_ident,
     kind_func,
     kind_class,
+    kind_object,
 } Kind;
 
 typedef struct {
@@ -218,6 +224,7 @@ extern String* interned_string_array;
 extern String* interned_string_dict;
 extern String* interned_string_func;
 extern String* interned_string_class;
+extern String* interned_string_object;
 extern String* interned_string_unknown;
 void strings_init();
 String* string_from_char(u8 ch);

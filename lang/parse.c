@@ -75,7 +75,7 @@ bool parse_atom()
 //
 // Returns 0 if the input does not start with '['.
 //
-bool parse_array()
+bool parse_lit_array()
 {
     if (!lex_char('[')) {
         return false;
@@ -102,7 +102,7 @@ bool parse_array()
     return true;
 }
 
-u16 parse_dict()
+u16 parse_lit_dict()
 {
     if (!lex_char('{')) {
         return 0;
@@ -257,9 +257,9 @@ void parse_terminal_unindexed()
 
     if (parse_atom()) return;
 
-    if (parse_array()) return;
+    if (parse_lit_array()) return;
 
-    if (parse_dict()) return;
+    if (parse_lit_dict()) return;
 
     if (!lex_word()) {
         parser_die("expecting identifier or value");
@@ -293,6 +293,60 @@ void parse_terminal_unindexed()
     }
 }
 
+bool parse_dot()
+{
+    if (!lex_char('.')) return 0;
+
+    if (!lex_word()) die("expected method or property name");
+    Ident* ident = ident_intern(0);
+
+    // TODO check for '(...)' and emit op_call_method
+
+    emit_op(op_get_prop);
+    emit_ident(ident);
+    return 1;
+}
+
+bool parse_lit_object()
+{
+    if (!lex_char('{')) return 0;
+
+    u16 nargs = 0;
+    Ident* ident;
+    if (!lex_char('}')) {
+        pending_ops[pending_ops_sp++] = opdata_mark;
+        if (!lex_word()) die("missing property");
+        ident = ident_intern(0);
+        emit_op(op_lit_ident);
+        emit_ident(ident);
+
+        if (!lex_char(':')) parser_die("missing ':'");
+        parse_expr();
+
+        nargs += 1;
+        while(lex_char(',')) {
+            pending_ops[pending_ops_sp++] = opdata_mark;
+            if (!lex_word()) die("missing property");
+            ident = ident_intern(0);
+            emit_op(op_lit_ident);
+            emit_ident(ident);
+
+            if (!lex_char(':')) parser_die("missing ':'");
+            parse_expr();
+
+            nargs += 1;
+        }
+        if (!lex_char('}')) {
+            parser_die("missing '}'");
+        }
+    }
+
+    emit_op(op_lit_object);
+    emit_byte(nargs);
+
+    return 1;
+}
+
 // Parses a <terminal>, i.e. one of these forms:
 //      (<expr>)
 //      <ident>
@@ -311,11 +365,18 @@ void parse_terminal()
             continue;
         }
         u16 nargs = parse_args();
-        if (nargs == 0) {
-            break;
+        if (nargs != 0) {
+            emit_op(op_call);
+            emit_byte(nargs-1);
+            continue;
         }
-        emit_op(op_call);
-        emit_byte(nargs-1);
+        if (parse_dot()) {
+            continue;
+        }
+        if (parse_lit_object()) {
+            continue;
+        }
+        break;
     }
 }
 

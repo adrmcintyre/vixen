@@ -6,6 +6,7 @@
 #include "header.h"
 #include "dict.h"
 #include "array.h"
+#include "object.h"
 
 // TODO? - a top-of-stack register to reduce number of push/pop sequences
 // TODO - heap cleanup (e.g. ref counts)
@@ -547,6 +548,14 @@ void fn_str()
             push_val(kind_string, to_p16(interned_string_func));
             return;
 
+        case kind_class:
+            push_val(kind_string, to_p16(interned_string_class));
+            return;
+
+        case kind_object:
+            push_val(kind_string, to_p16(interned_string_object));
+            return;
+
         default:
             push_val(kind_string, to_p16(interned_string_unknown));
             return;
@@ -722,13 +731,17 @@ void vm_print(Value val)
         // TODO - include func name?
         case kind_func: {
             Func* func = (Func*) from_p16(val.u);
-            printf("<func:0x%04x>", func->addr);
+            printf("<func:%04x>", func->addr);
             break;
         }
 
         // TODO - include class name?
         case kind_class:
-            printf("<class>");
+            printf("<class:%04x>", val.u);
+            break;
+
+        case kind_object:
+            printf("<object:%04x>", val.u);
             break;
 
         default:
@@ -966,7 +979,65 @@ void vm_set_index()
         }
         default: die("expected array or dict");
     }
+}
 
+void vm_lit_object()
+{
+    u8 nargs = fetch_byte();
+
+    // class is buried under args...
+    Value klval = get_value(from_p16(vm_sp-nargs*6-3));
+    if (klval.k != kind_class) {
+        if (klval.k == kind_fail) die("class not defined");
+        die("expected class");
+    }
+    Class* klass = (Class*) from_p16(klval.u);
+
+    Object* object = object_new(klass, nargs);
+
+    while(nargs--) {
+        pop_val();
+        vm_b = vm_a;
+        pop_val();
+        object_set_prop(object, vm_a, vm_b);
+    }
+    // discard the buried class
+    pop_val();
+    push_val(kind_object, to_p16(object));
+}
+
+void vm_get_prop()
+{
+    Ident* ident = (Ident*) fetch_ptr();
+    Value key;
+    key.k = kind_ident;
+    key.u = to_p16(ident);
+
+    pop_val();
+    if (vm_a.k != kind_object) die("expected object");
+    Object* object = (Object*) from_p16(vm_a.u);
+
+    Value v = object_get_prop(object, key);
+    if (v.k == kind_fail) die("property does not exist");
+
+    push_val(v.k, v.u);
+}
+
+void vm_set_prop()
+{
+    Ident* ident = (Ident*) fetch_ptr();
+    Value key;
+    key.k = kind_ident;
+    key.u = to_p16(ident);
+
+    pop_val();
+    vm_b = vm_a;
+
+    pop_val();
+    if (vm_a.k != kind_object) die("expected object");
+    Object* object = (Object*) from_p16(vm_a.u);
+    
+    object_set_prop(object, key, vm_b);
 }
 
 extern void slice_adjust(i16 *start, i16 *end, i16 *len)
@@ -1228,6 +1299,8 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_lit_string: push_val_checked(kind_string, fetch_word()); break;
             case op_lit_array:  vm_lit_array(); break;
             case op_lit_dict:   vm_lit_dict(); break;
+            case op_lit_ident:  push_val_checked(kind_ident, fetch_word()); break;
+            case op_lit_object: vm_lit_object(); break;
 
             case op_get_index:          vm_get_index(); break;
             case op_get_slice:          vm_get_slice(1, 1); break;
@@ -1240,6 +1313,9 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_set_slice_start:    vm_set_slice(1, 0); break;
             case op_set_slice_end:      vm_set_slice(0, 1); break;
             case op_set_slice_empty:    vm_set_slice(0, 0); break;
+            
+            case op_get_prop:           vm_get_prop(); break;
+            case op_set_prop:           vm_set_prop(); break;
 
             // call + return
             case op_call:           vm_call(); break;
