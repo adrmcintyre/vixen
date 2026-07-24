@@ -35,7 +35,7 @@ const char* debug_op_names[] = {
     "op_print", "op_input", "op_stop",
 
     // Control structure tokens
-    "op_func", "op_proc", "op_return", "op_end",
+    "op_func", "op_return", "op_end",
     "op_if", "op_else", "op_endif",
     "op_repeat", "op_until",
     "op_while", "op_wend",
@@ -66,11 +66,8 @@ const char* debug_op_names[] = {
     "op_set_slice_end",
     "op_set_slice_empty",
 
-    "op_call_proc",
-    "op_call_func",
-    "op_return_proc",
-    "op_return_func",
-    "op_return_missing",
+    "op_call",
+    "op_return_none",
 
     "op_jump",
     "op_jfalse"

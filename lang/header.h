@@ -47,7 +47,7 @@ typedef enum {
     op_print, op_input, op_stop,
 
     // Control structure tokens
-    op_func, op_proc, op_return, op_end,
+    op_func, op_return, op_end,
     op_if, op_else, op_endif,
     op_repeat, op_until,
     op_while, op_wend,
@@ -78,11 +78,8 @@ typedef enum {
     op_set_slice_end,
     op_set_slice_empty,
 
-    op_call_proc,
-    op_call_func,
-    op_return_proc,
-    op_return_func,
-    op_return_missing,
+    op_call,
+    op_return_none,
 
     op_jump,
     op_jfalse
@@ -117,7 +114,6 @@ typedef enum {
     kind_dict,
     kind_ident_proxy,
     kind_ident,
-    kind_proc,
     kind_func,
     kind_class,
 } Kind;
@@ -150,14 +146,17 @@ typedef struct {
     // number of slots (inc args) for func
     u8 slot;
 
-    // number of args for func
-    u8 args;
-
     // TODO use a String* instead?
     u16 hash;
     i16 len;
     u8 name[];
 } Ident;
+
+typedef struct {
+    u8 slots;
+    u8 args;
+    u16 addr;
+} Func;
 
 typedef struct {
     u16 hash;
@@ -183,12 +182,9 @@ static const size_t mem_vm_stack_offset = 0x2000;
 
 extern u8* mem_base;
 extern u8* heap_base;
-extern u8* code_base;
 extern u8* vm_stack_base;
 
 extern const u8* prog_base;
-extern u8* code_base;
-extern u8* code_ptr;
 
 // Utils
 void die(const char* msg);
@@ -220,8 +216,8 @@ extern String* interned_string_true;
 extern String* interned_string_false;
 extern String* interned_string_array;
 extern String* interned_string_dict;
-extern String* interned_string_proc;
 extern String* interned_string_func;
+extern String* interned_string_class;
 extern String* interned_string_unknown;
 void strings_init();
 String* string_from_char(u8 ch);
@@ -232,8 +228,10 @@ String* string_get_slice(String* string, i16 start, i16 end);
 // Lexer
 extern const u8* input_ptr;
 extern const u8* token_ptr;
+extern i16 token_len;
 bool lex_char(u8 ch);
 bool lex_word();
+void unlex_word();
 bool lex_peek_stmt_end();
 Kind lex_number();
 String* lex_string();
@@ -242,6 +240,9 @@ bool lex_end_of_stream();
 
 // Code generation
 extern bool opt_trace_emit;
+extern u8* code_base;
+extern u8* code_ptr;
+extern u8* last_op_ptr;
 void emit_op(Op op);
 void emit_byte(u8 b);
 void emit_word(u16 w);
@@ -259,15 +260,7 @@ void parse_line();
 void parse_finish();
 void parser_die(const char* msg);
 void parse_expr();
-typedef enum {
-    ss_none,
-    ss_index,
-    ss_empty,
-    ss_start,
-    ss_end,
-    ss_both,
-} Subscript;
-Subscript parse_index_arg();
+bool parse_index_arg();
 
 // Virtual machine
 extern bool opt_trace_vm;

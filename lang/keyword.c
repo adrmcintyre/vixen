@@ -3,7 +3,6 @@
 // each table should be arranged in ascii order
 const u8 keywords_hpx[] = {
     op_print,    info_cmd_any,  'p','r','i','n','t',
-    op_proc,     info_control,  'p','r','o','c',
     fail, 0
 };
 const u8 keywords_aiqy[] = {
@@ -76,12 +75,13 @@ const u8* keywords[] = {
     keywords_gow
 };
 
-// Returns 1 if token_ptr..input_ptr identifies a keyword
+// Returns 1 if token_ptr..token_ptr+token_len identifies a keyword
 // with kw set to op and info.
 OpData kw;
 
 bool lookup_keyword()
 {
+    const u8 *token_end_ptr = token_ptr + token_len;
     u8 ch = *token_ptr;
     u16 i = ch & 7;
     const u8 *kwd_ptr = keywords[i];
@@ -97,7 +97,7 @@ bool lookup_keyword()
             ch = *p;
             kwd_ch = *kwd_ptr++;
             if (kwd_ch & 0x80) {
-                if (p != input_ptr) break;
+                if (p != token_end_ptr) break;
                 return true;
             }
             if (kwd_ch > ch) {

@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdio.h>
 #include "header.h"
 #include "dict.h"
 
@@ -14,20 +15,19 @@ extern void ident_init()
     ident_proxy_key.u = to_p16(heap_alloc(sizeof(IdentProxy)));
 }
 
-// Looks up token_ptr..input_ptr in the interned symbol table, creating
+// Looks up token_ptr..token_ptr+token_len in the interned symbol table, creating
 // a new entry if not found. On exit, sets ident to the new or existing entry.
 // Returns 1 if a new entry was created, or 0 otherwise.
 extern Ident* ident_intern(bool* is_new)
 {
-    i16 len = input_ptr-token_ptr;
-    u16 hash = hash_mem(token_ptr, len);
+    u16 hash = hash_mem(token_ptr, token_len);
 
     // We reference the token directly from the program text
     // using a buffer that only gets allocated once to avoid
     // a heap allocation on every lookup.
     IdentProxy* ref = (IdentProxy*) from_p16(ident_proxy_key.u);
     ref->hash = hash;
-    ref->len = len;
+    ref->len = token_len;
     ref->ptr = to_p16(token_ptr);
 
     Value item = dict_get_item(ident_dict, ident_proxy_key);
@@ -38,21 +38,18 @@ extern Ident* ident_intern(bool* is_new)
 
     // Ident doesn't exist - now we can allocate it for real.
 
-    // TODO - point to name in program text instead of copying it?
-    //
     // TODO - allocate value contiguously in separate part of the heap
     // and store a pointer to it from the ident record instead.
     //
     // During code gen inject the value pointer instead of the ident pointer.
     //
-    Ident* ident = (Ident*) heap_alloc(sizeof(Ident) + len);
+    Ident* ident = (Ident*) heap_alloc(sizeof(Ident) + token_len);
     ident->hash = hash;
     ident->val.k = kind_fail;
     ident->val.u = 0;
-    ident->slot = 0xff; // doubles as slot_count for funcs
-    ident->args = 0;    // only used for funcs/procs
-    ident->len = len;
-    memcpy(ident->name, token_ptr, len);
+    ident->slot = 0xff;
+    ident->len = token_len;
+    memcpy(ident->name, token_ptr, token_len);
 
     item.k = kind_ident;
     item.u = to_p16(ident);

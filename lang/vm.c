@@ -543,10 +543,6 @@ void fn_str()
             return;
 
         // TODO - could be friendlier and produce the symbol name
-        case kind_proc:
-            push_val(kind_string, to_p16(interned_string_proc));
-            return;
-
         case kind_func:
             push_val(kind_string, to_p16(interned_string_func));
             return;
@@ -722,6 +718,18 @@ void vm_print(Value val)
             putchar('}');
             break;
         }
+
+        // TODO - include func name?
+        case kind_func: {
+            Func* func = (Func*) from_p16(val.u);
+            printf("<func:0x%04x>", func->addr);
+            break;
+        }
+
+        // TODO - include class name?
+        case kind_class:
+            printf("<class>");
+            break;
 
         default:
             printf("%02x:%04x", val.k, val.u);
@@ -914,27 +922,30 @@ void vm_get_index()
 
 void vm_set_index()
 {
+    // stack is (tos) value | index | container
+    pop_val();
+    Value vm_c = vm_a;
+
     pop_val();
     vm_b = vm_a;
 
     pop_val();
+
     switch (vm_a.k) {
         case kind_array: {
             Array* array = (Array*) from_p16(vm_a.u);
-            pop_int();
+            if (vm_b.k != kind_int) die("expected int index");
             i16 len = array->len;
-            i16 index = vm_a.i;
+            i16 index = vm_b.i;
             if (index < 0) index += len;
             if (index < 0 || index >= len) vm_die("index out of range");
 
-            set_value(from_p16(array->dataptr + index * sizeof_Value), vm_b);
+            set_value(from_p16(array->dataptr + index * sizeof_Value), vm_c);
             break;
         }
         case kind_dict: {
             Dict* dict = (Dict*) from_p16(vm_a.u);
-            pop_val();
-
-            switch (vm_a.k) {
+            switch (vm_b.k) {
                 case kind_none: 
                 case kind_bool:
                 case kind_int:
@@ -945,11 +956,11 @@ void vm_set_index()
                     die("expected string or int or float or bool or none");
             }
 
-            if (vm_b.k == kind_none) {
+            if (vm_c.k == kind_none) {
                 // TODO separate del operator
-                dict_delete(dict, vm_a);
+                dict_delete(dict, vm_b);
             } else {
-                dict_set_item(dict, vm_a, vm_b);
+                dict_set_item(dict, vm_b, vm_c);
             }
             break;
         }
@@ -1006,11 +1017,10 @@ void vm_get_slice(u8 has_start, u8 has_end)
 
 void vm_set_slice(u8 has_start, u8 has_end)
 {
+    // for expr, dst[start:end] = src
+    // stack is: (tos) src | end | start | dst
     pop_array();
     Array* src = (Array*) from_p16(vm_a.u);
-
-    pop_array();
-    Array* dst = (Array*) from_p16(vm_a.u);
 
     i16 start = 0;
     i16 end = 32767;
@@ -1023,6 +1033,9 @@ void vm_set_slice(u8 has_start, u8 has_end)
         start = vm_a.i;
     }
 
+    pop_array();
+    Array* dst = (Array*) from_p16(vm_a.u);
+
     array_set_slice(dst, start, end, src);
 }
 
@@ -1030,14 +1043,17 @@ void vm_set_slice(u8 has_start, u8 has_end)
 // Call + return handlers
 //
 
-void vm_call(u8 kind)
+void vm_call()
 {
     u8 nargs = fetch_byte();
-    Ident* func = (Ident*) fetch_ptr();
 
-    u8 k = func->val.k;
-    if (k == kind_fail) vm_die("func/proc not defined");
-    if (k != kind) vm_die("bad call");
+    // func is buried under args...
+    Value funval = get_value(from_p16(vm_sp-nargs*3-3));
+    if (funval.k != kind_func) {
+        if (funval.k == kind_fail) die("func/proc not defined");
+        die("bad call");
+    }
+    Func* func = (Func*) from_p16(funval.u);
 
     if (func->args != nargs) {
         vm_die("wrong argument count");
@@ -1045,21 +1061,21 @@ void vm_call(u8 kind)
 
     // TODO is this correct ???
     u16 old_fp = vm_fp;
-    u16 old_sp = vm_sp - nargs * sizeof_Value;
+    u16 old_sp = vm_sp - (nargs+1) * sizeof_Value;
     vm_fp = vm_sp - nargs * sizeof_Value;
     vm_sp = vm_fp;
 
-    vm_check_stack(3 * sizeof(u16) + func->slot * sizeof_Value);
-    vm_sp = vm_sp + func->slot * sizeof_Value;
+    vm_check_stack(3 * sizeof(u16) + func->slots * sizeof_Value);
+    vm_sp = vm_sp + func->slots * sizeof_Value;
 
     push_word(old_fp);
     push_word(old_sp);
     push_word(vm_pc);
 
-    vm_pc = func->val.u;
+    vm_pc = func->addr;
 }
 
-void vm_return_func()
+void vm_return()
 {
     pop_val();
 
@@ -1073,7 +1089,7 @@ void vm_return_func()
     vm_pc = old_pc;
 }
 
-void vm_return_proc()
+void vm_return_none()
 {
     u16 old_pc = pop_word();
     u16 old_sp = pop_word();
@@ -1081,6 +1097,7 @@ void vm_return_proc()
 
     vm_fp = old_fp;
     vm_sp = old_sp;
+    push_val(kind_none, 0);
     vm_pc = old_pc;
 }
 
@@ -1225,11 +1242,9 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_set_slice_empty:    vm_set_slice(0, 0); break;
 
             // call + return
-            case op_call_proc:      vm_call(kind_proc); break;
-            case op_call_func:      vm_call(kind_func); break;
-            case op_return_proc:    vm_return_proc(); break;
-            case op_return_func:    vm_return_func(); break;
-            case op_return_missing: vm_die("missing return"); break;
+            case op_call:           vm_call(); break;
+            case op_return:         vm_return(); break;
+            case op_return_none:    vm_return_none(); break;
 
             // jumps
             case op_jump: {

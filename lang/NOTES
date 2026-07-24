@@ -23,12 +23,13 @@ Interned identifiers, compile - pointers into heap
 
 Pre-allocated strings (pointers into heap)
     String* interned_string_empty           // 2 bytes
+    String* interned_string_none            // 2 bytes
     String* interned_string_true            // 2 bytes
     String* interned_string_false           // 2 bytes
     String* interned_string_array           // 2 bytes
     String* interned_string_dict            // 2 bytes
-    String* interned_string_proc            // 2 bytes
     String* interned_string_func            // 2 bytes
+    String* interned_string_class           // 2 bytes
     String* interned_string_unknown         // 2 bytes
 
 Interned strings

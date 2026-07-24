@@ -1,16 +1,14 @@
-class Test
+
+func f()
+    w = 123
+    return w
 end
 
-func blah(x)
-    a = x * 3
-    return a * a
+func g()
+    return w
 end
 
-a = 12
-print "blah=", blah(a)
-print "a=", a
-
-d = {"a": 123, True: 345, 99: 9801, 2.71: 3.14}
-print d
+print f()
+print g()
 
 stop

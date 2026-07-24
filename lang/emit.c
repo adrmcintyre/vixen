@@ -10,6 +10,7 @@ bool opt_trace_emit = false;
 
 // TODO check code_ptr does not run out of bounds!
 u8* code_ptr;
+u8* last_op_ptr;
 
 // Emits the specifed byte to the code stream.
 //
@@ -33,6 +34,7 @@ void emit_word(u16 w)
 void emit_op(Op op)
 {
     if (opt_trace_emit) fprintf(stderr, "%04x: emit_op %s\n", to_p16(code_ptr), debug_op_name(op));
+    last_op_ptr = code_ptr;
     *code_ptr++ = (u8) op;
 }
 

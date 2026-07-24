@@ -178,8 +178,7 @@ u16 parse_args()
     return nargs;
 }
 
-// Parses an index expression in one of these forms, and returns
-// a Subscript value indicating which was found.
+// Parses an index expression in one of these forms:
 //
 // [index]
 // [start:end]
@@ -187,44 +186,44 @@ u16 parse_args()
 // [:end]
 // [:]
 //
-extern Subscript parse_index_arg()
+bool parse_index_arg()
 {
-    if (!lex_char('[')) return ss_none;
+    if (!lex_char('[')) return 0;
 
     if (!lex_char(':')) {
         pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
         if (lex_char(']')) {
             // [index]
-            return ss_index;
+            emit_op(op_get_index);
         }
         else if (!lex_char(':')) {
             parser_die("missing ']'");
         }
         else if (lex_char(']')) {
             // [start:]
-            return ss_start;
+            emit_op(op_get_slice_start);
         }
         else {
             // [start:end]
             pending_ops[pending_ops_sp++] = opdata_mark;
             parse_expr();
             if (!lex_char(']')) parser_die("missing ']'");
-            return ss_both;
+            emit_op(op_get_slice);
         }
     }
     else if (lex_char(']')) {
         // [:]
-        return ss_empty;
+        emit_op(op_get_slice_empty);
     }
     else {
         // [:end]
         pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
         if (!lex_char(']')) parser_die("missing ']'");
-        return ss_end;
+        emit_op(op_get_slice_end);
     }
-    return ss_none;
+    return 1;
 }
 
 // Parses the <expr-list> (if needed) for a recently recognised keyword,
@@ -252,16 +251,7 @@ void parse_keyword_args()
     }
 }
 
-// Parses a <terminal>, i.e. one of these forms:
-//      (<expr>)
-//      <ident>
-//      <ident>(<expr-list>)
-//      <ident>[<expr>]'
-//      <const-kwd>
-//      <func-kwd>(<expr-list>)
-//      <literal>
-//
-void parse_terminal()
+void parse_terminal_unindexed()
 {
     if (parse_paren_expr()) return;
 
@@ -271,7 +261,9 @@ void parse_terminal()
 
     if (parse_dict()) return;
 
-    if (!lex_word()) parser_die("expecting identifier or value");
+    if (!lex_word()) {
+        parser_die("expecting identifier or value");
+    }
 
     if (lookup_keyword()) {
         parse_keyword_args();
@@ -279,15 +271,6 @@ void parse_terminal()
     }
 
     Ident* ident = ident_intern(0);
-
-    u16 nargs = parse_args();
-    if (nargs) {
-        // function call: always lookup symbol in global scope
-        emit_op(op_call_func);
-        emit_byte(nargs-1);
-        emit_ident(ident);
-        return;
-    }
 
     if (func_kind == kind_fail) {
         // if we're at global scope, all symbol lookups are global
@@ -308,15 +291,31 @@ void parse_terminal()
             emit_byte(slot_num);
         }
     }
+}
 
-    switch(parse_index_arg()) {
-        case ss_none:  break;
-        case ss_index: emit_op(op_get_index); break;
-        case ss_empty: emit_op(op_get_slice_empty); break;
-        case ss_start: emit_op(op_get_slice_start); break;
-        case ss_end:   emit_op(op_get_slice_end); break;
-        case ss_both:  emit_op(op_get_slice); break;
-        default: die("unreachable");
+// Parses a <terminal>, i.e. one of these forms:
+//      (<expr>)
+//      <ident>
+//      <ident>(<expr-list>)
+//      <ident>[<expr>]'
+//      <const-kwd>
+//      <func-kwd>(<expr-list>)
+//      <literal>
+//
+void parse_terminal()
+{
+    parse_terminal_unindexed();
+
+    while (1) {
+        if (parse_index_arg()) {
+            continue;
+        }
+        u16 nargs = parse_args();
+        if (nargs == 0) {
+            break;
+        }
+        emit_op(op_call);
+        emit_byte(nargs-1);
     }
 }
 

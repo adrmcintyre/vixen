@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "header.h"
 #include "dict.h"
 
@@ -171,14 +172,14 @@ void parse_class()
     class_ident = ident;
 }
 
-void parse_func_or_proc(Op op)
+void parse_func()
 {
-    if (control_sp != 0) parser_die("func/proc only allowed at top level or class level");
+    if (control_sp != 0) parser_die("func only allowed at top level or class level");
 
-    push_control(op);
+    push_control(op_func);
     emit_forward_jump(op_jump);
 
-    func_kind = (op==op_func) ? kind_func : kind_proc;
+    func_kind = kind_func;
 
     if (!lex_word()) parser_die("missing name");
     if (lookup_keyword()) parser_die("reserved word cannot be used here");
@@ -186,17 +187,19 @@ void parse_func_or_proc(Op op)
     // first time we've seen this, or it has only been referenced before
     bool is_new;
     func_ident = ident_intern(&is_new);
-    if (is_new || func_ident->val.k == kind_fail) {
-        func_ident->val.k = func_kind;
-    }
-    else {
+    if (!is_new && func_ident->val.k != kind_fail) {
         parser_die("name already in use");
     }
 
+    // TODO could include name field (String)
+    Func* func = (Func*) heap_alloc(sizeof(Func));
+    func->args = 0;
+    func->slots = 0;
+    func->addr = to_p16(code_ptr);
+
     u16 func_addr = to_p16(code_ptr);
-    func_ident->val.u = func_addr;
-    func_ident->args = 0;
-    func_ident->slot = 0;
+    func_ident->val.k = func_kind;
+    func_ident->val.u = to_p16(func);
 
     if (!lex_char('(')) parser_die("missing '('");
 
@@ -218,21 +221,15 @@ void parse_func_or_proc(Op op)
             if (!lex_char(',')) parser_die("missing ','");
         }
     }
-    func_ident->args = slot_num;
-    func_ident->slot = slot_num;
+    func->args = slot_num;
+    func->slots = slot_num;
 }
 
 void parse_return()
 {
-    if (func_kind == kind_fail) parser_die("'return' is not inside a func/proc");
-    if (func_kind == kind_proc) {
-        if (!lex_peek_stmt_end()) parser_die("a proc cannot return a value");
-        emit_op(op_return_proc);
-    }
-    else {
-        parse_expr();
-        emit_op(op_return_func);
-    }
+    if (func_kind == kind_fail) parser_die("'return' is not inside a func");
+    parse_expr();
+    emit_op(op_return);
 }
         
 void parse_end()
@@ -243,18 +240,14 @@ void parse_end()
     }
 
     Op k = pop_control();
-    if (k != op_func && k != op_proc) parser_die("'end' not after a func/proc");
+    if (k != op_func) parser_die("'end' not after a func");
 
-    if (func_kind == kind_proc) {
-        emit_op(op_return_proc);
-    }
-    else {
-        // TODO - compile error if some path does not end in a return.
-        emit_op(op_return_missing);
-    }
+    emit_op(op_return_none);
+
+    // TODO maybe Ident* func_ident can be replaced with Func* curr_func?
 
     // clear slot assignments
-    u8 slot_num = func_ident->slot;
+    u8 slot_num = ((Func*) from_p16(func_ident->val.u))->slots;
     while(slot_num > 0) {
         --slot_num;
         Ident* slot_ident = slot_stack[slot_num];
@@ -340,9 +333,8 @@ void parse_control_stmt(Op op)
         parse_class();
         break;
 
-    case op_proc:
     case op_func:
-        parse_func_or_proc(op);
+        parse_func();
         break;
 
     case op_return:
@@ -386,7 +378,7 @@ void parse_assign(Ident* ident)
     else {
         u8 slot_num = ident->slot;
         if (slot_num == 0xff) {
-            slot_num = func_ident->slot++;
+            slot_num = ((Func*) from_p16(func_ident->val.u))->slots++;
             ident->slot = slot_num;
             slot_stack[slot_num] = ident;
         }
@@ -397,66 +389,73 @@ void parse_assign(Ident* ident)
 
 void parse_stmt()
 {
-    if (!lex_word()) parser_die("bad statement");
-
-    if (lookup_keyword()) {
-        Op opcode = kw.op;
-        if (kw.info == info_cmd0) {
-            emit_op(opcode);
-        }
-        else if (kw.info == info_cmd_any) {
-            // TODO check arg counts
-            u8 nargs = parse_cmd_args();
-            emit_op(opcode);
-            emit_byte(nargs);
-        }
-        else if (kw.info == info_control) {
-            parse_control_stmt(opcode);
-        }
-        else {
-            parser_die("expected a command or control statement");
-        }
-    }
-    else {
-        Ident* ident = ident_intern(0);
-        Subscript ss = parse_index_arg();
-        if (ss == ss_none) {
-            if (lex_char('=')) {
-                parse_assign(ident);
+    if (lex_word()) {
+        if (lookup_keyword()) {
+            Op opcode = kw.op;
+            if (kw.info == info_cmd0) {
+                emit_op(opcode);
+            }
+            else if (kw.info == info_cmd_any) {
+                // TODO check arg counts
+                u8 nargs = parse_cmd_args();
+                emit_op(opcode);
+                emit_byte(nargs);
+            }
+            else if (kw.info == info_control) {
+                parse_control_stmt(opcode);
             }
             else {
-                u8 nargs = parse_cmd_args();
-                emit_op(op_call_proc);
-                emit_byte(nargs);
-                emit_ident(ident);
+                parser_die("expected a command or control statement");
             }
+            return;
         }
-        else {
-            if (func_kind == kind_fail) {
-                emit_op(op_ident_get);
-                emit_ident(ident);
-            } else {
-                u8 slot_num = ident->slot;
-                if (slot_num == 0xff) {
-                    slot_num = func_ident->slot++;
-                    ident->slot = slot_num;
-                    slot_stack[slot_num] = ident;
-                }
-                emit_op(op_slot_get);
-                emit_byte(slot_num);
-            }
-            if (!lex_char('=')) parser_die("missing '='");
-            parse_expr();
 
-            switch (ss) {
-            case ss_index: emit_op(op_set_index); break;
-            case ss_empty: emit_op(op_set_slice_empty); break;
-            case ss_start: emit_op(op_set_slice_start); break;
-            case ss_end:   emit_op(op_set_slice_end); break;
-            case ss_both:  emit_op(op_set_slice); break;
-            default: die("unreachable");
-            }
+        if (lex_char('=')) {
+            Ident* ident = ident_intern(0);
+            parse_assign(ident);
+            return;
         }
+    }
+
+    unlex_word();
+    parse_expr();
+
+    if (lex_char('=')) {
+        // TODO ensure correctly sized for max op length
+        u8 last_op_and_args[4];
+        u8 last_op_len = code_ptr - last_op_ptr;
+        memcpy(last_op_and_args, last_op_ptr, last_op_len);
+        code_ptr = last_op_ptr;
+
+        parse_expr();
+
+        switch (last_op_and_args[0]) {
+            case op_slot_get:
+                emit_op(op_slot_set);
+                break;
+            case op_ident_get:
+                emit_op(op_ident_set);
+                break;
+            case op_get_index:
+                emit_op(op_set_index);
+                break;
+            case op_get_slice_empty:
+                emit_op(op_set_slice_empty);
+                break;
+            case op_get_slice_end:
+                emit_op(op_set_slice_end);
+                break;
+            case op_get_slice_start:
+                emit_op(op_set_slice_start);
+                break;
+            case op_get_slice:
+                emit_op(op_set_slice);
+                break;
+            default:
+                die("invalid asssignment");
+        }
+        memcpy(code_ptr, last_op_and_args+1, last_op_len-1);
+        code_ptr += last_op_len-1;
     }
 }
 

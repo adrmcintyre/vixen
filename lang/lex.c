@@ -5,6 +5,7 @@ const OpData opdata_fail = { .op = fail, .info = 0x0f };
 const u8* prog_base;
 const u8* input_ptr;
 const u8* token_ptr;
+i16 token_len;
 
 // Advances input_ptr past any spaces.
 //
@@ -61,6 +62,7 @@ Kind lex_number()
 
     token_ptr = input_ptr;
     input_ptr = p;
+    token_len = input_ptr - token_ptr;
 
     return (dp || nexp) ? kind_float : kind_int;
 }
@@ -156,8 +158,14 @@ bool lex_word()
             (ch >= '0' && ch <= '9'));
 
     input_ptr = inp;
+    token_len = input_ptr - token_ptr;
 
     return true;
+}
+
+void unlex_word()
+{
+    input_ptr = token_ptr;
 }
 
 // Returns hi(result)=opcode, lo(result)=opinfo if an operator
