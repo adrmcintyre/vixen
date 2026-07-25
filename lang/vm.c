@@ -992,7 +992,7 @@ void vm_lit_object()
     u8 nargs = fetch_byte();
 
     // class is buried under args...
-    Value klval = get_value(from_p16(vm_sp-nargs*6-3));
+    Value klval = get_value(from_p16(vm_sp - (2*nargs + 1) * sizeof_Value));
     if (klval.k != kind_class) {
         if (klval.k == kind_fail) die("class not defined");
         die("expected class");
@@ -1052,7 +1052,7 @@ void vm_call_method()
     u8 nargs = fetch_byte();
 
     // object is buried under args...
-    Value objval = get_value(from_p16(vm_sp-nargs*3-3));
+    Value objval = get_value(from_p16(vm_sp-(nargs+1)*sizeof_Value));
     if (objval.k != kind_object) {
         die("method call on non-object");
     }
@@ -1060,12 +1060,14 @@ void vm_call_method()
     Func* func = object_get_method(object, method_id);
     if (func == 0) die("method does not exist");
 
+    // take into account 'self'
+    nargs += 1;
     if (func->args != nargs) {
         vm_die("wrong argument count");
     }
 
     u16 old_fp = vm_fp;
-    u16 old_sp = vm_sp - (nargs+1) * sizeof_Value;
+    u16 old_sp = vm_sp - nargs * sizeof_Value;
     vm_fp = vm_sp - nargs * sizeof_Value;
     vm_sp = vm_fp;
 
@@ -1158,7 +1160,7 @@ void vm_call()
     u8 nargs = fetch_byte();
 
     // func is buried under args...
-    Value funval = get_value(from_p16(vm_sp-nargs*3-3));
+    Value funval = get_value(from_p16(vm_sp - (nargs+1) * sizeof_Value));
     if (funval.k != kind_func) {
         if (funval.k == kind_fail) die("func/proc not defined");
         die("bad call");

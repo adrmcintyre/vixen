@@ -1,28 +1,23 @@
-class Test
-    func one()
-        return 1
+class Point
+    func add(p1, p2)
+        return Point{x: p1.x+p2.x, y:p1.y+p2.y}
     end
-
-    func two()
-        return 2
+    func scale(self, s)
+        return Point{x: self.x*s, y:self.y*s}
     end
-end
-
-class Toast
-    func one()
-        return "one"
+    func length(self)
+        return sqr(self.x*self.x + self.y*self.y)
     end
-    func two()
-        return "two"
+    func text(self)
+        return "(" + str(self.x) + "," + str(self.y) + ")"
     end
 end
 
-obs = [Test{}, Toast{}]
-i = 0
-while i < 2
-    ob = obs[i]
-    i = i+1
-    print ob.one(), ob.two()
-wend
+p = Point{x:10, y:20}
+q = Point{x:5, y:5}
+
+print p.text(), q.text()
+
+print p.add(q.scale(4)).length()
 
 stop

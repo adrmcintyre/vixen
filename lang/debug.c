@@ -67,7 +67,7 @@ const char* debug_op_names[] = {
     "op_set_slice_end",
     "op_set_slice_empty",
 
-    "op_construct",
+    "op_lit_object",
     "op_get_prop",
     "op_set_prop",
     "op_call_method",
