@@ -82,6 +82,7 @@ typedef enum {
     op_lit_object,
     op_get_prop,
     op_set_prop,
+    op_call_method,
 
     op_call,
     op_return_none,
@@ -209,8 +210,9 @@ void heap_init();
 u8* heap_alloc(u16 n);
 
 // Identifiers
+typedef struct Dict Dict;
 void ident_init();
-Ident* ident_intern(bool* is_new);
+Ident* ident_intern(Dict* scope_dict, bool* is_new);
 int ident_eq(Ident* a, Ident* b);
 int ident_proxy_eq(Ident* ident, IdentProxy* proxy);
 

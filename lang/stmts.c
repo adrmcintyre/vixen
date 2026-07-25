@@ -2,6 +2,7 @@
 #include <string.h>
 #include "header.h"
 #include "dict.h"
+#include "object.h"
 
 u8 control_sp;
 Op control_stack[32];
@@ -22,7 +23,7 @@ u16 forward_jump_stack[forward_jump_max];
 
 Kind func_kind;
 Ident* func_ident;
-Ident* class_ident;
+Dict* class_dict;
 
 u8 slot_max = 64;
 Ident* slot_stack[64];     // indexed by slot_num of active func
@@ -36,7 +37,7 @@ void stmt_init()
     forward_jump_sp = 0;
     func_kind = kind_fail;
     func_ident = 0;
-    class_ident = 0;
+    class_dict = 0;
 }
 
 // Records the beginning of a control structure.
@@ -154,22 +155,21 @@ void resolve_forward_jump()
 void parse_class()
 {
     if (control_sp != 0) parser_die("class only allowed at top level");
-    if (class_ident != 0) parser_die("class not allowed inside class");
+    if (class_dict != 0) parser_die("class not allowed inside class");
     if (!lex_word()) parser_die("missing name");
     if (lookup_keyword()) parser_die("reserved word cannot be used here");
 
     bool is_new;
-    Ident* ident = ident_intern(&is_new);
+    Ident* ident = ident_intern(0, &is_new);
     if (is_new || ident->val.k == kind_fail) {
+        Class* klass = class_new();
         ident->val.k = kind_class;
-        Dict* dict = dict_new();
-        ident->val.u = to_p16(dict);
+        ident->val.u = to_p16(klass);
+        class_dict = klass->methods;
     }
     else {
         parser_die("name already in use");
     }
-
-    class_ident = ident;
 }
 
 void parse_func()
@@ -186,7 +186,7 @@ void parse_func()
 
     // first time we've seen this, or it has only been referenced before
     bool is_new;
-    func_ident = ident_intern(&is_new);
+    func_ident = ident_intern(class_dict, &is_new);
     if (!is_new && func_ident->val.k != kind_fail) {
         parser_die("name already in use");
     }
@@ -208,7 +208,7 @@ void parse_func()
         while(1) {
             if (!lex_word()) parser_die("missing parameter name");
             if (lookup_keyword()) parser_die("reserved word cannot be used here");
-            Ident* parent_ident = ident_intern(0);
+            Ident* parent_ident = ident_intern(0, 0);
             if (parent_ident->slot != 0xff) parser_die("repeated parameter name");
 
             if (slot_num >= slot_max) die("too many local variables");
@@ -234,8 +234,8 @@ void parse_return()
         
 void parse_end()
 {
-    if (control_sp == 0 && class_ident != 0) {
-        class_ident = 0;
+    if (control_sp == 0 && class_dict != 0) {
+        class_dict = 0;
         return;
     }
 
@@ -411,7 +411,7 @@ void parse_stmt()
         }
 
         if (lex_char('=')) {
-            Ident* ident = ident_intern(0);
+            Ident* ident = ident_intern(0, 0);
             parse_assign(ident);
             return;
         }

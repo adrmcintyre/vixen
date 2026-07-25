@@ -1,11 +1,28 @@
 class Test
+    func one()
+        return 1
+    end
+
+    func two()
+        return 2
+    end
 end
 
-o1 = Test{say:Test{foo:2}, hello:22}
-print o1.say.foo, o1.hello
+class Toast
+    func one()
+        return "one"
+    end
+    func two()
+        return "two"
+    end
+end
 
-k = Test
-o2 = k{clever:"boy"}
-print o2.clever
+obs = [Test{}, Toast{}]
+i = 0
+while i < 2
+    ob = obs[i]
+    i = i+1
+    print ob.one(), ob.two()
+wend
 
 stop

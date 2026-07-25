@@ -32,7 +32,7 @@ typedef struct {
     // "DictEntry entries[USABLE_FRACTION(DK_SIZE(keys))];" array follows
 } DictKeys;
 
-typedef struct {
+typedef struct Dict {
     u16 used;
     DictKeys* keys;
 } Dict;

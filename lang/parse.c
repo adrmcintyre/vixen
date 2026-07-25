@@ -270,7 +270,7 @@ void parse_terminal_unindexed()
         return;
     }
 
-    Ident* ident = ident_intern(0);
+    Ident* ident = ident_intern(0, 0);
 
     if (func_kind == kind_fail) {
         // if we're at global scope, all symbol lookups are global
@@ -298,12 +298,18 @@ bool parse_dot()
     if (!lex_char('.')) return 0;
 
     if (!lex_word()) die("expected method or property name");
-    Ident* ident = ident_intern(0);
+    Ident* ident = ident_intern(0, 0);
 
-    // TODO check for '(...)' and emit op_call_method
-
-    emit_op(op_get_prop);
-    emit_ident(ident);
+    u16 nargs = parse_args();
+    if (nargs > 0) {
+        emit_op(op_call_method);
+        emit_ident(ident);
+        emit_byte(nargs-1);
+    }
+    else {
+        emit_op(op_get_prop);
+        emit_ident(ident);
+    }
     return 1;
 }
 
@@ -316,7 +322,7 @@ bool parse_lit_object()
     if (!lex_char('}')) {
         pending_ops[pending_ops_sp++] = opdata_mark;
         if (!lex_word()) die("missing property");
-        ident = ident_intern(0);
+        ident = ident_intern(0, 0);
         emit_op(op_lit_ident);
         emit_ident(ident);
 
@@ -327,7 +333,7 @@ bool parse_lit_object()
         while(lex_char(',')) {
             pending_ops[pending_ops_sp++] = opdata_mark;
             if (!lex_word()) die("missing property");
-            ident = ident_intern(0);
+            ident = ident_intern(0, 0);
             emit_op(op_lit_ident);
             emit_ident(ident);
 

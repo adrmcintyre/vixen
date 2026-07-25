@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "header.h"
 #include "dict.h"
+#include "object.h"
 
 Dict* ident_dict;
 Value ident_proxy_key;
@@ -18,8 +19,11 @@ extern void ident_init()
 // Looks up token_ptr..token_ptr+token_len in the interned symbol table, creating
 // a new entry if not found. On exit, sets ident to the new or existing entry.
 // Returns 1 if a new entry was created, or 0 otherwise.
-extern Ident* ident_intern(bool* is_new)
+extern Ident* ident_intern(Dict* dict, bool* is_new)
 {
+    if (dict == 0) {
+        dict = ident_dict;
+    }
     u16 hash = hash_mem(token_ptr, token_len);
 
     // We reference the token directly from the program text
@@ -30,7 +34,7 @@ extern Ident* ident_intern(bool* is_new)
     ref->len = token_len;
     ref->ptr = to_p16(token_ptr);
 
-    Value item = dict_get_item(ident_dict, ident_proxy_key);
+    Value item = dict_get_item(dict, ident_proxy_key);
     if (item.k != kind_fail) {
         if (is_new != 0) *is_new = false;
         return (Ident*) from_p16(item.u);
@@ -53,7 +57,7 @@ extern Ident* ident_intern(bool* is_new)
 
     item.k = kind_ident;
     item.u = to_p16(ident);
-    dict_set_item(ident_dict, item, item);
+    dict_set_item(dict, item, item);
 
     if (is_new != 0) *is_new = true;
     return ident;
@@ -63,7 +67,7 @@ extern int ident_eq(Ident* a, Ident* b)
 {
     return 
         (a->hash == b->hash) &&
-        (a->len != b->len) &&
+        (a->len == b->len) &&
         (0 == memcmp(a->name, b->name, a->len));
 
 }

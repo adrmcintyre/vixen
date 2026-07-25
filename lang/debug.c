@@ -70,6 +70,7 @@ const char* debug_op_names[] = {
     "op_construct",
     "op_get_prop",
     "op_set_prop",
+    "op_call_method",
 
     "op_call",
     "op_return_none",

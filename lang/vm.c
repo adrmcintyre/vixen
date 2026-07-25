@@ -744,6 +744,12 @@ void vm_print(Value val)
             printf("<object:%04x>", val.u);
             break;
 
+        case kind_ident: {
+            Ident* ident = (Ident*) from_p16(val.u);
+            printf("<ident:%.*s>", ident->len, ident->name);
+            break;
+        }
+
         default:
             printf("%02x:%04x", val.k, val.u);
             break;
@@ -1040,6 +1046,39 @@ void vm_set_prop()
     object_set_prop(object, key, vm_b);
 }
 
+void vm_call_method()
+{
+    Ident* method_id = (Ident*) fetch_ptr();
+    u8 nargs = fetch_byte();
+
+    // object is buried under args...
+    Value objval = get_value(from_p16(vm_sp-nargs*3-3));
+    if (objval.k != kind_object) {
+        die("method call on non-object");
+    }
+    Object* object = (Object*) from_p16(objval.u);
+    Func* func = object_get_method(object, method_id);
+    if (func == 0) die("method does not exist");
+
+    if (func->args != nargs) {
+        vm_die("wrong argument count");
+    }
+
+    u16 old_fp = vm_fp;
+    u16 old_sp = vm_sp - (nargs+1) * sizeof_Value;
+    vm_fp = vm_sp - nargs * sizeof_Value;
+    vm_sp = vm_fp;
+
+    vm_check_stack(3 * sizeof(u16) + func->slots * sizeof_Value);
+    vm_sp = vm_sp + func->slots * sizeof_Value;
+
+    push_word(old_fp);
+    push_word(old_sp);
+    push_word(vm_pc);
+
+    vm_pc = func->addr;
+}
+
 extern void slice_adjust(i16 *start, i16 *end, i16 *len)
 {
     if (*start < 0) *start += *len;
@@ -1130,7 +1169,6 @@ void vm_call()
         vm_die("wrong argument count");
     }
 
-    // TODO is this correct ???
     u16 old_fp = vm_fp;
     u16 old_sp = vm_sp - (nargs+1) * sizeof_Value;
     vm_fp = vm_sp - nargs * sizeof_Value;
@@ -1316,6 +1354,7 @@ u16 vm_run(const u8 *vm_pc_start)
             
             case op_get_prop:           vm_get_prop(); break;
             case op_set_prop:           vm_set_prop(); break;
+            case op_call_method:        vm_call_method(); break;
 
             // call + return
             case op_call:           vm_call(); break;
