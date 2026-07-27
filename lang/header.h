@@ -118,7 +118,7 @@ typedef enum {
     kind_string,
     kind_array,
     kind_dict,
-    kind_ident_proxy,
+    kind_token_proxy,
     kind_ident,
     kind_func,
     kind_class,
@@ -140,7 +140,7 @@ typedef struct {
     u16 hash;
     i16 len;
     u16 ptr;
-} IdentProxy;
+} TokenProxy;
 
 typedef struct {
     Value val;
@@ -153,10 +153,7 @@ typedef struct {
     // number of slots (inc args) for func
     u8 slot;
 
-    // TODO use a String* instead?
-    u16 hash;
-    i16 len;
-    u8 name[];
+    u16 nameptr;
 } Ident;
 
 typedef struct {
@@ -213,8 +210,7 @@ u8* heap_alloc(u16 n);
 typedef struct Dict Dict;
 void ident_init();
 Ident* ident_intern(Dict* scope_dict, bool* is_new);
-int ident_eq(Ident* a, Ident* b);
-int ident_proxy_eq(Ident* ident, IdentProxy* proxy);
+int token_proxy_eq_string(TokenProxy* proxy, String* string);
 
 // Strings
 extern String* string_bucket[];
@@ -229,6 +225,7 @@ extern String* interned_string_class;
 extern String* interned_string_object;
 extern String* interned_string_unknown;
 void strings_init();
+String* string_from_token();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, i16 len);
 int string_eq(String* s1, String* s2);

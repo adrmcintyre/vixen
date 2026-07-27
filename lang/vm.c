@@ -746,7 +746,8 @@ void vm_print(Value val)
 
         case kind_ident: {
             Ident* ident = (Ident*) from_p16(val.u);
-            printf("<ident:%.*s>", ident->len, ident->name);
+            String* name = (String*) from_p16(ident->nameptr);
+            printf("<ident:%.*s>", name->len, name->data);
             break;
         }
 
@@ -913,7 +914,7 @@ void vm_get_index()
             break;
         }
         case kind_dict: {
-            switch (vm_a.k) {
+            switch (vm_b.k) {
                 case kind_none: 
                 case kind_bool:
                 case kind_int:
@@ -1014,10 +1015,10 @@ void vm_lit_object()
 
 void vm_get_prop()
 {
-    Ident* ident = (Ident*) fetch_ptr();
+    String* name = (String*) fetch_ptr();
     Value key;
-    key.k = kind_ident;
-    key.u = to_p16(ident);
+    key.k = kind_string;
+    key.u = to_p16(name);
 
     pop_val();
     if (vm_a.k != kind_object) die("expected object");
@@ -1031,10 +1032,10 @@ void vm_get_prop()
 
 void vm_set_prop()
 {
-    Ident* ident = (Ident*) fetch_ptr();
+    String* name = (String*) fetch_ptr();
     Value key;
-    key.k = kind_ident;
-    key.u = to_p16(ident);
+    key.k = kind_string;
+    key.u = to_p16(name);
 
     pop_val();
     vm_b = vm_a;
@@ -1048,7 +1049,7 @@ void vm_set_prop()
 
 void vm_call_method()
 {
-    Ident* method_id = (Ident*) fetch_ptr();
+    String* name = (String*) fetch_ptr();
     u8 nargs = fetch_byte();
 
     // object is buried under args...
@@ -1056,8 +1057,12 @@ void vm_call_method()
     if (objval.k != kind_object) {
         die("method call on non-object");
     }
+
     Object* object = (Object*) from_p16(objval.u);
-    Func* func = object_get_method(object, method_id);
+    Value name_val;
+    name_val.k = kind_string;
+    name_val.u = to_p16(name);
+    Func* func = object_get_method(object, name_val);
     if (func == 0) die("method does not exist");
 
     // take into account 'self'

@@ -16,8 +16,8 @@ typedef struct Object {
 Class* class_new();
 
 Object* object_new(Class* klass, u8 nargs);
-Value object_get_prop(Object* object, Value key);
-void object_set_prop(Object* object, Value key, Value value);
-Func* object_get_method(Object* object, Ident* method_id);
+Value object_get_prop(Object* object, Value name);
+void object_set_prop(Object* object, Value name, Value value);
+Func* object_get_method(Object* object, Value name);
 
 #endif

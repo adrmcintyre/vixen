@@ -298,17 +298,17 @@ bool parse_dot()
     if (!lex_char('.')) return 0;
 
     if (!lex_word()) die("expected method or property name");
-    Ident* ident = ident_intern(0, 0);
+    String* name = string_from_token();
 
     u16 nargs = parse_args();
     if (nargs > 0) {
         emit_op(op_call_method);
-        emit_ident(ident);
+        emit_word(to_p16(name));
         emit_byte(nargs-1);
     }
     else {
         emit_op(op_get_prop);
-        emit_ident(ident);
+        emit_word(to_p16(name));
     }
     return 1;
 }
@@ -318,13 +318,13 @@ bool parse_lit_object()
     if (!lex_char('{')) return 0;
 
     u16 nargs = 0;
-    Ident* ident;
+    String* key;
     if (!lex_char('}')) {
         pending_ops[pending_ops_sp++] = opdata_mark;
         if (!lex_word()) die("missing property");
-        ident = ident_intern(0, 0);
-        emit_op(op_lit_ident);
-        emit_ident(ident);
+        key = string_from_token();
+        emit_op(op_lit_string);
+        emit_word(to_p16(key));
 
         if (!lex_char(':')) parser_die("missing ':'");
         parse_expr();
@@ -333,9 +333,9 @@ bool parse_lit_object()
         while(lex_char(',')) {
             pending_ops[pending_ops_sp++] = opdata_mark;
             if (!lex_word()) die("missing property");
-            ident = ident_intern(0, 0);
-            emit_op(op_lit_ident);
-            emit_ident(ident);
+            key = string_from_token();
+            emit_op(op_lit_string);
+            emit_word(to_p16(key));
 
             if (!lex_char(':')) parser_die("missing ':'");
             parse_expr();

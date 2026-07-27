@@ -5,15 +5,10 @@
 #include "object.h"
 
 Dict* ident_dict;
-Value ident_proxy_key;
 
 extern void ident_init()
 {
     ident_dict = dict_new();
-
-    // In practice this could be statically allocated
-    ident_proxy_key.k = kind_ident_proxy;
-    ident_proxy_key.u = to_p16(heap_alloc(sizeof(IdentProxy)));
 }
 
 // Looks up token_ptr..token_ptr+token_len in the interned symbol table, creating
@@ -24,17 +19,13 @@ extern Ident* ident_intern(Dict* dict, bool* is_new)
     if (dict == 0) {
         dict = ident_dict;
     }
-    u16 hash = hash_mem(token_ptr, token_len);
 
-    // We reference the token directly from the program text
-    // using a buffer that only gets allocated once to avoid
-    // a heap allocation on every lookup.
-    IdentProxy* ref = (IdentProxy*) from_p16(ident_proxy_key.u);
-    ref->hash = hash;
-    ref->len = token_len;
-    ref->ptr = to_p16(token_ptr);
+    String* name = string_from_token();
+    Value key;
+    key.k = kind_string;
+    key.u = to_p16(name);
 
-    Value item = dict_get_item(dict, ident_proxy_key);
+    Value item = dict_get_item(dict, key);
     if (item.k != kind_fail) {
         if (is_new != 0) *is_new = false;
         return (Ident*) from_p16(item.u);
@@ -47,39 +38,28 @@ extern Ident* ident_intern(Dict* dict, bool* is_new)
     //
     // During code gen inject the value pointer instead of the ident pointer.
     //
-    Ident* ident = (Ident*) heap_alloc(sizeof(Ident) + token_len);
-    ident->hash = hash;
+    Ident* ident = (Ident*) heap_alloc(sizeof(Ident));
     ident->val.k = kind_fail;
     ident->val.u = 0;
     ident->slot = 0xff;
-    ident->len = token_len;
-    memcpy(ident->name, token_ptr, token_len);
+    ident->nameptr = to_p16(name);
 
     item.k = kind_ident;
     item.u = to_p16(ident);
-    dict_set_item(dict, item, item);
+    dict_set_item(dict, key, item);
 
     if (is_new != 0) *is_new = true;
     return ident;
 }
 
-extern int ident_eq(Ident* a, Ident* b)
+extern int token_proxy_eq_string(TokenProxy* proxy, String* string)
 {
-    return 
-        (a->hash == b->hash) &&
-        (a->len == b->len) &&
-        (0 == memcmp(a->name, b->name, a->len));
-
-}
-
-extern int ident_proxy_eq(Ident* ident, IdentProxy* proxy)
-{
-    if ((ident->hash != proxy->hash) ||
-        (ident->len != proxy->len))
+    if ((proxy->hash != string->hash) ||
+        (proxy->len != string->len))
     {
         return false;
     }
 
-    const u8* prog_token = prog_base + proxy->ptr;
-    return (0 == memcmp(ident->name, prog_token, ident->len));
+    const u8* token = prog_base + proxy->ptr;
+    return (0 == memcmp(token, string->data, string->len));
 }

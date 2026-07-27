@@ -1,5 +1,9 @@
 #include "header.h"
+#include "dict.h"
 #include <string.h>
+
+static Dict* string_dict;
+static TokenProxy* token_proxy;
 
 String* interned_string_empty;
 String* interned_string_none;
@@ -16,6 +20,9 @@ String* string_bucket[256];
 
 void strings_init()
 {
+    string_dict = dict_new();
+    token_proxy = (TokenProxy*) heap_alloc(sizeof(TokenProxy));
+
     interned_string_empty   = string_from_data((const u8*) "", 0);
     interned_string_none    = string_from_data((const u8*) "None", 4);
     interned_string_true    = string_from_data((const u8*) "True", 4);
@@ -28,6 +35,29 @@ void strings_init()
     interned_string_unknown = string_from_data((const u8*) "<unknown>", 9);
 
     for(int i=0; i<256; i++) string_bucket[i] = 0;
+}
+
+// Create an interned string from last lexed token.
+String* string_from_token()
+{
+    token_proxy->hash = hash_mem(token_ptr, token_len);
+    token_proxy->len = token_len;
+    token_proxy->ptr = to_p16(token_ptr);
+
+    Value key;
+    key.k = kind_token_proxy;
+    key.u = to_p16(token_proxy);
+
+    Value strval = dict_get_item(string_dict, key);
+    if (strval.k != kind_fail) {
+        return (String*) from_p16(strval.u);
+    }
+
+    String* string = string_from_data(token_ptr, token_len);
+    strval.k = kind_string;
+    strval.u = to_p16(string);
+    dict_set_item(string_dict, strval, strval);
+    return string;
 }
 
 String* string_from_char(u8 ch)

@@ -41,8 +41,9 @@ void emit_op(Op op)
 void emit_ident(Ident* ident)
 {
     if (opt_trace_emit) {
+        String* name = (String*)from_p16(ident->nameptr);
         fprintf(stderr, "%04x: emit_ident %04x = ", to_p16(code_ptr), to_p16(ident));
-        fwrite(ident->name, 1, ident->len, stderr);
+        fwrite(name->data, 1, name->len, stderr);
         putc('\n', stderr);
     }
 

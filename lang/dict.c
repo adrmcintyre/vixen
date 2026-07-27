@@ -169,10 +169,10 @@ static u16 dictkeys_look_index(DictKeys *keys, u16 hash, i16 index)
 static int keys_eq(Value entry_key, Value lookup_key)
 {
     if (entry_key.k != lookup_key.k) {
-        if (lookup_key.k == kind_ident_proxy && entry_key.k == kind_ident) {
-            Ident* ident = (Ident*) from_p16(entry_key.u);
-            IdentProxy* proxy = (IdentProxy*) from_p16(lookup_key.u);
-            return ident_proxy_eq(ident, proxy);
+        if (lookup_key.k == kind_token_proxy && entry_key.k == kind_string) {
+            TokenProxy* proxy = (TokenProxy*) from_p16(lookup_key.u);
+            String* string = (String*) from_p16(entry_key.u);
+            return token_proxy_eq_string(proxy, string);
         }
         return 0;
     }
@@ -189,11 +189,6 @@ static int keys_eq(Value entry_key, Value lookup_key)
             String* sa = (String*) from_p16(entry_key.u);
             String* sb = (String*) from_p16(lookup_key.u);
             return string_eq(sa, sb);
-        }
-        case kind_ident: {
-            Ident* ia = (Ident*) from_p16(entry_key.u);
-            Ident* ib = (Ident*) from_p16(lookup_key.u);
-            return ident_eq(ia, ib);
         }
         default:
             // silence warnings
@@ -215,13 +210,9 @@ static u16 key_hash(Value v)
             String* string = (String*) from_p16(v.u);
             return string->hash;
         }
-        case kind_ident_proxy: {
-            IdentProxy* proxy = (IdentProxy*) from_p16(v.u);
+        case kind_token_proxy: {
+            TokenProxy* proxy = (TokenProxy*) from_p16(v.u);
             return proxy->hash;
-        }
-        case kind_ident: {
-            Ident* ident = (Ident*) from_p16(v.u);
-            return ident->hash;
         }
         default:
             // silence warnings

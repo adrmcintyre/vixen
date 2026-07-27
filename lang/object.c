@@ -17,26 +17,24 @@ extern Object* object_new(Class* klass, u8 nargs)
     return object;
 }
 
-extern Value object_get_prop(Object* object, Value key)
+extern Value object_get_prop(Object* object, Value name)
 {
-    return dict_get_item(object->props, key);
+    return dict_get_item(object->props, name);
 }
 
-extern void object_set_prop(Object* object, Value key, Value value)
+extern void object_set_prop(Object* object, Value name, Value value)
 {
-    dict_set_item(object->props, key, value);
+    dict_set_item(object->props, name, value);
 }
 
-extern Func* object_get_method(Object* object, Ident* name_id)
+extern Func* object_get_method(Object* object, Value name)
 {
     Class* klass = (Class*) from_p16(object->klass);
-    Value nameval;
-    nameval.k = kind_ident;
-    nameval.u = to_p16(name_id);
-    Value implval = dict_get_item(klass->methods, nameval);
-    if (implval.k == kind_fail) {
+    Value impl_val = dict_get_item(klass->methods, name);
+    if (impl_val.k == kind_fail) {
         return 0;
     }
-    Ident* impl_id = (Ident*) from_p16(implval.u);
-    return (Func*) from_p16(impl_id->val.u);
+    // TODO FIXME
+    Ident* impl_ident = (Ident*) from_p16(impl_val.u);
+    return (Func*) from_p16(impl_ident->val.u);
 }
