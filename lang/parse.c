@@ -231,17 +231,16 @@ bool parse_index_arg()
 void parse_keyword_args()
 {
     if (kw.info == info_const) {
-        emit_op(kw.op);
     }
-    else if (kw.info <= info_fn3) {
+    else if (kw.info >= info_fn0 && kw.info <= info_fn3) {
         // parse_args may trample kw
         OpData save = kw;
         u16 nargs = parse_args();
         kw = save;
         if (nargs == 0) parser_die("missing arguments '(...)'");
-        if (nargs-1 < kw.info) parser_die("too few arguments");
-        if (nargs-1 > kw.info) parser_die("too many arguments");
-        emit_op(kw.op);
+        u16 want = kw.info-info_fn0;
+        if (nargs-1 < want) parser_die("too few arguments");
+        if (nargs-1 > want) parser_die("too many arguments");
     }
     else if (kw.info >= info_cmd0 && kw.info <= info_cmd_any) {
         parser_die("command not allowed here");
@@ -249,7 +248,9 @@ void parse_keyword_args()
     else if (kw.info == info_control) {
         parser_die("control statement not allowed here");
     }
+    emit_op(kw.op);
 }
+
 
 void parse_terminal_unindexed()
 {

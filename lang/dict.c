@@ -105,6 +105,7 @@ static u8 estimate_keysize(u16 n)
     return calculate_keysize(arg);
 }
 
+// TODO - triple? really?!
 #define GROWTH_RATE(d) ((d)->used*3)
 
 static DictKeys* dictkeys_new(u16 size)

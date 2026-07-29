@@ -303,7 +303,7 @@ void vm_add()
         case kind_array: {
             Array* arr1 = (Array*) from_p16(vm_a.u);
             Array* arr2 = (Array*) from_p16(vm_b.u);
-            Array* array = array_append(arr1, arr2);
+            Array* array = array_concat(arr1, arr2);
             push_array(array);
             return;
         }
@@ -586,79 +586,36 @@ void fn_len()
         }
         default:
             die("expected string or array or dict");
-        }
-        push_int(n);
-}
-
-// TODO - add push, pop for arrays and slice assignment
-
-// TODO - all of substr, left, right can be done away
-// with now that we can slice strings...
-void vm_substr(u16 pos, u16 n);
-void vm_substr_helper(String* str, u16 pos, u16 n, u16 len);
-
-void fn_left()
-{
-    pop_int();
-    i16 ni = vm_a.i;
-    if (ni < 0) vm_die("negative count");
-
-    vm_substr(0, (u16) ni);
-}
-
-void fn_right()
-{
-    pop_int();
-    i16 ni = vm_a.i;
-    if (ni < 0) vm_die("negative count");
-    u16 n = (u16) ni;
-
-    pop_str();
-
-    String* str = (String*) from_p16(vm_a.u);
-    u16 len = str->len;
-    if (n >= len) {
-        n = len;
     }
-    u16 pos = len - n;
-
-    return vm_substr_helper(str, pos, n, len);
+    push_int(n);
 }
 
-void fn_substr()
+void vm_append()
 {
-    pop_int();
-    i16 ni = vm_a.i;
-    if (ni < 0) vm_die("negative count");
-
-    pop_int();
-    i16 posi = vm_a.i;
-    if (posi < 0) vm_die("negative offset");
-
-    vm_substr((u16) posi, (u16) ni);
+    pop_val();
+    vm_b = vm_a;
+    pop_array();
+    Array* arr = (Array*) from_p16(vm_a.u);
+    array_append(arr, vm_b);
 }
 
-void vm_substr(u16 pos, u16 n)
+void vm_extend()
 {
-    pop_str();
-
-    String* str = (String*) from_p16(vm_a.u);
-
-    vm_substr_helper(str, pos, n, str->len);
+    pop_val();
+    vm_b = vm_a;
+    pop_array();
+    Array* dst = (Array*) from_p16(vm_a.u);
+    Array* src = (Array*) from_p16(vm_b.u);
+    array_set_slice(dst, dst->len, -1, src);
 }
 
-void vm_substr_helper(String* str, u16 pos, u16 n, u16 len)
+void vm_pop()
 {
-    if (pos == 0 && n >= len) {
-        push_val(kind_string, vm_a.u);
-        return;
-    }
-
-    u16 len2 = len-pos;
-    if (n < len2) len2 = n;
-
-    String* str2 = string_from_data(str->data+pos, len2);
-    push_val(kind_string, to_p16(str2));
+    pop_array();
+    Array* arr = (Array*) from_p16(vm_a.u);
+    Value v = array_pop(arr);
+    if (v.k == kind_fail) die("array empty");
+    push_val(v.k, v.u);
 }
 
 //------------------------------------------------------------------------------
@@ -1324,9 +1281,9 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_chr:    fn_chr(); break;
             case op_str:    fn_str(); break;
             case op_len:    fn_len(); break;
-            case op_left:   fn_left(); break;
-            case op_right:  fn_right(); break;
-            case op_substr: fn_substr(); break;
+            case op_append: vm_append(); break;
+            case op_pop:    vm_pop(); break;
+            case op_extend: vm_extend(); break;
 
             // built-in procedures
             case op_print:  proc_print(); break;

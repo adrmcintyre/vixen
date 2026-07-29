@@ -392,7 +392,13 @@ void parse_stmt()
     if (lex_word()) {
         if (lookup_keyword()) {
             Op opcode = kw.op;
-            if (kw.info == info_cmd0) {
+            if (kw.info >= info_cmd0 && kw.info < info_cmd_any) {
+                OpData save = kw;
+                u16 nargs = parse_cmd_args();
+                kw = save;
+                u16 want = kw.info-info_cmd0;
+                if (nargs < want) parser_die("too few arguments");
+                if (nargs > want) parser_die("too many arguments");
                 emit_op(opcode);
             }
             else if (kw.info == info_cmd_any) {

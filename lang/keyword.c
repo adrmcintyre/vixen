@@ -2,6 +2,7 @@
 
 // each table should be arranged in ascii order
 const u8 keywords_hpx[] = {
+    op_pop,      info_fn1,      'p','o','p',
     op_print,    info_cmd_any,  'p','r','i','n','t',
     fail, 0
 };
@@ -9,6 +10,7 @@ const u8 keywords_aiqy[] = {
     op_inf,      info_const,    'I','n','f',
 
     op_abs,      info_fn1,      'a','b','s',
+    op_append,   info_cmd2,     'a','p','p','e','n','d',
     op_asc,      info_fn1,      'a','s','c',
 
     op_if,       info_control,  'i','f',
@@ -20,7 +22,6 @@ const u8 keywords_bjrz[] = {
     op_break,    info_control,  'b','r','e','a','k',
     op_repeat,   info_control,  'r','e','p','e','a','t',
     op_return,   info_control,  'r','e','t','u','r','n',
-    op_right,    info_fn2,      'r','i','g','h','t',
     op_rnd,      info_fn0,      'r','n','d',
     fail, 0
 };
@@ -32,13 +33,11 @@ const u8 keywords_cks[] = {
     op_sqr,      info_fn1,      's','q','r',
     op_stop,     info_cmd0,     's','t','o','p',
     op_str,      info_fn1,      's','t','r',
-    op_substr,   info_fn3,      's','u','b','s','t','r',
     fail, 0
 };
 const u8 keywords_dlt[] = {
     op_true,     info_const,    'T','r','u','e',
 
-    op_left,     info_fn2,      'l','e','f','t',
     op_len,      info_fn1,      'l','e','n',
     fail, 0
 };
@@ -46,6 +45,7 @@ const u8 keywords_emu[] = {
     op_else,     info_control,  'e','l','s','e',
     op_end,      info_control,  'e','n','d',
     op_endif,    info_control,  'e','n','d','i','f',
+    op_extend,   info_cmd2,     'e','x','t','e','n','d',
 
     op_until,    info_control,  'u','n','t','i','l',
     fail, 0

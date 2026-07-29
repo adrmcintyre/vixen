@@ -40,11 +40,11 @@ typedef enum {
     // Built in functions
     op_abs, op_sgn, op_rnd,
     op_sqr, op_int, op_float,
-    op_asc, op_chr, op_str, op_len,
-    op_left, op_right, op_substr,
+    op_asc, op_chr, op_str, op_len, op_pop,
 
     // Statements
     op_print, op_input, op_stop,
+    op_append, op_extend,
 
     // Control structure tokens
     op_func, op_return, op_end,
@@ -100,6 +100,8 @@ typedef enum {
 
     info_const,
     info_cmd0,
+    info_cmd1,
+    info_cmd2,
     info_cmd_any,
     info_control,
 } OpInfo;
