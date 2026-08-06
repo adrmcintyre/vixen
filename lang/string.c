@@ -86,6 +86,13 @@ String* string_from_data(const u8* data, i16 len)
     return str;
 }
 
+String* string_new_uninited(i16 len)
+{
+    String* str = (String*) heap_alloc(sizeof(String) + len);
+    str->len = len;
+    return str;
+}
+
 u16 string_hash(u16 s)
 {
     String* string = (String*)from_p16(s);
@@ -116,9 +123,30 @@ String* string_get_slice(String* string, i16 start, i16 end)
 
     slice_adjust(&start, &end, &len);
 
-    String* string2 = (String*) heap_alloc(sizeof(String) + len);
-    string2->len = len;
-    memcpy(string2->data, string->data + start, len);
-    string2->hash = hash_mem(string2->data, string2->len);
-    return string2;
+    String* slice = (String*) heap_alloc(sizeof(String) + len);
+    slice->len = len;
+    memcpy(slice->data, string->data + start, len);
+    slice->hash = hash_mem(slice->data, slice->len);
+    return slice;
+}
+
+String* string_concat(String* str1, String* str2)
+{
+    if (str2->len == 0) {
+        return str1;
+    }
+
+    if (str1->len == 0) {
+        return str2;
+    }
+
+    i16 len = str1->len + str2->len;
+    String* str = (String*) heap_alloc(sizeof(String) + len);
+    str->len = len;
+
+    u8* ptr = str->data;
+    memcpy(ptr, str1->data, str1->len);
+    ptr += str1->len;
+    memcpy(ptr, str2->data, str2->len);
+    return str;
 }

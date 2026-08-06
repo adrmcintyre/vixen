@@ -104,13 +104,12 @@ String* lex_string()
     if (len == 0) return interned_string_empty;
     if (len == 1) {
         String* str = string_bucket[ch0];
-        if (str) return str;
+        if (str) {
+            return str;
+        }
     }
 
-    String* str = (String*) heap_alloc(sizeof(String) + len);
-    str->hash = 0;
-    str->len = len;
-
+    String* str = string_new_uninited(len);
     u8* q = str->data;
     const u8* ptr = input_ptr0;
     while(1) {
@@ -123,6 +122,7 @@ String* lex_string()
         }
         *q++ = ch;
     }
+    str->hash = hash_mem(str->data, len);
 
     if (len == 1) string_bucket[ch0] = str;
 

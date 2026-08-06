@@ -230,8 +230,10 @@ void strings_init();
 String* string_from_token();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, i16 len);
+String* string_new_uninited(i16 len);
 int string_eq(String* s1, String* s2);
 String* string_get_slice(String* string, i16 start, i16 end);
+String* string_concat(String* str1, String* str2);
 
 // Lexer
 extern const u8* input_ptr;

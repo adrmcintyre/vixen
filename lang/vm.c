@@ -260,6 +260,56 @@ void pop_vals()
 // Arithmetic operators
 //
 
+void vm_neg()
+{
+    pop_num();
+    if (vm_a.k == kind_int) {
+        push_int(-vm_a.i);
+    }
+    else {
+        push_f16(vm_a.f ^ 0x8000);
+    }
+}
+
+void vm_mul()
+{
+    pop_nums();
+    if (vm_a.k == kind_int) {
+        push_int(vm_a.i * vm_b.i);
+    }
+    else {
+        push_float(f16_to_float(vm_a.f) * f16_to_float(vm_b.f));
+    }
+}
+
+void vm_div()
+{
+    pop_nums();
+    if (vm_a.k == kind_int) {
+        push_int(vm_a.i / vm_b.i);
+    }
+    else {
+        push_float(f16_to_float(vm_a.f) / f16_to_float(vm_b.f));
+    }
+}
+
+void vm_sub()
+{
+    pop_nums();
+    if (vm_a.k == kind_int) {
+        push_int(vm_a.i - vm_b.i);
+    }
+    else {
+        push_float(f16_to_float(vm_a.f) - f16_to_float(vm_b.f));
+    }
+}
+
+void vm_mod()
+{
+    pop_ints();
+    push_int(vm_a.i % vm_b.i);
+}
+
 void vm_add()
 {
     //TODO - maybe even + and - for dictionaries?
@@ -277,27 +327,10 @@ void vm_add()
         }
         case kind_string: {
             String* str1 = (String*) from_p16(vm_a.u);
-            if (str1->len == 0) {
-                push_val(vm_b.k, vm_b.u);
-                return;
-            }
-
             String* str2 = (String*) from_p16(vm_b.u);
-            if (str2->len == 0) {
-                push_val(vm_a.k, vm_a.u);
-                return;
-            }
 
-            i16 len = str1->len + str2->len;
-            String* str = (String*) heap_alloc(sizeof(String) + len);
-            str->len = len;
-
-            u8* ptr = str->data;
-            memcpy(ptr, str1->data, str1->len);
-            ptr += str1->len;
-            memcpy(ptr, str2->data, str2->len);
-
-            push_val(kind_string, to_p16(str));
+            String* res = string_concat(str1, str2);
+            push_val(kind_string, to_p16(res));
             return;
         }
         case kind_array: {
@@ -1200,12 +1233,12 @@ u16 vm_run(const u8 *vm_pc_start)
 
         switch(op) {
             // arithmetic operators
-            case op_neg:    pop_num(); if (vm_a.k == kind_int) push_int(-vm_a.i); else push_f16(vm_a.f ^ 0x8000); break;
-            case op_mul:    pop_nums(); if (vm_a.k == kind_int) push_int(vm_a.i * vm_b.i); else push_float(f16_to_float(vm_a.f) * f16_to_float(vm_b.f)); break;
-            case op_div:    pop_nums(); if (vm_a.k == kind_int) push_int(vm_a.i / vm_b.i); else push_float(f16_to_float(vm_a.f) / f16_to_float(vm_b.f)); break;
-            case op_add:    vm_add(); break;
-            case op_sub:    pop_nums(); if (vm_a.k == kind_int) push_int(vm_a.i - vm_b.i); else push_float(f16_to_float(vm_a.f) - f16_to_float(vm_b.f)); break;
-            case op_mod:    pop_ints(); push_int(vm_a.i % vm_b.i); break;
+            case op_neg: vm_neg(); break;
+            case op_mul: vm_mul(); break;
+            case op_div: vm_div(); break;
+            case op_add: vm_add(); break;
+            case op_sub: vm_sub(); break;
+            case op_mod: vm_mod(); break;
 
             // relational operators
             case op_le:
