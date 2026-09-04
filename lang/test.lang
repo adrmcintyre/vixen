@@ -1,15 +1,17 @@
 class Point
-    func add(p1, p2)
-        return Point{x: p1.x+p2.x, y:p1.y+p2.y}
+    x = 0
+    y = 0
+    func add(p2)
+        return Point{x: x+p2.x, y:y+p2.y}
     end
-    func scale(self, s)
-        return Point{x: self.x*s, y:self.y*s}
+    func scale(s)
+        return Point{x: x*s, y:y*s}
     end
-    func length(self)
-        return sqr(self.x*self.x + self.y*self.y)
+    func length()
+        return sqr(x*x + y*y)
     end
-    func text(self)
-        return "(" + str(self.x) + "," + str(self.y) + ")"
+    func text()
+        return "(" + str(x) + "," + str(y) + ")"
     end
 end
 

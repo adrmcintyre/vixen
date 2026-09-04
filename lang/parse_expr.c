@@ -1,5 +1,9 @@
-#include <stdlib.h>
+#include "parse.h"
 #include "header.h"
+#include "dict.h"
+#include "object.h"
+
+#include <stdlib.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // Expression parsing
@@ -17,16 +21,18 @@ const u8 pending_ops_max = 32;
 OpData pending_ops[pending_ops_max];
 u8 pending_ops_sp;
 
+// Initialises the state of the expression parser.
 void expr_init()
 {
     pending_ops_sp = 0;
 }
 
-void parse_expr(); // forward decl
+void parse_expr();
 
 // Parses a sequence of zero or more unary operators and emits their
 // opcodes.
 //
+// - e.g. `not - - ~`
 void parse_unops()
 {
     while(1) {
@@ -37,10 +43,14 @@ void parse_unops()
     }
 }
 
-// Parses an atom:
-//      <integer>
-//      <float>
-//      <string>
+// Parses an atom and emits the corresponding literal op.
+//
+// Returns true on success.
+// Returns false if no atom was recognised, leaving input_ptr unchanged.
+//
+// - `<integer>`
+// - `<float>`
+// - `<string>`
 bool parse_atom()
 {
     // TODO - maybe parse true/false literals here
@@ -63,18 +73,21 @@ bool parse_atom()
     const String* str = lex_string();
     if (str) {
         emit_op(op_lit_string);
-        emit_word(to_p16(str));
+        emit_string(str);
         return true;
     }
 
     return false;
 }
 
-// Parses an array literal [] or [<expr>, ...], emits the expressions and 
-// operator to construct the array.
+// Parses an array literal, and emits the code to construct it.
 //
-// Returns 0 if the input does not start with '['.
+// Returns true on success.
+// Returns false if input does not start with '['.
+// Aborts if the literal was malformed.
 //
+// - `[ ]`
+// - `[ <expr> , ... ]`
 bool parse_lit_array()
 {
     if (!lex_char('[')) {
@@ -102,10 +115,18 @@ bool parse_lit_array()
     return true;
 }
 
-u16 parse_lit_dict()
+// Parses a dictionary literal and emits the code to construct it.
+//
+// Returns true on success.
+// Returns false if input does not start with '{', leaving input_ptr unchanged.
+// Aborts if the literal was malformed.
+//
+// - `{ }`
+// - `{ <ident> : <expr> , ... }`
+bool parse_lit_dict()
 {
     if (!lex_char('{')) {
-        return 0;
+        return false;
     }
 
     u16 nargs = 0;
@@ -113,6 +134,7 @@ u16 parse_lit_dict()
         pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
         if (!lex_char(':')) parser_die("missing ':'");
+        pending_ops[pending_ops_sp++] = opdata_mark;
         parse_expr();
 
         nargs += 1;
@@ -120,6 +142,7 @@ u16 parse_lit_dict()
             pending_ops[pending_ops_sp++] = opdata_mark;
             parse_expr();
             if (!lex_char(':')) parser_die("missing ':'");
+            pending_ops[pending_ops_sp++] = opdata_mark;
             parse_expr();
 
             nargs += 1;
@@ -132,12 +155,16 @@ u16 parse_lit_dict()
     emit_op(op_lit_dict);
     emit_word(nargs);
 
-    return 1;
+    return true;
 }
 
-// Parses a bracketed expression (<expr>), emitting it and returning 1.
-// Returns 0 if the input does not start with '('.
+// Parses a bracketed expression and emits the code to evaluate it.
 //
+// Returns true if parse succeeded.
+// Returns false if input does not start with '(', leaving input_ptr unchanged.
+// Aborts if expression is malformed.
+//
+// `( <expr> )`
 bool parse_paren_expr()
 {
     if (!lex_char('(')) return false;
@@ -149,11 +176,15 @@ bool parse_paren_expr()
     return true;
 }
 
-// Parses () or (<expr>, ...), emits the expressions and 
-// returns 1 more than the number of argument expressions.
+// Parses a bracketed expression list and emits the code to evaluate each
+// expression.
 //
+// Returns 1 more than the number of expressions parsed.
 // Returns 0 if the input does not start with '('.
+// Aborts if the expression list is malformed.
 //
+// - `( )`
+// - `( <expr> , ... )`
 u16 parse_args()
 {
     if (!lex_char('(')) {
@@ -178,17 +209,23 @@ u16 parse_args()
     return nargs;
 }
 
-// Parses an index expression in one of these forms:
+// Parses an index expression and emits code to operate on the prior expression.
 //
-// [index]
-// [start:end]
-// [start:]
-// [:end]
-// [:]
+// Returns true if parse succeeded.
+// Returns false if input does not start with '['.
+// Aborts if index expression is malformed.
 //
+// Element index expression:
+// - `[ <expr> ]`
+//
+// Slice expressions:
+// - `[ <expr> : <expr> ]`
+// - `[ <expr> : ]`
+// - `[ : <expr> ]`
+// - `[ : ]`
 bool parse_index_arg()
 {
-    if (!lex_char('[')) return 0;
+    if (!lex_char('[')) return false;
 
     if (!lex_char(':')) {
         pending_ops[pending_ops_sp++] = opdata_mark;
@@ -223,11 +260,19 @@ bool parse_index_arg()
         if (!lex_char(']')) parser_die("missing ']'");
         emit_op(op_get_slice_end);
     }
-    return 1;
+    return true;
 }
 
-// Parses the <expr-list> (if needed) for a recently recognised keyword,
-// and emits its opcode.
+// Parses the bracketed arguments (if required) for a previously recognised
+// keyword, and emits code to evaluate them and then invoke the keyword.
+//
+// No argument list is parsed if the keyword is a constant.
+// Aborts if the wrong number of arguments is found.
+// Aborts if the keyword is not valid in an expression context.
+//
+// - <empty>
+// - `()`
+// - `( <expr> , ... )`
 void parse_keyword_args()
 {
     if (kw.info == info_const) {
@@ -251,7 +296,110 @@ void parse_keyword_args()
     emit_op(kw.op);
 }
 
+// Emits code to look up the named identifier at global scope,
+// i.e. as a global identifier.
+void emit_ident_at_global_scope(String* name)
+{
+    emit_op(op_get_global_prop);
+    emit_string(name);
+}
 
+// Emits code to look up the named identifier at function scope,
+// that is as an argument, local, or global identifier, i.e.
+//
+// `func F(...)
+//      ...
+//      <name>
+//      ...
+// end`
+void emit_ident_at_func_scope(String* name)
+{
+    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    Value slotval = dict_get_item(active_func->slots, nameval);
+    if (slotval.k != kind_fail) {
+        emit_op(op_get_func_slot);
+        emit_word(slotval.u);
+    }
+    else {
+        emit_ident_at_global_scope(name);
+    }
+}
+
+// Emits code to look up the named identifier at class scope, but
+// outside method scope, i.e.
+//
+// `class C
+//      ... <name> ...
+//      func F(...)
+//          ...
+//      end
+//  end`
+void emit_ident_at_class_scope(String* name)
+{
+    emit_ident_at_global_scope(name);
+}
+
+// Emits code to look up the named identifier at method scope, i.e.
+//
+// `class C
+//      ...
+//      func F(...)
+//          ... <name> ...
+//      end
+// end`
+void emit_ident_at_method_scope(String* name)
+{
+    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    Value slotval = dict_get_item(active_func->slots, nameval);
+    if (slotval.k != kind_fail) {
+        emit_op(op_get_func_slot);
+        emit_word(slotval.u);
+    }
+    else {
+        slotval = dict_get_item(active_class->slots, nameval);
+        if (slotval.k != kind_fail) {
+            emit_op(op_get_object_slot);
+            emit_word(slotval.u);
+        }
+        else {
+            emit_potential_method_ref(name);
+        }
+    }
+}
+
+// Emits code to look up the named identifier according to the current scope.
+void emit_ident(String* name)
+{
+    if (active_class == 0) {
+        if (active_func == 0) {
+            emit_ident_at_global_scope(name);
+        }
+        else {
+            emit_ident_at_func_scope(name);
+        }
+    }
+    else {
+        if (active_func == 0) {
+            emit_ident_at_class_scope(name);
+        }
+        else {
+            emit_ident_at_method_scope(name);
+        }
+    }
+}
+
+// Parses a terminal expression, stopping before any possible index operation,
+// and emits the code to evaluate the expression.
+//
+// Aborts if the expression is malformed.
+//
+// - `( <expr> )`
+// - `<integer> | <string> | <float>`
+// - `<array-literal>`
+// - `<dict-literal>`
+// - `<ident>`
+// - `<const-keyword>`
+// - `<func-keyword> ( ... )`
 void parse_terminal_unindexed()
 {
     if (parse_paren_expr()) return;
@@ -271,32 +419,23 @@ void parse_terminal_unindexed()
         return;
     }
 
-    Ident* ident = ident_intern(0, 0);
+    String* name = string_from_token();
 
-    if (func_kind == kind_fail) {
-        // if we're at global scope, all symbol lookups are global
-        emit_op(op_ident_get);
-        emit_ident(ident);
-    }
-    else {
-        // we're in a function...
-        u8 slot_num = ident->slot;
-        if (slot_num == 0xff) {
-            // get from global scope if no slot defined
-            emit_op(op_ident_get);
-            emit_ident(ident);
-        }
-        else {
-            // get from the slot
-            emit_op(op_slot_get);
-            emit_byte(slot_num);
-        }
-    }
+    emit_ident(name);
 }
 
+// Parses a property or method reference or invocation, and emits
+// the code for the look up / invocation.
+//
+// Returns true if a property/method reference/invocation was recognised.
+// Returns false if input does not start with '.'.
+// Aborts if the expression is malformed.
+//
+// - `.<ident>`
+// - `.<ident> ( ... )`
 bool parse_dot()
 {
-    if (!lex_char('.')) return 0;
+    if (!lex_char('.')) return false;
 
     if (!lex_word()) die("expected method or property name");
     String* name = string_from_token();
@@ -304,19 +443,28 @@ bool parse_dot()
     u16 nargs = parse_args();
     if (nargs > 0) {
         emit_op(op_call_method);
-        emit_word(to_p16(name));
+        emit_string(name);
         emit_byte(nargs-1);
     }
     else {
         emit_op(op_get_prop);
-        emit_word(to_p16(name));
+        emit_string(name);
     }
-    return 1;
+    return true;
 }
 
+// Parses an object constructor and emits the code to construct it,
+// expecting a class reference to already have been parsed.
+//
+// Returns true if an object literal was recognised.
+// Returns false if input does not start with '{'.
+// Aborts if the literal is malformed.
+//
+// - `{}`
+// - `{ <ident> : <expr> , ... }
 bool parse_lit_object()
 {
-    if (!lex_char('{')) return 0;
+    if (!lex_char('{')) return false;
 
     u16 nargs = 0;
     String* key;
@@ -325,7 +473,7 @@ bool parse_lit_object()
         if (!lex_word()) die("missing property");
         key = string_from_token();
         emit_op(op_lit_string);
-        emit_word(to_p16(key));
+        emit_string(key);
 
         if (!lex_char(':')) parser_die("missing ':'");
         parse_expr();
@@ -336,7 +484,7 @@ bool parse_lit_object()
             if (!lex_word()) die("missing property");
             key = string_from_token();
             emit_op(op_lit_string);
-            emit_word(to_p16(key));
+            emit_string(key);
 
             if (!lex_char(':')) parser_die("missing ':'");
             parse_expr();
@@ -351,18 +499,17 @@ bool parse_lit_object()
     emit_op(op_lit_object);
     emit_byte(nargs);
 
-    return 1;
+    return true;
 }
 
-// Parses a <terminal>, i.e. one of these forms:
-//      (<expr>)
-//      <ident>
-//      <ident>(<expr-list>)
-//      <ident>[<expr>]'
-//      <const-kwd>
-//      <func-kwd>(<expr-list>)
-//      <literal>
+// Parses a <terminal> and emits the code to evaluate it.
 //
+// - `<terminal-unindexed>`
+// - `<terminal> [ ... ]`
+// - `<terminal> ( ... )`
+// - `<terminal> .<ident>`
+// - `<terminal> .<ident> ( ... )`
+// - `<terminal> { ... }`
 void parse_terminal()
 {
     parse_terminal_unindexed();
@@ -371,7 +518,7 @@ void parse_terminal()
         if (parse_index_arg()) {
             continue;
         }
-        u16 nargs = parse_args();
+        u16 nargs = parse_args(); // foo.bar(...) foo(...)(...) | foo[1](...) | foo(...)
         if (nargs != 0) {
             emit_op(op_call);
             emit_byte(nargs-1);
@@ -388,8 +535,12 @@ void parse_terminal()
 }
 
 // Parses an <expr>, consisting of one or more <terminal>s each preceded 
-// by zero or more <unop>s, and separated by <binop>s.
+// by zero or more <unop>s, and separated by <binop>s. Emits the code
+// to evaluate the expression while respecting operator precedences.
 //
+// - `<terminal>`
+// - `<unop> <expr>`
+// - `<expr> <binop> <expr>`
 void parse_expr()
 {
     while(1) {
@@ -423,38 +574,3 @@ void parse_expr()
         }
     }
 }
-
-void parse_start()
-{
-    // TODO should be somewhere better for this...
-    heap_init();
-    ident_init();
-    strings_init();
-    stmt_init();
-
-    code_ptr = code_base;
-}
-
-void parse_line()
-{
-    expr_init();
-
-    if (lex_char('\n')) return;
-    if (lex_comment()) return;
-
-    parse_stmt();
-
-    if (lex_comment()) return;
-    if (lex_char(';')) return;
-    if (lex_char('\n')) return;
-
-    parser_die("missing ';' or <end-of-line>");
-}
-
-void parse_finish()
-{
-    if (!lex_end_of_stream()) parser_die("unexpected characters at end of line");
-
-    if (control_sp != 0) parser_die("unfinished control block");
-}
-

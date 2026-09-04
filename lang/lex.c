@@ -1,4 +1,5 @@
 #include "header.h"
+#include "parse.h"
 
 const OpData opdata_fail = { .op = fail, .info = 0x0f };
 
@@ -7,8 +8,7 @@ const u8* input_ptr;
 const u8* token_ptr;
 i16 token_len;
 
-// Advances input_ptr past any spaces.
-//
+// Advances input_ptr past any spaces or tabs.
 void lex_space()
 {
     while(1) {
@@ -18,11 +18,12 @@ void lex_space()
     }
 }
 
+// Looks for a numeric literal in the input.
+//
 // Returns kind_int if an integer was recognised, or kind_float for a float,
 // setting token_ptr and advancing input_ptr.
 //
 // Returns kind_fail if neither recognised, with input_ptr unchanged.
-//
 Kind lex_number()
 {
     lex_space();
@@ -68,9 +69,11 @@ Kind lex_number()
 }
 
 // Looks for a string literal in the input.
-// Creates the string if necessary and returns a pointer to its heap descriptor.
-// If no open " is found, returns 0, and input_ptr is left unchanged.
 //
+// May return a pointer to an interned string or allocate a new
+// string and return a pointer to its heap descriptor.
+//
+// If no open " is found, returns 0, and input_ptr is left unchanged.
 String* lex_string()
 {
     lex_space();
@@ -103,7 +106,7 @@ String* lex_string()
     // TODO - intern all literal strings
     if (len == 0) return interned_string_empty;
     if (len == 1) {
-        String* str = string_bucket[ch0];
+        String* str = interned_char_strings[ch0];
         if (str) {
             return str;
         }
@@ -122,18 +125,19 @@ String* lex_string()
         }
         *q++ = ch;
     }
-    str->hash = hash_mem(str->data, len);
+    string_rehash(str);
 
-    if (len == 1) string_bucket[ch0] = str;
+    if (len == 1) interned_char_strings[ch0] = str;
 
     return str;
 }
 
+// Looks for a word in the input /[_a-zA-z][_a-zA-Z0-9]*/
+//
 // Returns 1 if a word was recognised, setting token_ptr and
 // advancing input_ptr.
 //
 // Otherwise returns 0, leaving input_ptr unchanged.
-//
 bool lex_word()
 {
     lex_space();
@@ -163,16 +167,19 @@ bool lex_word()
     return true;
 }
 
+// Resets the input ptr to the start of the last word recognised. 
+// Should only be called immediately after a successful call to lex_word().
 void unlex_word()
 {
     input_ptr = token_ptr;
 }
 
+// Looks in the input for one of the operators from the supplied ops table.
+//
 // Returns hi(result)=opcode, lo(result)=opinfo if an operator
 // is recognised, setting token_ptr and advancing input_ptr.
 //
 // Returns opdata_fail, leaving input_ptr unchanged on failure.
-//
 OpData lex_op(const u8* ops)
 {
     const u8* inp;
@@ -208,11 +215,12 @@ candidate_loop:
     goto candidate_loop;
 }
 
+// Looks for a unary operator in the input.
+//
 // Returns hi(result)=op, lo(result)=opinfo if a unary operator
 // is recognised, setting token_ptr and advancing input_ptr.
 //
 // Returns opdata_fail, leaving input_ptr unchanged on failure.
-//
 OpData lex_unop()
 {
     lex_space();
@@ -229,11 +237,12 @@ OpData lex_unop()
     return lex_op(unops);
 }
 
+// Looks for a binary operator in the input.
+//
 // Returns hi(result)=op, lo(result)=opinfo if a binary operator
 // is recognised, setting token_ptr and advancing input_ptr.
 //
 // Returns opdata_fail, leaving input_ptr unchanged on failure.
-//
 OpData lex_binop()
 {
     lex_space();
@@ -241,11 +250,12 @@ OpData lex_binop()
     return lex_op(binops);
 }
 
+// Looks for the character ch in the input.
+//
 // Returns 1 if the specified character is next in the input stream,
 // advancing input_ptr.
 //
 // Returns 0 if the character is not present, leaving input_ptr unchanged.
-//
 bool lex_char(u8 ch)
 {
     lex_space();
@@ -257,6 +267,10 @@ bool lex_char(u8 ch)
     return true;
 }
 
+// Looks for a comment terminated by <newline> or <end-of-input> in the input.
+//
+// Returns 1 if a comment was found, advancing input_ptr.
+// Returns 0 if a comment is not present, leaving input_ptr unchanged.
 bool lex_comment()
 {
     if (!lex_char('#')) return false;
@@ -268,6 +282,10 @@ bool lex_comment()
     return true;
 }
 
+// Looks for statement end in the input (';', <newline>, <comment>, or <end-of-input>).
+//
+// Returns 1 if an end of statement was found, advancing input_ptr.
+// Returns 0 if an end of statement was not present, leaving input_ptr unchanged.
 bool lex_peek_stmt_end()
 {
     lex_space();
@@ -278,9 +296,7 @@ bool lex_peek_stmt_end()
 }
 
 // Returns 1 if currently at the end of the input stream.
-//
 // Returns 0 if there is more to consume.
-//
 bool lex_end_of_stream()
 {
     lex_space();

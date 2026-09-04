@@ -1,0 +1,50 @@
+## Array operations
+
+## Indexing
+a=[1,2,3,4,5,6]
+print a[0],a[5]
+#!1 6
+
+## Append empty
+print [1,2,3]+[]
+#![1,2,3]
+
+## Append to empty
+print []+[4,5,6]
+#![4,5,6]
+
+## Append
+print [1,2,3]+[4,5,6]
+#![1,2,3,4,5,6]
+
+## Append element
+a = [1,2,3]
+append a, 4
+print a
+#![1,2,3,4]
+
+## Extend (in-place concat)
+a = [1,2,3]
+extend a, [4,5,6]
+print a
+#![1,2,3,4,5,6]
+
+## Length
+print len(a)
+#!6
+
+## Pop element from end
+a = [5,4,3,2,1]
+print pop(a)
+print a
+print len(a)
+#!1
+#![5,4,3,2]
+#!4
+
+#TODO
+#print 2 in [1,2,3]
+#print 99 in [1,2,3]
+#print 99 in []
+
+stop

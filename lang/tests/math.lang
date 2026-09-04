@@ -1,0 +1,37 @@
+## Math operations
+
+## Conversions
+print float(123)    #!123
+print float(-123)   #!-123
+print int(1.3)      #!1
+print int(1.8)      #!1
+print int(-1.3)     #!-1
+print int(-1.8)     #!-1
+#TODO
+#print int(Inf)
+#print int(-Inf)
+#print int(NaN)
+
+## Absolute value
+print abs(-123)     #!123
+print abs(123)      #!123
+print abs(0)        #!0
+print abs(-3.5)     #!3.5
+print abs(3.5)      #!3.5
+print abs(0.0)      #!0
+
+## Sign extract
+print sgn(-123)     #!-1
+print sgn(123)      #!1
+print sgn(0)        #!0
+print sgn(-3.5)     #!-1
+print sgn(3.5)      #!1
+print sgn(0.0)      #!0
+print sgn(-Inf)     #!-1
+print sgn(Inf)      #!1
+
+## Square root
+print sqr(25)       #!5
+print sqr(6.25)     #!2.5
+
+stop

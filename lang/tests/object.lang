@@ -1,0 +1,82 @@
+g = "global"
+
+class C
+    x = 10
+    y = 20
+    z = 30
+
+    func F(a, b, c)
+        l = "local"
+        y = "local_y" 
+        print "F called"
+        print "g", g
+        print "l", l
+        print "a", a
+        print "b", b
+        print "c", c
+        print "x", x
+        print "y", y
+        print "z", z
+    end
+
+    func G()
+        print "G called"
+        print x
+    end
+
+    func H()
+        print "H called"
+        G()
+    end
+end
+
+## Class props
+print C.x  #!10
+print C.y  #!20
+print C.z  #!30
+
+## Object props
+o = C{y:100, x:99}
+print o.x  #!99
+print o.y  #!100
+print o.z  #!30
+
+## Method call
+# TODO - c prints as "local" instead of "arg3"
+o.F("arg1", "arg2", "arg3")
+#!F called
+#!g global
+#!l local
+#!a arg1
+#!b arg2
+#!c arg3
+#!x 99
+#!y local_y
+#!z 30
+
+## Direct method call
+o.G()
+#!G called
+#!99
+
+## Nested method call
+o.H()
+#!H called
+#!G called
+#!99
+
+## Call bound-method
+(o.G)()
+#!G called
+#!99
+
+# Call method as func, passing explicit self
+(C.G)(o)
+#!G called
+#!99
+
+#TODO
+# # Aborts with "method call on non-object"
+# C.G()
+
+stop

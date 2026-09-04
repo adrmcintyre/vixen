@@ -1,77 +1,53 @@
 # TODO
 
-## Misc
+## Internals
 
-Chained indexing.
 Escape strings in composite objects during printing.
-
-## Ref-counted heap objects
 
 Ref counting of strings, arrays, dicts?
 
-## Internals
+Link discarded allocations for reuse.
 
-Use dicts internally for string and identifier hash tables.
+Use arrays during compilation instead of fixed size bufs.
+
+## Tests
+
+Add tests compile time and run time errors.
+
+## Errors
+
+Make errors more informative.
+
+## Classes
+
+Ensure prop definitions are complete, i.e. disallow:
+
+    ```
+    class C
+        some_ident      # missing '= value' - or maybe make this a required constructor arg?
+        1+2             # random expression
+    end
+    ```
+Implement class methods.
+
 
 ## Dictionaries
-### Other operations:
+
 * del
-* . operator ???
+* keys
+* values
+* iteration
+    ```
+        for k, v in d
+            ...
+        end
+    ```
 
-#### Allow numbers as dict keys
+## Arrays
 
-    Dict literal syntax:     d = {a:3, b:4}
-    Dict constructor syntax: d = dict("a", 3, "b", 4)
-    Dict . lookup:           e = d.a
-    Dict [] lookup:          e = d["a"]
-
-How to represent missing element: `None` ?
-
-## Objects
-
-* An object is just a dict with an attached method table.
-* No inheritance
-* No special constructors
-
-### Declaration
-    class Point
-
-    # "class" method
-    func Point.fromArray(xy)
-        return Point{x:xy[0], y:xy[1]}
+* iteration
+    ```
+    for i, e in a
+        ...
     end
-
-    # instance methods
-    func Point.add(self, p2)
-        # direct construction
-        return Point{x: self.x+p2.x, y: self.y+p2.y}
-    end
-
-    func Point.sub(self, p2)
-        # default construction
-        p = Point{}
-        # set instance vars one by one
-        p.x = self.x - p2.x
-        p.y = self.y - p2.y
-        return p
-    end
-
-### Construction
-    p = Point{x:30, y:40}
-    p = Point.fromArray([30, 40])
-
-### Method invocation
-    p = Point{x:30, y:40}
-    q = Point{x:10, y:10}
-    r = p.add(q)            # implicit self arg
-
-    r = Point.add(p, q)     # explicit self arg
-
-### Prevent these cases...?
-
-    # construct a partially initialised Point
-    p = Point{x:99}
-
-    # construct an invalid Point
-    p = Point{z:"kwanza", foo:True}
-
+    ```

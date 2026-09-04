@@ -1,22 +1,9 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-
-#include "header.h"
 #include "dict.h"
+#include "header.h"
 
-/*
-
-We need to support the following API:
-
-dict_new() - create an empty dict
-dict_literal() - create a dict from some literal keys and values
-dict_get() - lookup key and return value or None
-dict_set() - insert/update key/value
-dict_del() - remove key
-
-some kind of iteration would be useful
-*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 //TODO
 void heap_free(void* p)
@@ -170,10 +157,10 @@ static u16 dictkeys_look_index(DictKeys *keys, u16 hash, i16 index)
 static int keys_eq(Value entry_key, Value lookup_key)
 {
     if (entry_key.k != lookup_key.k) {
-        if (lookup_key.k == kind_token_proxy && entry_key.k == kind_string) {
-            TokenProxy* proxy = (TokenProxy*) from_p16(lookup_key.u);
+        if (lookup_key.k == kind_token && entry_key.k == kind_string) {
+            Token* token = (Token*) from_p16(lookup_key.u);
             String* string = (String*) from_p16(entry_key.u);
-            return token_proxy_eq_string(proxy, string);
+            return token_string_eq(token, string);
         }
         return 0;
     }
@@ -192,9 +179,7 @@ static int keys_eq(Value entry_key, Value lookup_key)
             return string_eq(sa, sb);
         }
         default:
-            // silence warnings
             die("unhandled key kind");
-            return 0;
     }
 }
 
@@ -211,14 +196,12 @@ static u16 key_hash(Value v)
             String* string = (String*) from_p16(v.u);
             return string->hash;
         }
-        case kind_token_proxy: {
-            TokenProxy* proxy = (TokenProxy*) from_p16(v.u);
-            return proxy->hash;
+        case kind_token: {
+            Token* token = (Token*) from_p16(v.u);
+            return token->hash;
         }
         default:
-            // silence warnings
             die("unhandled key kind");
-            return 0;
     }
 }
 

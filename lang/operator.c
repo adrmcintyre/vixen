@@ -1,5 +1,7 @@
 #include "header.h"
 
+// TODO - document table format.
+
 // Note: the lexer expects operators with common prefixes
 // to occur with the longest prefix first in these tables.
 const u8 unops[] = {

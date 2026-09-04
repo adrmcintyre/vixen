@@ -1,0 +1,12 @@
+## String operations
+
+print "abc" + "def" #!abcdef
+print "" + "def"    #!def
+print "abc" + ""    #!abc
+print "" + ""       #!!
+
+print len("abcdef") #!6
+print chr(65)       #!A
+print asc("A")      #!65
+
+stop

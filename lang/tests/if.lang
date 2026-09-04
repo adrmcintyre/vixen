@@ -1,0 +1,34 @@
+## Conditionals
+
+print "before"
+if False
+    print "if taken"
+endif
+print "after"
+#!before
+#!after
+
+print "before"
+if True
+    print "if taken"
+endif
+print "after"
+#!before
+#!if taken
+#!after
+
+if True
+    print "if taken"
+else
+    print "else taken"
+endif
+#!if taken
+
+if False
+    print "if taken"
+else
+    print "else taken"
+endif
+#!else taken
+
+stop

@@ -1,8 +1,9 @@
-#include <string.h>
-#include "header.h"
 #include "array.h"
+#include "header.h"
 
-// Allocate a new array with specified length and capacity.
+#include <string.h>
+
+// Returns a newly allocated array with specified length and capacity.
 // The actual capacity allocated will be at least max(len, cap).
 Array* array_new_presized(i16 len, i16 cap)
 {
@@ -16,12 +17,13 @@ Array* array_new_presized(i16 len, i16 cap)
     
     array->len = len;
     array->cap = cap;
-    array->dataptr = to_p16(data);
+    array->dataptr = data;
     return array;
 }
 
-// Reallocate an array's data to ensure it has the appropriate capacity for len elements.
-// Returns 1 if reallocation occurred. The array's cap and len are updated. No elements are copied.
+// Reallocates array's data to ensure it has the appropriate capacity for len elements.
+// The array's cap and len are updated. No elements are copied.
+// Returns 1 if reallocation occurred, otherwise 0.
 static int array_resize(Array* array, i16 len)
 {
     array->len = len;
@@ -35,8 +37,8 @@ static int array_resize(Array* array, i16 len)
     if (len > 0) newcap += 3;
     if (len >= 9) newcap += 3;
 
-    u16 newdata = 0;
-    if (newcap > 0) newdata = to_p16(heap_alloc(newcap * sizeof_Value));
+    u8* newdata = 0;
+    if (newcap > 0) newdata = heap_alloc(newcap * sizeof_Value);
 
     array->dataptr = newdata;
     array->cap = newcap;
@@ -44,21 +46,22 @@ static int array_resize(Array* array, i16 len)
     return 1;
 }
 
-// Append a single value to an array.
+// Appends a single value to array.
 void array_append(Array* array, Value v)
 {
     i16 len = array->len;
     i16 newlen = len + 1;
 
-    u16 olddata = array->dataptr;
+    u8* olddata = array->dataptr;
     if (array_resize(array, newlen)) {
-        memcpy(from_p16(array->dataptr), from_p16(olddata), len * sizeof_Value);
+        memcpy(array->dataptr, olddata, len * sizeof_Value);
     }
 
-    set_value(from_p16(array->dataptr + len * sizeof_Value), v);
+    set_value(array->dataptr + len * sizeof_Value, v);
 }
 
-// Remove the last value from an array.
+// Removes and returns the last value from array.
+// Returns fail if array is empty.
 Value array_pop(Array* array)
 {
     i16 len = array->len;
@@ -67,39 +70,33 @@ Value array_pop(Array* array)
         v.k = kind_fail;
         return v;
     }
-    u16 olddata = array->dataptr;
+    u8* olddata = array->dataptr;
     i16 newlen = len - 1;
-    Value v = get_value(from_p16(olddata + newlen * sizeof_Value));
+    Value v = get_value(olddata + newlen * sizeof_Value);
 
     if (array_resize(array, newlen)) {
-        memcpy(
-            from_p16(array->dataptr),
-            from_p16(olddata),
-            newlen * sizeof_Value);
+        memcpy(array->dataptr, olddata, newlen * sizeof_Value);
     }
     return v;
 }
 
-// Return a new array from the concatenation of src1 and src2.
+// Returns a newly allocated array from the concatenation of src1 and src2.
 Array* array_concat(Array* src1, Array* src2)
 {
     u16 len = src1->len + src2->len;
     Array* dst = array_new_presized(len, len);
 
+    memcpy(dst->dataptr, src1->dataptr, src1->len * sizeof_Value);
     memcpy(
-        from_p16(dst->dataptr),
-        from_p16(src1->dataptr),
-        src1->len * sizeof_Value);
-
-    memcpy(
-        from_p16(dst->dataptr + src1->len * sizeof_Value),
-        from_p16(src2->dataptr),
+        dst->dataptr + src1->len * sizeof_Value,
+        src2->dataptr,
         src2->len * sizeof_Value);
 
     return dst;
 }
 
-// Return a new array from elements of src with indexes in the half-open range [start,end).
+// Returns a newly allocated array from the elements of src at indexes in the
+// range start <= index < end.
 Array* array_get_slice(Array* src, i16 start, i16 end)
 {
     i16 len = (i16) src->len;
@@ -107,24 +104,21 @@ Array* array_get_slice(Array* src, i16 start, i16 end)
 
     Array* dst = array_new_presized(len, 0);
 
-    memcpy(
-        from_p16(dst->dataptr),
-        from_p16(src->dataptr + start*sizeof_Value),
-        len * sizeof_Value);
+    memcpy(dst->dataptr, src->dataptr + start*sizeof_Value, len * sizeof_Value);
 
     return dst;
 }
 
-// Replace elements of dst with indexes in the half-open range [start,end) with
-// all elements from src. The number of elements in src need not match the size
-// of the destination range.
+// Removes elements of dst at indexes in the range start <= index < end, and
+// inserts all elements from src in their place. The length of src need not
+// match the size of the destination range.
 void array_set_slice(Array* dst, i16 start, i16 end, Array* src)
 {
     i16 slicelen = (i16) dst->len; // num elems to replace
     slice_adjust(&start, &end, &slicelen);
 
-    u8* srcdata = from_p16(src->dataptr);
-    u8* olddata = from_p16(dst->dataptr);
+    u8* srcdata = src->dataptr;
+    u8* olddata = dst->dataptr;
 
     // beware, if dst == src, after array_resize reading src->len returns newlen,
     // so we read it now.
@@ -133,7 +127,7 @@ void array_set_slice(Array* dst, i16 start, i16 end, Array* src)
     i16 newlen = oldlen - slicelen + srclen;
 
     if (array_resize(dst, newlen)) {
-        u8* newdata = from_p16(dst->dataptr);
+        u8* newdata = dst->dataptr;
 
         u16 bytes = start * sizeof_Value;
         memcpy(newdata, olddata, bytes);
@@ -156,6 +150,9 @@ void array_set_slice(Array* dst, i16 start, i16 end, Array* src)
             olddata + (start + srclen) * sizeof_Value,
             olddata + end * sizeof_Value,
             (oldlen - end) * sizeof_Value);
-        memmove(olddata + start * sizeof_Value, srcdata, srclen * sizeof_Value);
+        memmove(
+            olddata + start * sizeof_Value,
+            srcdata,
+            srclen * sizeof_Value);
     }
 }

@@ -1,0 +1,12 @@
+## String slices
+s = "abcdefghi"
+print s[0:]    #!abcdefghi
+print s[1:]    #!bcdefghi
+print s[99:]   #!
+print s[-1:]   #!i
+print s[-2:]   #!hi
+print s[-99:]  #!abcdefghi
+print s[1:8]   #!bcdefgh
+print s[8:1]   #!
+print s[:]     #!abcdefghi
+stop

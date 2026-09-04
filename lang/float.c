@@ -1,6 +1,8 @@
-#include <math.h>
 #include "header.h"
 
+#include <math.h>
+
+// Returns the f16 float equivalent to the host platform float f.
 u16 f16_from_float(float f)
 {
     if (isnan(f)) return 0x7e00;
@@ -19,6 +21,7 @@ u16 f16_from_float(float f)
     return sign|fra;
 }
 
+// Returns the host platform float equivalent to the f16 float u.
 float f16_to_float(u16 u)
 {
     unsigned long lu = u;

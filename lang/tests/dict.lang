@@ -1,0 +1,26 @@
+## Dictionary operations
+d = {}
+
+## Assignment
+d["string_key"] = "string_value"
+d[123] = "int_value"
+d[1.23] = "float_value"
+d[None] = "none_value"
+d[True] = "bool_value"
+
+## Lookups
+print d["string_key"]   #!string_value
+print d[123]            #!int_value
+print d[1.23]           #!float_value
+print d[None]           #!none_value
+print d[True]           #!bool_value
+print d["missing"]      #!None
+
+## Key membership
+print "string_key" in d #!True
+print "absent" in d     #!False
+
+## Dictionary size
+print len(d)            #!5
+
+stop

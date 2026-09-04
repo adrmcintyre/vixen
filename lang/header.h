@@ -1,4 +1,4 @@
-#if !defined GUARD_HEADER_H
+#ifndef GUARD_HEADER_H
 #define GUARD_HEADER_H
 
 #include <stdbool.h>
@@ -9,12 +9,19 @@ typedef unsigned char u8;
 typedef unsigned short u16;
 typedef signed short i16;
 
+typedef struct Dict Dict;
+typedef struct Class Class;
+
+// Converts a host pointer to a 16-bit vm pointer.
 #define to_p16(p) ((u16) ((u8*) (p)-mem_base))
+
+// Converts a 16-bit vm pointer to a host pointer.
 #define from_p16(p) (mem_base+(u16)(p))
 
+// Enumerates all vm opcodes.
 typedef enum {
-    fail = 0x80,
-    mark = 0x81,
+    fail = 0x80, // TODO - doc this
+    mark = 0x81, // TODO - doc this
 
     // Arithmetic operators
     op_neg, op_mul, op_div, op_mod, op_add, op_sub,
@@ -55,17 +62,25 @@ typedef enum {
     op_class,
 
     // Internal ops
-    op_ident_get,
-    op_ident_set,
-    op_slot_get,
-    op_slot_set,
+    op_get_global_prop,
+    op_set_global_prop,
+    op_get_func_slot,
+    op_set_func_slot,
+    op_get_class_prop,
+    op_set_class_prop,
+    op_set_class_method,
+    op_get_object_slot,
+    op_set_object_slot,
+    op_get_method_slot,
 
     op_lit_int,
     op_lit_float,
     op_lit_string,
     op_lit_array,
     op_lit_dict,
-    op_lit_ident,
+    op_lit_class,
+    op_lit_func,
+    op_lit_method,
 
     op_get_index,
     op_get_slice,
@@ -86,50 +101,58 @@ typedef enum {
 
     op_call,
     op_return_none,
+    op_drop,
 
     op_jump,
     op_jfalse
 } Op;
 
+// Enumerates keyword categories.
 typedef enum {
     // these entries double as argument counts
-    info_fn0,
-    info_fn1,
-    info_fn2,
-    info_fn3,
+    info_fn0,       // function of 0 args
+    info_fn1,       // function of 1 arg
+    info_fn2,       // function of 2 args
+    info_fn3,       // function of 3 args
 
-    info_const,
-    info_cmd0,
-    info_cmd1,
-    info_cmd2,
-    info_cmd_any,
-    info_control,
+    info_const,     // constant
+    info_cmd0,      // command of 0 args
+    info_cmd1,      // command of 1 arg
+    info_cmd2,      // command of 2 arg
+    info_cmd_any,   // command with an unspecified number of arguments
+    info_control,   // a control statement (if, while, etc.)
 } OpInfo;
 
+// TODO doc
 typedef struct {
     Op op;
     OpInfo info;
 } OpData;
 
+// Enumerates each value type.
 typedef enum {
-    kind_fail,
-    kind_none,
-    kind_bool,
-    kind_int,
-    kind_float,
-    kind_string,
-    kind_array,
-    kind_dict,
-    kind_token_proxy,
-    kind_ident,
-    kind_func,
-    kind_class,
-    kind_object,
+    kind_fail,      // an internal failure
+    kind_none,      // None - value is ignored
+    kind_bool,      // True or False
+    kind_int,       // an integer
+    kind_float,     // an f16 float
+    kind_string,    // a String*
+    kind_array,     // an Array*
+    kind_dict,      // a Dict*
+    kind_token,     // a token in the program text
+    kind_func,      // a Func*
+    kind_class,     // a Class*
+    kind_object,    // an Object*
+    kind_bom,       // a BoundObjectMethod*
 } Kind;
 
+// A vm value (1-byte type and 2-byte payload).
 typedef struct {
-    Kind k;
-    union {
+    Kind k;     // the type
+    // convenience accessors for the payload
+    // TODO perhaps should use 'f16 f' instead of 'u16 f'.
+    // TODO maybe add 'u16 p' for pointers.
+    union {         
         u16 u;
         i16 i;
         u16 f;
@@ -138,42 +161,34 @@ typedef struct {
 
 static const size_t sizeof_Value = 3;
 
+// Points to a token in the program text.
 typedef struct {
     u16 hash;
     i16 len;
-    u16 ptr;
-} TokenProxy;
+    const u8* ptr;
+} Token;
 
+// Describes a function or method.
 typedef struct {
-    Value val;
-
-    // make this a u16 offset into the frame instead
-    // to save having to compute * 3 on lookup - also
-    // allows possibility of variable sized slots
-    //
-    // slot index for func local vars/args
-    // number of slots (inc args) for func
-    u8 slot;
-
-    u16 nameptr;
-} Ident;
-
-typedef struct {
-    u8 slots;
-    u8 args;
-    u16 addr;
+    Dict* slots;    // string -> int: maps each arg or local to its slot number
+    u8 nslots;      // number of slots (args + locals)
+    u8 nargs;       // number of args
+    Class* klass;   // 0 for funcs, otherwise points to the associated class
+    u16 vm_addr;    // address of compiled vm code
 } Func;
 
+// Represents a string.
 typedef struct {
-    u16 hash;
-    i16 len;
-    u8 data[];
+    u16 hash;   // hash of the string
+    i16 len;    // length of the string in characters
+    u8 data[];  // the bytes of the string
 } String;
 
+// Represents a dynamically sized array.
 typedef struct {
-    i16 len;
-    u16 cap;
-    u16 dataptr;
+    i16 len;        // current length of the array in elements
+    u16 cap;        // total allocated capacity in elements
+    u8* dataptr;    // points to the allocated elements
 } Array;
 
 // Gross memory map
@@ -193,7 +208,7 @@ extern u8* vm_stack_base;
 extern const u8* prog_base;
 
 // Utils
-void die(const char* msg);
+__attribute__((noreturn)) void die(const char* msg);
 u16 hash_mem(const u8* p, u16 len);
 
 // Keywords
@@ -209,29 +224,31 @@ void heap_init();
 u8* heap_alloc(u16 n);
 
 // Identifiers
-typedef struct Dict Dict;
-void ident_init();
-Ident* ident_intern(Dict* scope_dict, bool* is_new);
-int token_proxy_eq_string(TokenProxy* proxy, String* string);
+bool token_string_eq(Token* token, String* string);
 
 // Strings
-extern String* string_bucket[];
+extern String* interned_char_strings[];
 extern String* interned_string_empty;
 extern String* interned_string_none;
 extern String* interned_string_true;
 extern String* interned_string_false;
+extern String* interned_string_nan;
+extern String* interned_string_neg_inf;
+extern String* interned_string_pos_inf;
 extern String* interned_string_array;
 extern String* interned_string_dict;
 extern String* interned_string_func;
 extern String* interned_string_class;
 extern String* interned_string_object;
+extern String* interned_string_bom;
 extern String* interned_string_unknown;
 void strings_init();
 String* string_from_token();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, i16 len);
 String* string_new_uninited(i16 len);
-int string_eq(String* s1, String* s2);
+void string_rehash(String* string);
+bool string_eq(String* s1, String* s2);
 String* string_get_slice(String* string, i16 start, i16 end);
 String* string_concat(String* str1, String* str2);
 
@@ -256,25 +273,11 @@ extern u8* last_op_ptr;
 void emit_op(Op op);
 void emit_byte(u8 b);
 void emit_word(u16 w);
-void emit_ident(Ident* ident);
-
-// Statement parser
-Kind func_kind;
-u8 control_sp;
-void parse_stmt();
-void stmt_init();
-
-// Parser
-void parse_start();
-void parse_line();
-void parse_finish();
-void parser_die(const char* msg);
-void parse_expr();
-bool parse_index_arg();
+void emit_string(const String* s);
 
 // Virtual machine
 extern bool opt_trace_vm;
-void vm_die(const char* msg);
+__attribute__((noreturn)) void vm_die(const char* msg);
 u16 vm_run(const u8* vm_pc_base);
 u16 f16_from_float(float f);
 float f16_to_float(u16 u);

@@ -1,0 +1,26 @@
+func test(k)
+    print k, str(k)
+end
+
+## Built in constants
+test(None)          #!None None
+test(True)          #!True True
+test(False)         #!False False
+test(NaN)           #!NaN NaN
+test(-NaN)          #!NaN NaN
+test(Inf)           #!Inf Inf
+test(-Inf)          #!-Inf -Inf
+
+## Simple literals
+test("")            #! !
+test("hi")          #!hi hi
+test(123)           #!123 123
+test(3.14159)       #!3.14 3.14
+
+## Compound literals
+test([])            #![] <array>
+test([3,4,5,6])     #![3,4,5,6] <array>
+test({})            #!{} <dict>
+test({"foo":1, "bar":99})   #!{foo:1,bar:99} <dict>
+
+stop

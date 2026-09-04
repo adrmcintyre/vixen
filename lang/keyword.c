@@ -1,5 +1,7 @@
 #include "header.h"
 
+// TODO - document table format
+
 // each table should be arranged in ascii order
 const u8 keywords_hpx[] = {
     op_pop,      info_fn1,      'p','o','p',
@@ -64,6 +66,7 @@ const u8 keywords_gow[] = {
     fail, 0
 };
 
+// Table of keywords indexed by the bottom 3 bits of the first character.
 const u8* keywords[] = {
     keywords_hpx,
     keywords_aiqy,
@@ -79,6 +82,7 @@ const u8* keywords[] = {
 // with kw set to op and info.
 OpData kw;
 
+// TODO doc
 bool lookup_keyword()
 {
     const u8 *token_end_ptr = token_ptr + token_len;

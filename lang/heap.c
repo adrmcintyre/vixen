@@ -2,6 +2,12 @@
 
 typedef struct HeapObj HeapObj;
 
+// A linked list of blocks allocated from the heap.
+// TODO is this the best way to handle the heap?
+// Should we have a header at the start of each heap object type instead?
+// Ref counts etc?
+// Block length?
+// Link by type?
 typedef struct HeapObj {
     HeapObj* next;
     u8 data[];

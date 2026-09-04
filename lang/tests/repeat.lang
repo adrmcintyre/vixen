@@ -1,0 +1,49 @@
+## While statements
+
+print "start"
+repeat
+    print "iter"
+until True
+print "end"
+#!start
+#!iter
+#!end
+
+cond = False
+print "start"
+repeat
+    print "iter"
+    cond = True
+until cond
+print "end"
+#!start
+#!iter
+#!end
+
+cond1 = False
+cond2 = False
+cond3 = True
+print "start"
+repeat
+    print "iter"
+    cond1 = cond2
+    cond2 = cond3
+until cond1
+print "end"
+#!start
+#!iter
+#!iter
+#!end
+
+print "start"
+repeat
+    print "iter"
+    break
+    print "post break"
+until False
+print "end"
+#!start
+#!iter
+#!end
+
+stop

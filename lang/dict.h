@@ -1,4 +1,4 @@
-#if !defined GUARD_DICT_H
+#ifndef GUARD_DICT_H
 #define GUARD_DICT_H
 
 #include "header.h"

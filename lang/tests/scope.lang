@@ -1,0 +1,18 @@
+v1 = "global1"
+v2 = "global2"
+v3 = "global3"
+
+print "[global] v1 =", v1       #![global] v1 = global1
+print "[global] v2 =", v2       #![global] v2 = global2
+print "[global] v3 =", v3       #![global] v3 = global3
+
+func f(v1)
+    print "[arg] v1 =", v1      #![arg] v1 = arg
+    v2 = "local"
+    print "[local] v2 =", v2    #![local] v2 = local
+    print "[global] v3 =", v3   #![global] v3 = global3
+end
+
+f("arg")
+
+stop

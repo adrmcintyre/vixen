@@ -43,17 +43,25 @@ const char* debug_op_names[] = {
     "op_class",
 
     // Internal ops
-    "op_ident_get",
-    "op_ident_set",
-    "op_slot_get",
-    "op_slot_set",
+    "op_get_global_prop",
+    "op_set_global_prop",
+    "op_get_func_slot",
+    "op_set_func_slot",
+    "op_get_class_prop",
+    "op_set_class_prop",
+    "op_set_class_method",
+    "op_get_object_slot",
+    "op_set_object_slot",
+    "op_get_method_slot",
 
     "op_lit_int",
     "op_lit_float",
     "op_lit_string",
     "op_lit_array",
     "op_lit_dict",
-    "op_lit_ident",
+    "op_lit_class",
+    "op_lit_func",
+    "op_lit_method",
 
     "op_get_index",
     "op_get_slice",
@@ -74,11 +82,13 @@ const char* debug_op_names[] = {
 
     "op_call",
     "op_return_none",
+    "op_drop",
 
     "op_jump",
     "op_jfalse"
 };
 
+// Returns the name of the vm opcode specified by op.
 const char* debug_op_name(u8 op)
 {
     if (op & 0x80) return debug_op_names[op-0x80];

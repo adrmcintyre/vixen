@@ -1,0 +1,61 @@
+## Array slice operations
+a = [1,2,3,4,5,6,7,8,9]
+
+## Extract array slices
+print a[0:]    #![1,2,3,4,5,6,7,8,9]
+print a[1:]    #![2,3,4,5,6,7,8,9]
+print a[99:]   #![]
+print a[-1:]   #![9]
+print a[-2:]   #![8,9]
+print a[-99:]  #![1,2,3,4,5,6,7,8,9]
+print a[1:8]   #![2,3,4,5,6,7,8]
+print a[8:1]   #![]
+print a[:]     #![1,2,3,4,5,6,7,8,9]
+
+## Verify slice elements are copied, not just aliased
+b = a[:]
+b[2] = 999
+print a
+#![1,2,3,4,5,6,7,8,9]
+
+## Replace part of slice
+b = a[:]
+b[2:4] = [33,44]
+print b
+#![1,2,33,44,5,6,7,8,9]
+
+## Delete part of slice
+b = a[:]
+b[2:4] = []
+print b
+#![1,2,5,6,7,8,9]
+
+## Replace part of slice with more elements
+b = a[:]
+b[2:4] = [33,44,55,66,77]
+print b
+#![1,2,33,44,55,66,77,5,6,7,8,9]
+
+## Insert elements into slice
+b = a[:]
+b[3:3] = [99,100]
+print b
+#![1,2,3,99,100,4,5,6,7,8,9]
+
+## Replace all elements of slice
+b = a[:]
+b[:] = [1,2,3]
+print b
+#![1,2,3]
+
+## Replace some elements of slice with elements of parent array
+# create enough capacity for final result, to avoid need for reallocation
+b = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+# copy test array in
+b[:] = a[:]
+# replace elts 3,4,5 with all elements of b prior to replacement
+b[3:6] = b
+print b
+#![1,2,3,1,2,3,4,5,6,7,8,9,7,8,9]
+
+stop

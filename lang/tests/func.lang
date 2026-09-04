@@ -1,0 +1,79 @@
+#------------------------------------------------
+## Simple function call
+func simple_func()
+    print "called simple_func"
+end
+simple_func()
+#!called simple_func
+
+#------------------------------------------------
+## Function call with arguments
+func three_args(x, y, z)
+    print "called three_args"
+    print x
+    print z
+end
+three_args("hello", "brave", "world")
+#!called three_args
+#!hello
+#!world
+
+#------------------------------------------------
+## Function calling another function
+func nested_func()
+    print "calling simple_func"
+    simple_func()
+    print "returned from simple_func"
+end
+nested_func()
+#!calling simple_func
+#!called simple_func
+#!returned from simple_func
+
+#------------------------------------------------
+## Function returning early
+func early_return()
+    print "called early_return"
+    return
+    print "dead code"
+end
+early_return()
+#!called early_return
+
+#------------------------------------------------
+## Function that returns a value
+func returns_value()
+    return "returns_value"
+end
+print returns_value()
+#!returns_value
+
+#------------------------------------------------
+## Function that returns a value early
+func early_return_with_value()
+    return "early_return_with_value"
+    return "dead_code"
+end
+print early_return_with_value()
+#!early_return_with_value
+
+#------------------------------------------------
+## Assign a function to a var and call it
+func_alias = simple_func
+func_alias()
+#!called simple_func
+
+#------------------------------------------------
+## Function that calls a function only defined later
+func calls_later_func()
+    later_func()
+end
+func later_func()
+    print "called later_func"
+end
+calls_later_func()
+#!called later_func
+
+#------------------------------------------------
+
+stop

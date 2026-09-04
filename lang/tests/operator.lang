@@ -1,0 +1,118 @@
+## negation
+print -(0)          #!0
+print -(1)          #!-1
+print -(-1)         #!1
+
+## bitwise not
+print ~0            #!-1
+print ~1            #!-2
+print ~32767        #!-32768
+
+## logical not of falsey values
+print not False     #!True
+print not None      #!True
+
+## logical not of truthy values
+print not True      #!False
+print not ""        #!False
+print not "0"       #!False
+print not 0         #!False
+print not 1         #!False
+print not 0.0       #!False
+print not 1.0       #!False
+print not {}        #!False
+print not {"a":2}   #!False
+print not []        #!False
+print not [1,2]     #!False
+
+## arith plus
+print 3 + 3         #!6
+print 3.5 + 3       #!6.5
+print 3 + 3.5       #!6.5
+print 3.25 + 3.5    #!6.75
+
+## arith minus
+print 7 - 4         #!3
+print 7 - 4.5       #!2.5
+print 7.5 - 4       #!3.5
+print 7.5 - 3.25    #!4.25
+
+## arith multiply
+print 3 * 3         #!9
+print 3 * 3.5       #!10.5
+print 3.5 * 3       #!10.5
+print 3.5 * 3.0     #!10.5
+
+## arith divide
+print 13 / 3        #!4
+print 13.5 / 3      #!4.5
+print 19.25 / 3.5   #!5.5
+print 14 / 3.5      #!4
+
+## arith remainder
+print 7 % 3         #!1
+print 7 % -3        #!1
+print -7 % 3        #!-1
+print -7 % -3       #!-1
+
+## arith relations
+print 1<2, 1<1   #!True False
+print 2>1, 1>1   #!True False
+print 1<=1, 2<=1 #!True False
+print 1>=1, 1>=2 #!True False
+print 1<>2, 1<>1 #!True False
+print 1==1, 1==2 #!True False
+
+## string relations
+print ""<"abc", "abc"<"abcd"     #!True True
+print "abc"<"abd", "abc"<"abc"   #!True False
+print "abd">"abc", "abc">"abc"   #!True False
+print "abc"<="abc", "abd"<="abc" #!True False
+print "abc">="abc", "abc">="abd" #!True False
+print "abc"<>"abd", "abc"<>"abc" #!True False
+print "abc"=="abc", "abc"=="abd" #!True False
+
+## logical right shift
+print 13 >> 0       #!13
+print 13 >> 1       #!6
+print -1 >> 1       #!32767
+print -32768 >> 7   #!256
+print -32768 >> 16  #!0
+
+## arithmetic right shift
+print 13 >>> 0      #!13
+print 13 >>> 1      #!6
+print -1 >>> 1      #!-1
+print -32768 >>> 7  #!-256
+print -32768 >>> 16 #!-1
+
+## logical left shift
+print 13 << 0       #!13
+print 13 << 1       #!26
+
+#TODO negative shifts
+
+## bitwise ops
+print 12 & 10       #!8
+print 12 | 10       #!14
+print 12 ^ 10       #!6
+
+## logic ops
+print True and True, True and False, False and True, False and False
+#!True False False False
+
+print True or True, True or False, False or True, False or False
+#!True True True False
+
+## logic ops with non-bools
+print False or "xyz"    #!xyz
+print None or "xyz"     #!xyz
+print True or "xyz"     #!True
+print "abc" or "xyz"    #!abc
+
+print False and "xyz"    #!False
+print None and "xyz"     #!None
+print True and "xyz"     #!xyz
+print "abc" and "xyz"    #!xyz
+
+stop
