@@ -15,6 +15,7 @@ __attribute__((noreturn)) void die(const char* msg)
 {
     // TODO - all calls to die should be converted
     // to fail the parse instead.
+    fflush(stdout);
     fprintf(stderr, "%s\n", msg);
     exit(1);
 }
@@ -22,6 +23,7 @@ __attribute__((noreturn)) void die(const char* msg)
 // Print msg generated at compile time, and abort the program.
 void parser_die(const char* msg)
 {
+    fflush(stdout);
     fprintf(stderr, "PROGRAM ERROR: %s\n", msg);
     exit(1);
 }

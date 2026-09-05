@@ -23,7 +23,7 @@ void heap_init() {
 
 u8* heap_alloc(u16 bytes)
 {
-    if (heap_end-heap_top < bytes+2) die("heap full");
+    if (heap_end-heap_top < bytes+sizeof(HeapObj)) die("heap full");
 
     HeapObj* obj = (HeapObj*) heap_top;
     heap_top += sizeof(HeapObj) + bytes;

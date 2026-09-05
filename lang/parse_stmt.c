@@ -1,75 +1,80 @@
 #include "parse.h"
 #include "header.h"
+#include "array.h"
 #include "dict.h"
 #include "object.h"
 
 #include <stdio.h>
 #include <string.h>
 
-// TODO convert all of these to arrays
+Array* control_stack = 0;
+Array* begin_loop_stack = 0;   // addresses of loop starts
+Array* end_loop_stack = 0;     // addresses and counts of unresolved refs to end of loop
+u16 end_loop_count;            // count of unresolved refs in current loop
 
-u8 control_sp;
-Op control_stack[32];
-
-const u8 begin_loop_max = 32;
-u8 begin_loop_sp = 0;                   // nesting depth of loops
-u16 begin_loop_stack[begin_loop_max];   // addresses of loop starts
-
-const u8 end_loop_max = 32;
-u8 end_loop_sp;
-u8 end_loop_stack[end_loop_max];        // addresses and counts of unresolved refs to end of loop
-u8 end_loop_count;                      // count of unresolved refs in current loop
-
-// Forward references for conditional branches
-const u8 forward_jump_max = 32;
-u16 forward_jump_sp = 0;
-u16 forward_jump_stack[forward_jump_max];
-
-const u8 unresolved_method_refs_max = 128;
-u16 unresolved_method_refs[unresolved_method_refs_max];
-u16 unresolved_method_refs_sp;
+Array* forward_jump_stack; // forward references for conditional branches
+Array* unresolved_method_refs = 0;
 
 Dict* global_idents;
 Class* active_class;
 Func* active_func;
 
+// TODO needed / arbitrarily small?
 u8 slot_max = 64;
 
 // Initialises the statement parser.
 void stmt_init()
 {
-    control_sp = 0;
-    begin_loop_sp = 0;
-    end_loop_sp = 0;
+    // TODO move to separate init func?
+    if (control_stack == 0) {
+        control_stack = array_new_presized(0, 16);
+    }
+    if (begin_loop_stack == 0) {
+        begin_loop_stack = array_new_presized(0, 16);
+    }
+    if (end_loop_stack == 0) {
+        end_loop_stack = array_new_presized(0, 16);
+    }
+    if (forward_jump_stack == 0) {
+        forward_jump_stack = array_new_presized(0, 16);
+    }
+    if (unresolved_method_refs == 0) {
+        unresolved_method_refs = array_new_presized(0, 16);
+    }
+
+    array_reset(control_stack);
+    array_reset(begin_loop_stack);
+    array_reset(end_loop_stack);
+    array_reset(forward_jump_stack);
+    array_reset(unresolved_method_refs);
+
     end_loop_count = 0;
-    forward_jump_sp = 0;
     active_func = 0;
     active_class = 0;
-    unresolved_method_refs_sp = 0;
 }
 
 // Records the beginning of a control structure.
 void push_control(Op op)
 {
-    if (control_sp == 32) parser_die("too many nested control statements");
-    control_stack[control_sp++] = op;
+    array_append(control_stack, (Value){.k=kind_int, .u=(u16)op});
 }
 
 // Pops and returns the op corresponding to the most recently started
 // control structure. Returns fail if not inside a control structure.
 Op pop_control()
 {
-    if (control_sp == 0) return fail;
-    return control_stack[--control_sp];
+    Value opval = array_pop(control_stack);
+    if (opval.k == kind_fail) {
+        return fail;
+    }
+    return (Op)opval.u;
 }
 
 // Records the beginning of a loop construct.
 void begin_loop()
 {
-    if (begin_loop_sp == begin_loop_max) parser_die("too many nested loops");
-    begin_loop_stack[begin_loop_sp++] = to_p16(code_ptr);
-
-    end_loop_stack[end_loop_sp++] = end_loop_count;
+    array_append(begin_loop_stack, (Value){.k=kind_int, .u=to_p16(code_ptr)});
+    array_append(end_loop_stack, (Value){.k=kind_int, .u=end_loop_count});
     end_loop_count = 0;
 }
 
@@ -79,12 +84,9 @@ void begin_loop()
 // Returns true on success, or false if not in a loop.
 bool emit_end_loop_jump(Op jump_op)
 {
-    if (end_loop_sp == 0) return false;
-    if (end_loop_sp == end_loop_max) parser_die("control flow is too complicated");
+    if (end_loop_stack->len == 0) return false;
     emit_op(jump_op);
-    u16 ref = to_p16(code_ptr);
-    *(u16*) &end_loop_stack[end_loop_sp] = ref;
-    end_loop_sp += sizeof(u16);
+    array_append(end_loop_stack, (Value){.k=kind_int, .u=to_p16(code_ptr)});
     end_loop_count++;
     emit_word(0);
     return true;
@@ -111,41 +113,42 @@ void patch_forward_ref(u16 ref_ptr)
 // resolves outstanding forward jumps to the end of the loop.
 void end_loop(u8 jump_op)
 {
-    if (begin_loop_sp == 0) parser_die("unexpected end-of-loop statement");
+    if (begin_loop_stack->len == 0) parser_die("unexpected end-of-loop statement");
 
     // TODO - swap following two code blocks and use same stack
 
     // jump to start of loop
-    u16 ref = begin_loop_stack[--begin_loop_sp];
+    u16 ref = array_pop(begin_loop_stack).u;
     emit_op(jump_op);
     emit_backward_ref(ref);
 
     // resolve references to end of loop
-    while(end_loop_count) {
-        end_loop_sp -= sizeof(u16);
-        u16 ref = *(u16*) &end_loop_stack[end_loop_sp];
+    while (end_loop_count) {
+        Value v = array_pop(end_loop_stack);
+        u16 ref = v.u;
         patch_forward_ref(ref);
         end_loop_count--;
     }
-    end_loop_count = end_loop_stack[--end_loop_sp];
+    end_loop_count = array_pop(end_loop_stack).u;
 }
 
 // Emits a forward jump instruction, recording its location
 // in the forward_jump stack for later resolution.
 void emit_forward_jump(u8 jump_op)
 {
-    if (forward_jump_sp == forward_jump_max) parser_die("control flow is too complicated");
     emit_op(jump_op);
-    forward_jump_stack[forward_jump_sp++] = to_p16(code_ptr);
+    array_append(forward_jump_stack, (Value){.k=kind_int, .u=to_p16(code_ptr)});
     emit_word(0);   // not yet resolved
 }
 
 // Resolves the most recent forward jump to the current location.
 void resolve_forward_jump()
 {
-    if (forward_jump_sp == 0) parser_die("not in a control block");
-    u16 ref = forward_jump_stack[--forward_jump_sp];
-    patch_forward_ref(ref);
+    Value refval = array_pop(forward_jump_stack);
+    if (refval.k == kind_fail) {
+        parser_die("not in a control block");
+    }
+    patch_forward_ref(refval.u);
 }
 
 // Emits a speculative global variable lookup for the named identifier,
@@ -153,10 +156,7 @@ void resolve_forward_jump()
 // backpatching if it later turns out this should be a method lookup instead.
 void emit_potential_method_ref(String* name)
 {
-    if (unresolved_method_refs_sp >= unresolved_method_refs_max) {
-        die("too many unresolved symbols in class");
-    }
-    unresolved_method_refs[unresolved_method_refs_sp++] = to_p16(code_ptr);
+    array_append(unresolved_method_refs, (Value){.k=kind_int, .u=to_p16(code_ptr)});
     emit_op(op_get_global_prop);
     emit_string(name);
 }
@@ -166,9 +166,12 @@ void emit_potential_method_ref(String* name)
 void resolve_potential_method_refs()
 {
     u8* saved_code_ptr = code_ptr;
-    while (unresolved_method_refs_sp > 0) {
-        unresolved_method_refs_sp--;
-        code_ptr = from_p16(unresolved_method_refs[unresolved_method_refs_sp]);
+    while (1) {
+        Value val = array_pop(unresolved_method_refs);
+        if (val.k == kind_fail) {
+            break;
+        }
+        code_ptr = from_p16(val.u);
         String* name = (String*) from_p16(*(u16*)(code_ptr+1));
         Value nameval = {.k=kind_string, .u=to_p16(name)};
         Value slotval = dict_get_item(active_class->methods, nameval);
@@ -190,7 +193,7 @@ void resolve_potential_method_refs()
 // - `/class/ <ident>`
 void parse_class()
 {
-    if (control_sp != 0) parser_die("class only allowed at top level");
+    if (control_stack->len != 0) parser_die("class only allowed at top level");
     if (active_class != 0) parser_die("class not allowed inside class");
     if (!lex_word()) parser_die("missing name");
     if (lookup_keyword()) parser_die("reserved word cannot be used here");
@@ -209,7 +212,7 @@ void parse_class()
     emit_string(name);
 
     active_class = klass;
-    unresolved_method_refs_sp = 0;
+    array_reset(unresolved_method_refs);
 }
 
 // Returns a newly allocated function descriptor.
@@ -235,7 +238,7 @@ Func* func_new()
 // `/func/ <ident> ( <ident>, ... )`
 void parse_func()
 {
-    if (control_sp != 0) parser_die("func only allowed at top level or class level");
+    if (control_stack->len != 0) parser_die("func only allowed at top level or class level");
 
     if (!lex_word()) parser_die("missing name");
     if (lookup_keyword()) parser_die("reserved word cannot be used here");
@@ -324,7 +327,7 @@ void parse_return()
 void parse_end()
 {
     // end of a class definition?
-    if (control_sp == 0 && active_class != 0) {
+    if (control_stack->len == 0 && active_class != 0) {
         resolve_potential_method_refs();
         active_class = 0;
     }
@@ -742,7 +745,7 @@ void parse_finish()
 {
     if (!lex_end_of_stream()) parser_die("unexpected characters at end of line");
 
-    if (control_sp != 0) parser_die("unfinished control block");
+    if (control_stack->len != 0) parser_die("unfinished control block");
 }
 
 

@@ -31,6 +31,7 @@ u16 vm_sp_max; // not a register
 // Aborts the program with the specified message.
 __attribute__((noreturn)) void vm_die(const char* msg)
 {
+    fflush(stdout);
     fprintf(stderr, "RUNTIME ERROR: %s!\n", msg);
     exit(1);
 }

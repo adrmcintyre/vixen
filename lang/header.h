@@ -187,7 +187,8 @@ typedef struct {
 // Represents a dynamically sized array.
 typedef struct {
     i16 len;        // current length of the array in elements
-    u16 cap;        // total allocated capacity in elements
+    i16 cap;        // total allocated capacity in elements
+    i16 min_cap;    // don't shrink cap below this
     u8* dataptr;    // points to the allocated elements
 } Array;
 

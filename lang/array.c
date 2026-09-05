@@ -3,6 +3,8 @@
 
 #include <string.h>
 
+// TODO add a min_cap field (or possibly no_shrink flag).
+
 // Returns a newly allocated array with specified length and capacity.
 // The actual capacity allocated will be at least max(len, cap).
 Array* array_new_presized(i16 len, i16 cap)
@@ -17,6 +19,7 @@ Array* array_new_presized(i16 len, i16 cap)
     
     array->len = len;
     array->cap = cap;
+    array->min_cap = 16;    // TODO expose this
     array->dataptr = data;
     return array;
 }
@@ -36,6 +39,11 @@ static int array_resize(Array* array, i16 len)
     i16 newcap = len + (len>>3);
     if (len > 0) newcap += 3;
     if (len >= 9) newcap += 3;
+
+    // do not shrink below min_cap
+    if (newcap < array->cap && newcap < array->min_cap) {
+        return 0;
+    }
 
     u8* newdata = 0;
     if (newcap > 0) newdata = heap_alloc(newcap * sizeof_Value);
@@ -78,6 +86,12 @@ Value array_pop(Array* array)
         memcpy(array->dataptr, olddata, newlen * sizeof_Value);
     }
     return v;
+}
+
+// Removes all elements from array.
+void array_reset(Array* array)
+{
+    array_resize(array, 0);
 }
 
 // Returns a newly allocated array from the concatenation of src1 and src2.

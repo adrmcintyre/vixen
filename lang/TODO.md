@@ -2,13 +2,13 @@
 
 ## Internals
 
+Implement min_cap and/or no_shrink on arrays.
+
 Escape strings in composite objects during printing.
 
 Ref counting of strings, arrays, dicts?
 
 Link discarded allocations for reuse.
-
-Use arrays during compilation instead of fixed size bufs.
 
 ## Tests
 

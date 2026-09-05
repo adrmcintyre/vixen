@@ -1,5 +1,6 @@
 #include "parse.h"
 #include "header.h"
+#include "array.h"
 #include "dict.h"
 #include "object.h"
 
@@ -17,17 +18,42 @@ const OpInfo prec_mark = 0x1;
 
 const OpData opdata_mark = { .op = mark, .info = 0x21 };
 
-const u8 pending_ops_max = 32;
-OpData pending_ops[pending_ops_max];
-u8 pending_ops_sp;
+Array* pending_ops;
+const u16 default_pending_ops_cap = 16;
+
+void parse_expr();
 
 // Initialises the state of the expression parser.
 void expr_init()
 {
-    pending_ops_sp = 0;
+    // TODO need separate init for this
+    if (pending_ops == 0) {
+        pending_ops = array_new_presized(0, default_pending_ops_cap);
+    }
+    else {
+        array_reset(pending_ops);
+    }
 }
 
-void parse_expr();
+void push_opdata(OpData opdata)
+{
+    Value v;
+    v.k = kind_int;
+    v.u = ((u16)opdata.op) << 8 | ((u16)opdata.info);
+    array_append(pending_ops, v);
+}
+
+OpData peek_opdata()
+{
+    u16 sp = pending_ops->len-1;
+    Value v = get_value(pending_ops->dataptr + sp*sizeof_Value);
+    return (OpData){.op = v.u>>8, .info = v.u & 0xff};
+}
+
+void drop_opdata()
+{
+    array_pop(pending_ops);
+}
 
 // Parses a sequence of zero or more unary operators and emits their
 // opcodes.
@@ -38,8 +64,7 @@ void parse_unops()
     while(1) {
         OpData opdata = lex_unop();
         if (opdata.op == fail) return;
-        // TODO check for stack overflow
-        pending_ops[pending_ops_sp++] = opdata;
+        push_opdata(opdata);
     }
 }
 
@@ -96,11 +121,11 @@ bool parse_lit_array()
 
     u16 nargs = 0;
     if (!lex_char(']')) {
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         parse_expr();
         nargs += 1;
         while(lex_char(',')) {
-            pending_ops[pending_ops_sp++] = opdata_mark;
+            push_opdata(opdata_mark);
             parse_expr();
             nargs += 1;
         }
@@ -131,18 +156,18 @@ bool parse_lit_dict()
 
     u16 nargs = 0;
     if (!lex_char('}')) {
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         parse_expr();
         if (!lex_char(':')) parser_die("missing ':'");
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         parse_expr();
 
         nargs += 1;
         while(lex_char(',')) {
-            pending_ops[pending_ops_sp++] = opdata_mark;
+            push_opdata(opdata_mark);
             parse_expr();
             if (!lex_char(':')) parser_die("missing ':'");
-            pending_ops[pending_ops_sp++] = opdata_mark;
+            push_opdata(opdata_mark);
             parse_expr();
 
             nargs += 1;
@@ -169,7 +194,7 @@ bool parse_paren_expr()
 {
     if (!lex_char('(')) return false;
 
-    pending_ops[pending_ops_sp++] = opdata_mark;
+    push_opdata(opdata_mark);
     parse_expr();
     if (!lex_char(')')) parser_die("missing ')'");
 
@@ -193,11 +218,11 @@ u16 parse_args()
 
     u16 nargs = 1;
     if (!lex_char(')')) {
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         parse_expr();
         nargs += 1;
         while(lex_char(',')) {
-            pending_ops[pending_ops_sp++] = opdata_mark;
+            push_opdata(opdata_mark);
             parse_expr();
             nargs += 1;
         }
@@ -228,7 +253,7 @@ bool parse_index_arg()
     if (!lex_char('[')) return false;
 
     if (!lex_char(':')) {
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         parse_expr();
         if (lex_char(']')) {
             // [index]
@@ -243,7 +268,7 @@ bool parse_index_arg()
         }
         else {
             // [start:end]
-            pending_ops[pending_ops_sp++] = opdata_mark;
+            push_opdata(opdata_mark);
             parse_expr();
             if (!lex_char(']')) parser_die("missing ']'");
             emit_op(op_get_slice);
@@ -255,7 +280,7 @@ bool parse_index_arg()
     }
     else {
         // [:end]
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         parse_expr();
         if (!lex_char(']')) parser_die("missing ']'");
         emit_op(op_get_slice_end);
@@ -336,6 +361,7 @@ void emit_ident_at_func_scope(String* name)
 //  end`
 void emit_ident_at_class_scope(String* name)
 {
+    // TODO - previously defined class props (+methods) should be in scope too?
     emit_ident_at_global_scope(name);
 }
 
@@ -469,7 +495,7 @@ bool parse_lit_object()
     u16 nargs = 0;
     String* key;
     if (!lex_char('}')) {
-        pending_ops[pending_ops_sp++] = opdata_mark;
+        push_opdata(opdata_mark);
         if (!lex_word()) die("missing property");
         key = string_from_token();
         emit_op(op_lit_string);
@@ -480,7 +506,7 @@ bool parse_lit_object()
 
         nargs += 1;
         while(lex_char(',')) {
-            pending_ops[pending_ops_sp++] = opdata_mark;
+            push_opdata(opdata_mark);
             if (!lex_word()) die("missing property");
             key = string_from_token();
             emit_op(op_lit_string);
@@ -551,12 +577,12 @@ void parse_expr()
             OpData opdata = lex_binop();
             u8 prec = opdata.info & 0x0f;
 
-            while(pending_ops_sp > 0) {
-                OpData prev_opdata = pending_ops[pending_ops_sp-1]; 
+            while (pending_ops->len > 0) {
+                OpData prev_opdata = peek_opdata();
                 u8 prev_prec = prev_opdata.info & 0x0f;
                 if ((prec > prev_prec) && (prec < prec_max)) break;
 
-                pending_ops_sp -= 1;
+                drop_opdata();
 
                 // is this the mark?
                 if (prev_prec == prec_mark) break;
@@ -568,7 +594,7 @@ void parse_expr()
 
             // check arity
             if ((opdata.info & 0xf0) > 0x10) {
-                pending_ops[pending_ops_sp++] = opdata;
+                push_opdata(opdata);
                 break;
             }
         }
