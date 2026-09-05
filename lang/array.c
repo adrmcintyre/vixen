@@ -118,6 +118,15 @@ Value array_get(Array* array, i16 index)
     return get_value(p);
 }
 
+bool array_set(Array* array, i16 index, Value v)
+{
+    if (index < 0) index += array->len;
+    if (index < 0 || index >= array->len) return false;
+    u8* p = array->dataptr + index * sizeof_Value;
+    set_value(p, v);
+    return true;
+}
+
 // Returns a newly allocated array from the elements of src at indexes in the
 // range start <= index < end.
 Array* array_get_slice(Array* src, i16 start, i16 end)

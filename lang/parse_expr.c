@@ -45,8 +45,7 @@ void push_opdata(OpData opdata)
 
 OpData peek_opdata()
 {
-    u16 sp = pending_ops->len-1;
-    Value v = get_value(pending_ops->dataptr + sp*sizeof_Value);
+    Value v = array_get(pending_ops, -1);
     return (OpData){.op = v.u>>8, .info = v.u & 0xff};
 }
 

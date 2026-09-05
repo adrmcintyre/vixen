@@ -1219,11 +1219,8 @@ void vm_get_index()
             Array* array = (Array*) from_p16(vm_a.u);
             i16 len = (i16) array->len;
 
-            i16 index = vm_b.i;
-            if (index < 0) index += len;
-            if (index < 0 || index >= len) vm_die("array index out of range");
-
-            Value elt = get_value(array->dataptr + index * sizeof_Value);
+            Value elt = array_get(array, vm_b.i);
+            if (elt.k == kind_fail) vm_die("array index out of range");
             push_val(elt.k, elt.u);
             break;
         }
@@ -1273,11 +1270,7 @@ void vm_set_index()
             Array* array = (Array*) from_p16(vm_a.u);
             if (vm_b.k != kind_int) vm_die("expected int index");
             i16 len = array->len;
-            i16 index = vm_b.i;
-            if (index < 0) index += len;
-            if (index < 0 || index >= len) vm_die("index out of range");
-
-            set_value(array->dataptr + index * sizeof_Value, vm_c);
+            if (!array_set(array, vm_b.i, vm_c)) vm_die("index out of range");
             break;
         }
         case kind_dict: {
@@ -1518,8 +1511,7 @@ void vm_iter_item()
                 push_bool(0);
             }
             else {
-                // TODO move into array api
-                Value item = get_value(array->dataptr + index * sizeof_Value);
+                Value item = array_get(array, index);
                 push_int(index+1);
                 push_val(item.k, item.u);
                 push_bool(1);
@@ -1566,7 +1558,7 @@ void vm_iter_kv()
             }
             else {
                 // TODO move into array api
-                Value item = get_value(array->dataptr + index * sizeof_Value);
+                Value item = array_get(array, index);
                 push_int(index+1);
                 push_int(index);
                 push_val(item.k, item.u);
