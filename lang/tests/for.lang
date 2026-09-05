@@ -1,0 +1,118 @@
+## Iterate empty range
+print "start"
+for x in 2, 1
+    print x
+next
+print "end"
+#!start
+#!end
+
+## Iterate range
+for x in 1,4
+    print x
+next
+#!1
+#!2
+#!3
+#!4
+
+## Iterate empty array
+print "start"
+for e in []
+    print e
+next
+print "end"
+#!start
+#!end
+
+## Iterate array values
+for e in ["hello","brave","world"]
+    print e
+next
+#!hello
+#!brave
+#!world
+
+## Iterate empty array indexes and values
+print "start"
+for i, e in []
+    print i, e
+next
+print "end"
+#!start
+#!end
+
+## Iterate array indexes and values
+for i, e in ["hello", "brave", "world"]
+    print i, e
+next
+#!0 hello
+#!1 brave
+#!2 world
+
+## Iterate empty dict keys
+print "start"
+for k in {}
+    print k
+next
+print "end"
+#!start
+#!end
+
+## Iterate dict keys
+for k in {"hello":"foo", "strange":"bar", "world":"quux"}
+    print k
+next
+#!hello
+#!strange
+#!world
+
+## Iterate empty dict keys and values
+print "start"
+for k, v in {}
+    print k,v
+next
+print "end"
+#!start
+#!end
+
+## Iterate dict keys and values
+for k, v in {"hello":"foo", "strange":"bar", "world":"quux"}
+    print k,v
+next
+#!hello foo
+#!strange bar
+#!world quux
+
+## Iterate range with early exit
+for x in 1,4
+    print x
+    if x == 3
+        break
+    endif
+next
+#!1
+#!2
+#!3
+
+## Iterate array indexes and values with early exit
+for i, e in ["hello", "brave", "world"]
+    print i, e
+    if e == "brave"
+        break
+    endif
+next
+#!0 hello
+#!1 brave
+
+## Iterate dict keys and values with early exit
+for k, v in {"hello":"foo", "strange":"bar", "world":"quux"}
+    print k,v
+    if k == "strange"
+        break
+    endif
+next
+#!hello foo
+#!strange bar
+
+stop

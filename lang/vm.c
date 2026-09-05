@@ -1474,7 +1474,152 @@ void vm_call_method()
     vm_pc = func->vm_addr;
 }
 
-// TODO
+
+// TODO doc
+// [..., coll] => [..., coll, it]
+void vm_iter_init()
+{
+    Value collval = pop_val();
+    push_val(collval.k, collval.u);
+
+    switch (collval.k) {
+        case kind_array:
+            push_int(0);
+            break;
+        case kind_dict: {
+            Dict* dict = (Dict*) from_p16(collval.u);
+            u16 it = dict_iter_init(dict);
+            push_int(it);
+            break;
+        }
+        // TODO extend to strings?
+        default:
+            vm_die("expected array or dict");
+            break;
+    }
+
+}
+
+// TODO doc
+// [..., coll, it] => [..., coll, next_it, item, <true>] - item found
+// [..., coll, it] => [..., coll, 0, <false>]      - no more items
+void vm_iter_item()
+{
+    Value itval = pop_val();
+    Value collval = pop_val();
+    push_val(collval.k, collval.u);
+
+    switch (collval.k) {
+        case kind_array: {
+            Array* array = (Array*) from_p16(collval.u);
+            i16 index = itval.i;
+            if (index >= array->len) {
+                push_int(0);
+                push_bool(0);
+            }
+            else {
+                // TODO move into array api
+                Value item = get_value(array->dataptr + index * sizeof_Value);
+                push_int(index+1);
+                push_val(item.k, item.u);
+                push_bool(1);
+            }
+            break;
+        }
+        case kind_dict: {
+            Value item;
+            Value ignore;
+            Dict* dict = (Dict*) from_p16(collval.u);
+            u16 next_it = dict_iter_item(dict, itval.u, &item, &ignore);
+            if (next_it == 0) {
+                push_int(0);
+                push_bool(0);
+            }
+            else {
+                push_int(next_it);
+                push_val(item.k, item.u);
+                push_bool(1);
+            }
+            break;
+        }
+        default:
+            vm_die("unreachable");
+    }
+}
+   
+// TODO doc
+// [..., coll, it] => [..., coll, next_it, key, value, <true>] - item found
+// [..., coll, it] => [..., coll, 0, <false>]                  - no more items
+void vm_iter_kv()
+{
+    Value itval = pop_val();
+    Value collval = pop_val();
+    push_val(collval.k, collval.u);
+
+    switch (collval.k) {
+        case kind_array: {
+            Array* array = (Array*) from_p16(collval.u);
+            i16 index = itval.i;
+            if (index >= array->len) {
+                push_int(0);
+                push_bool(0);
+            }
+            else {
+                // TODO move into array api
+                Value item = get_value(array->dataptr + index * sizeof_Value);
+                push_int(index+1);
+                push_int(index);
+                push_val(item.k, item.u);
+                push_bool(1);
+            }
+            break;
+        }
+        case kind_dict: {
+            Value key;
+            Value value;
+            Dict* dict = (Dict*) from_p16(collval.u);
+            u16 next_it = dict_iter_item(dict, itval.u, &key, &value);
+            if (next_it == 0) {
+                push_int(0);
+                push_bool(0);
+            }
+            else {
+                push_int(next_it);
+                push_val(key.k, key.u);
+                push_val(value.k, value.u);
+                push_bool(1);
+            }
+            break;
+        }
+        default:
+            vm_die("unreachable");
+    }
+
+}
+
+// TODO doc
+// [..., <index>,<end>] => [..., <index>,<end>,<index> <= <end>]
+void vm_range_check()
+{
+    Value endval = pop_int();
+    Value indexval = pop_int();
+    push_int(indexval.i);
+    push_int(endval.i);
+    push_bool(indexval.i <= endval.i);
+}
+
+// TODO doc
+// [..., <index>,<end>] => [..., <index+1>,<end>,<index>]
+void vm_range_next()
+{
+    Value endval = pop_int();
+    Value indexval = pop_int();
+    push_int(indexval.i + 1);
+    push_int(endval.i);
+    push_int(indexval.i);
+}
+
+// TODO doc
 extern void slice_adjust(i16 *start, i16 *end, i16 *len)
 {
     if (*start < 0) *start += *len;
@@ -1489,7 +1634,7 @@ extern void slice_adjust(i16 *start, i16 *end, i16 *len)
     *len = *end - *start;
 }
 
-// TODO
+// TODO doc
 void vm_get_slice(u8 has_start, u8 has_end)
 {
     i16 start = 0;
@@ -1522,7 +1667,7 @@ void vm_get_slice(u8 has_start, u8 has_end)
     }
 }
 
-// TODO
+// TODO doc
 void vm_set_slice(u8 has_start, u8 has_end)
 {
     // for expr, dst[start:end] = src
@@ -1551,7 +1696,7 @@ void vm_set_slice(u8 has_start, u8 has_end)
 // Call + return handlers
 //
 
-// TODO
+// TODO doc
 void vm_call()
 {
     // number of args to supply to the callable
@@ -1613,7 +1758,7 @@ void vm_call()
     vm_pc = func->vm_addr;
 }
 
-// TODO
+// TODO doc
 void vm_return()
 {
     vm_a = pop_val();
@@ -1628,7 +1773,7 @@ void vm_return()
     vm_pc = old_pc;
 }
 
-// TODO
+// TODO doc
 void vm_return_none()
 {
     u16 old_pc = pop_word();
@@ -1645,7 +1790,7 @@ void vm_return_none()
 // Entry point
 //
 
-// TODO
+// TODO doc
 u16 vm_run(const u8 *vm_pc_start)
 {
     if (opt_trace_vm) {
@@ -1796,11 +1941,18 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_set_prop:           vm_set_prop(); break;
             case op_call_method:        vm_call_method(); break;
 
+            case op_iter_init:          vm_iter_init(); break;
+            case op_iter_item:          vm_iter_item(); break;
+            case op_iter_kv:            vm_iter_kv(); break;
+            case op_range_check:        vm_range_check(); break;
+            case op_range_next:         vm_range_next(); break;
+
             // call + return
             case op_call:           vm_call(); break;
             case op_return:         vm_return(); break;
             case op_return_none:    vm_return_none(); break;
             case op_drop:           pop_val(); break;
+            case op_drop2:          pop_val(); pop_val(); break;
 
             // jumps
             case op_jump: {

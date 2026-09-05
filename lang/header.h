@@ -58,8 +58,12 @@ typedef enum {
     op_if, op_else, op_endif,
     op_repeat, op_until,
     op_while, op_wend,
+    op_for, op_next,
     op_break,
     op_class,
+
+    op_iter_init, op_iter_item, op_iter_kv,
+    op_range_check, op_range_next,
 
     // Internal ops
     op_get_global_prop,
@@ -102,6 +106,7 @@ typedef enum {
     op_call,
     op_return_none,
     op_drop,
+    op_drop2,
 
     op_jump,
     op_jfalse

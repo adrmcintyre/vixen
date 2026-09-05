@@ -16,6 +16,7 @@ const u8 keywords_aiqy[] = {
     op_asc,      info_fn1,      'a','s','c',
 
     op_if,       info_control,  'i','f',
+    op_in,       info_control,  'i','n',
     op_input,    info_cmd_any,  'i','n','p','u','t',
     op_int,      info_fn1,      'i','n','t',
     fail, 0
@@ -57,7 +58,9 @@ const u8 keywords_fnv[] = {
     op_nan,      info_const,    'N','a','N',
     op_none,     info_const,    'N','o','n','e',
     op_float,    info_fn1,      'f','l','o','a','t',
+    op_for,      info_control,  'f','o','r',
     op_func,     info_control,  'f','u','n','c',
+    op_next,     info_control,  'n','e','x','t',
     fail, 0
 };
 const u8 keywords_gow[] = {

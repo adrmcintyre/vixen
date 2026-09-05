@@ -36,18 +36,4 @@ Implement class methods.
 * del
 * keys
 * values
-* iteration
-    ```
-        for k, v in d
-            ...
-        end
-    ```
 
-## Arrays
-
-* iteration
-    ```
-    for i, e in a
-        ...
-    end
-    ```

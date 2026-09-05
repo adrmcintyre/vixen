@@ -184,6 +184,158 @@ void resolve_potential_method_refs()
     code_ptr = saved_code_ptr;
 }
 
+// Emits code to set the global property specified by name.
+//
+// `(<ident> = <expr>)`
+void emit_assign_at_global_scope(String* name)
+{
+    emit_op(op_set_global_prop);
+    emit_string(name);
+}
+
+// Emits code to set the local variable or function argument specified by name,
+// creating a new slot if necessary.
+//
+// `func F(...)
+//      ...
+//      <ident> = <expr>
+//      ...
+// end`
+void emit_assign_at_func_scope(String* name)
+{
+    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    Value slotval = dict_get_item(active_func->slots, nameval);
+    if (slotval.k == kind_fail) {
+        u16 slot = dict_length(active_func->slots);
+        slotval = (Value){.k=kind_int, .u=slot};
+        dict_set_item(active_func->slots, nameval, slotval);
+    }
+    emit_op(op_set_func_slot);
+    emit_word(slotval.u);
+}
+
+// Emits code to set the property specified by name on the currently
+// active class, creating a new slot on the class if necessary.
+//
+// `class C
+//      <ident> = <expr>
+//      func F (...)
+//          ...
+//      end
+//  end`
+void emit_assign_at_class_scope(String* name)
+{
+    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    Value slotval = dict_get_item(active_class->slots, nameval);
+    if (slotval.k == kind_fail) {
+        u16 slot = dict_length(active_class->slots);
+        slotval = (Value){.k=kind_int, .u=slot};
+        dict_set_item(active_class->slots, nameval, slotval);
+    }
+    emit_op(op_set_class_prop);
+    emit_word(to_p16(active_class));
+    emit_string((String*) from_p16(nameval.u));
+}
+
+// Emits code to set the value of the identifier with the specified name
+// (in order of precedence) as either a local variable, function argument,
+// or property on an object of the currently active class. If none of these
+// are resolvable, creates a new local variable and uses that.
+// 
+// `class C
+//      ...
+//      func F(...)
+//          <ident> = <expr>
+//          ...
+//      end
+// end`
+void emit_assign_at_method_scope(String* name)
+{
+    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    Value slotval = dict_get_item(active_func->slots, nameval);
+
+    if (slotval.k != kind_fail) {
+        emit_op(op_set_func_slot);
+    }
+    else {
+        slotval = dict_get_item(active_class->slots, nameval);
+        if (slotval.k != kind_fail) {
+            emit_op(op_set_object_slot);
+        }
+        else {
+            u16 slot = dict_length(active_func->slots);
+            slotval = (Value){.k=kind_int, .u=slot};
+            dict_set_item(active_func->slots, nameval, slotval);
+            emit_op(op_set_func_slot);
+        }
+    }
+    emit_word(slotval.u);
+}
+
+// Emits the code to perform an assignment at the current scope.
+void emit_assign(String* name)
+{
+    if (active_class == 0) {
+        if (active_func == 0) {
+            emit_assign_at_global_scope(name);
+        }
+        else {
+            emit_assign_at_func_scope(name);
+        }
+    }
+    else {
+        if (active_func == 0) {
+            emit_assign_at_class_scope(name);
+        }
+        else {
+            emit_assign_at_method_scope(name);
+        }
+    }
+}
+
+// Emits the code to start iterating over an integer range.
+//
+// `for <name> in <start-expr>, <end-expr>`
+void emit_for_range(String* name)
+{
+    begin_loop();
+
+    emit_op(op_range_check);
+    emit_end_loop_jump(op_jfalse);
+
+    emit_op(op_range_next);
+    emit_assign(name);
+}
+
+// Emits the code to start iterating the values of an array, or keys of a dict.
+//
+// `for <name> in <collection-expr>`
+void emit_for1(String* name)
+{
+    emit_op(op_iter_init);
+    begin_loop();
+
+    emit_op(op_iter_item);
+    emit_end_loop_jump(op_jfalse);
+    emit_assign(name);
+}
+
+// Emits the code to start iterating the indexes and values of an array,
+// or keys and values of a dict.
+//
+// `for <key-name>, <value-name> in <collection-expr>`
+void emit_for2(String* key_name, String* value_name)
+{
+    emit_op(op_iter_init);
+    begin_loop();
+
+    emit_op(op_iter_kv);
+    emit_end_loop_jump(op_jfalse);
+    emit_assign(value_name);
+    emit_assign(key_name);
+}
+
+
 // Parses a class's name after `class` has been recognised, and emits code to
 // register the class at runtime.
 //
@@ -430,6 +582,64 @@ void parse_until()
     end_loop(op_jfalse);
 }
 
+// Parses the remainder of a `for` control statement.
+//
+// `/for/ <ident> in <expr>` - iterate dict keys / array values
+// `/for/ <ident> , <ident> in <expr>` - iterate keys and values
+// `/for/ <ident> in <expr> , <expr>` - iterate an integer range
+void parse_for()
+{
+    push_control(op_for);
+    if (!lex_word()) {
+        die("expected identifier");
+    }
+    if (lookup_keyword()) {
+        die("reserved word cannot be used here");
+    }
+    String* name1 = string_from_token();
+    String* name2 = 0;
+    if (lex_char(',')) {
+        if (!lex_word()) {
+            die("expected identifier");
+        }
+        if (lookup_keyword()) {
+            die("reserved word cannot be used here");
+        }
+        name2 = string_from_token();
+    }
+    if (!lex_word()) die("lex_word bork");
+    if (!lookup_keyword()) die("lookup_keyword bork");
+    if (kw.op != op_in) die("kw.op != in bork");
+
+    parse_expr();
+    if (lex_char(',')) {
+        if (name2 != 0) {
+            die("range not expected with 'for <key>,<value>' syntax");
+        }
+        parse_expr();
+
+        emit_for_range(name1);
+    }
+    else if (name2 == 0) {
+        emit_for1(name1);
+    }
+    else {
+        emit_for2(name1, name2);
+    }
+}
+
+// Parse the remainder of a `next` statement.
+//
+// Aborts if a `for` block is not currently active.
+//
+// `/next/`
+void parse_next()
+{
+    if (pop_control() != op_for) parser_die("'next' without 'for'");
+    end_loop(op_jump);
+    emit_op(op_drop2);
+}
+
 // Parses the remainder of a `break` statement.
 //
 // Aborts if a `while` or `until` block is not currently active.
@@ -455,6 +665,8 @@ void parse_control_stmt(Op op)
     case op_wend: parse_wend(); break;
     case op_repeat: parse_repeat(); break;
     case op_until: parse_until(); break;
+    case op_for: parse_for(); break;
+    case op_next: parse_next(); break;
     case op_break: parse_break(); break;
     case op_class: parse_class(); break;
     case op_func: parse_func(); break;
@@ -484,121 +696,6 @@ u8 parse_cmd_args()
         nargs += 1;
     }
     return nargs;
-}
-
-// Emits code to set the global property specified by name.
-//
-// `(<ident> = <expr>)`
-void emit_assign_at_global_scope(String* name)
-{
-    emit_op(op_set_global_prop);
-    emit_string(name);
-}
-
-// Emits code to set the local variable or function argument specified by name,
-// creating a new slot if necessary.
-//
-// `func F(...)
-//      ...
-//      <ident> = <expr>
-//      ...
-// end`
-void emit_assign_at_func_scope(String* name)
-{
-    Value nameval = {.k=kind_string, .u=to_p16(name)};
-    Value slotval = dict_get_item(active_func->slots, nameval);
-    if (slotval.k == kind_fail) {
-        u16 slot = dict_length(active_func->slots);
-        slotval = (Value){.k=kind_int, .u=slot};
-        dict_set_item(active_func->slots, nameval, slotval);
-    }
-    emit_op(op_set_func_slot);
-    emit_word(slotval.u);
-}
-
-// Emits code to set the property specified by name on the currently
-// active class, creating a new slot on the class if necessary.
-//
-// `class C
-//      <ident> = <expr>
-//      func F (...)
-//          ...
-//      end
-//  end`
-void emit_assign_at_class_scope(String* name)
-{
-    Value nameval = {.k=kind_string, .u=to_p16(name)};
-    Value slotval = dict_get_item(active_class->slots, nameval);
-    if (slotval.k == kind_fail) {
-        u16 slot = dict_length(active_class->slots);
-        slotval = (Value){.k=kind_int, .u=slot};
-        dict_set_item(active_class->slots, nameval, slotval);
-    }
-    emit_op(op_set_class_prop);
-    emit_word(to_p16(active_class));
-    emit_string((String*) from_p16(nameval.u));
-}
-
-// Emits code to set the value of the identifier with the specified name
-// (in order of precedence) as either a local variable, function argument,
-// or property on an object of the currently active class. If none of these
-// are resolvable, creates a new local variable and uses that.
-// 
-// `class C
-//      ...
-//      func F(...)
-//          <ident> = <expr>
-//          ...
-//      end
-// end`
-void emit_assign_at_method_scope(String* name)
-{
-    Value nameval = {.k=kind_string, .u=to_p16(name)};
-    Value slotval = dict_get_item(active_func->slots, nameval);
-
-    if (slotval.k != kind_fail) {
-        emit_op(op_set_func_slot);
-    }
-    else {
-        slotval = dict_get_item(active_class->slots, nameval);
-        if (slotval.k != kind_fail) {
-            emit_op(op_set_object_slot);
-        }
-        else {
-            u16 slot = dict_length(active_func->slots);
-            slotval = (Value){.k=kind_int, .u=slot};
-            dict_set_item(active_func->slots, nameval, slotval);
-            emit_op(op_set_func_slot);
-        }
-    }
-    emit_word(slotval.u);
-}
-
-// Parses an expression after the lhs of an assignment to a bare identifier
-// with the specified name has been recognised, and emits the code to perform
-// the assignment.
-//
-// - `(<name> =) <expr>`
-void parse_assign(String* name)
-{
-    parse_expr();
-
-    if (active_class == 0) {
-        if (active_func == 0) {
-            emit_assign_at_global_scope(name);
-        }
-        else {
-            emit_assign_at_func_scope(name);
-        }
-    }
-    else {
-        if (active_func == 0) {
-            emit_assign_at_class_scope(name);
-        }
-        else {
-            emit_assign_at_method_scope(name);
-        }
-    }
 }
 
 // Parses a statement, and emits the code to execute it.
@@ -640,7 +737,8 @@ void parse_stmt()
         // <name> = <expr>
         if (lex_char('=')) {
             String* name = string_from_token();
-            parse_assign(name);
+            parse_expr();
+            emit_assign(name);
             return;
         }
     }
