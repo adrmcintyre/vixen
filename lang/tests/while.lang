@@ -1,5 +1,6 @@
 ## While statements
 
+## while never iterates if condition False
 print "start"
 while False
     print "iter"
@@ -8,25 +9,12 @@ print "end"
 #!start
 #!end
 
-cond = True
+## while respects True condition
 print "start"
-while cond
+i = 1
+while i <= 2
     print "iter"
-    cond = False
-wend
-print "end"
-#!start
-#!iter
-#!end
-
-cond1 = True
-cond2 = True
-cond3 = False
-print "start"
-while cond1
-    print "iter"
-    cond1 = cond2
-    cond2 = cond3
+    i = i + 1
 wend
 print "end"
 #!start
@@ -34,6 +22,20 @@ print "end"
 #!iter
 #!end
 
+## while with continue
+i = 0
+while i < 4
+    i = i + 1
+    if i == 2
+        continue
+    endif
+    print i
+wend
+#!1
+#!3
+#!4
+
+## while with break
 print "start"
 while True
     print "iter"
@@ -44,7 +46,6 @@ print "end"
 #!start
 #!iter
 #!end
-
 
 ## break from nested loops
 print "start1"
@@ -60,7 +61,6 @@ while True
     print "post break2"
 wend
 print "end1"
-
 #!start1
 #!start2
 #!iter2

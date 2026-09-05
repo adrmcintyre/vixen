@@ -74,9 +74,7 @@ Value array_pop(Array* array)
 {
     i16 len = array->len;
     if (len == 0) {
-        Value v;
-        v.k = kind_fail;
-        return v;
+        return (Value){.k=kind_fail};
     }
     u8* olddata = array->dataptr;
     i16 newlen = len - 1;
@@ -107,6 +105,17 @@ Array* array_concat(Array* src1, Array* src2)
         src2->len * sizeof_Value);
 
     return dst;
+}
+
+// Returns the element of array at index. Negative indexes are treated
+// as an offset from the end of the array (e.g. -1 is the last element).
+// Returns a kind_fail value if the index is invalid.
+Value array_get(Array* array, i16 index)
+{
+    if (index < 0) index += array->len;
+    if (index < 0 || index >= array->len) return (Value){.k=kind_fail};
+    u8* p = array->dataptr + index * sizeof_Value;
+    return get_value(p);
 }
 
 // Returns a newly allocated array from the elements of src at indexes in the

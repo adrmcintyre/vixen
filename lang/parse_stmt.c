@@ -650,6 +650,18 @@ void parse_break()
     if (!emit_end_loop_jump(op_jump)) parser_die("'break' is not in a loop");
 }
 
+// Parses the remainder of a `continue` statement.
+//
+// Aborts if a loop block is not currenly active.
+void parse_continue()
+{
+    Value refval = array_get(begin_loop_stack, -1);
+    if (refval.k == kind_fail) parser_die("'continue' is not in a loop");
+
+    // TODO - check how this interacts with repeat ... until
+    emit_op(op_jump);
+    emit_backward_ref(refval.u);
+}
 
 // Parses the remainder of a control statement after the keyword specified
 // by op has been recognised, checks validity of the keyword in the current
@@ -668,6 +680,7 @@ void parse_control_stmt(Op op)
     case op_for: parse_for(); break;
     case op_next: parse_next(); break;
     case op_break: parse_break(); break;
+    case op_continue: parse_continue(); break;
     case op_class: parse_class(); break;
     case op_func: parse_func(); break;
     case op_return: parse_return(); break;

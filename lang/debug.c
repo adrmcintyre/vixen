@@ -40,7 +40,7 @@ const char* debug_op_names[] = {
     "op_repeat", "op_until",
     "op_while", "op_wend",
     "op_for", "op_next",
-    "op_break",
+    "op_break", "op_continue",
     "op_class",
 
     "op_iter_init", "op_iter_item", "op_iter_kv",
