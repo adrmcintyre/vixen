@@ -121,9 +121,9 @@ void push_int(i16 i)
 // Pushes the float Value for f to the stack, where f is already
 // encoded as an f16.
 // - The stack is not checked for overflow.
-void push_f16(u16 f)
+void push_f16(f16 f)
 {
-    push_val(kind_float, f);
+    push_val(kind_float, (u16) f);
 }
 
 // Pushes the float Value for f, converting from a host float.

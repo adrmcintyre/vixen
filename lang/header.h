@@ -7,6 +7,7 @@
 typedef signed char i8;
 typedef unsigned char u8;
 typedef unsigned short u16;
+typedef unsigned short f16;
 typedef signed short i16;
 
 typedef struct Dict Dict;
@@ -158,12 +159,11 @@ typedef enum {
 typedef struct {
     Kind k;     // the type
     // convenience accessors for the payload
-    // TODO perhaps should use 'f16 f' instead of 'u16 f'.
     // TODO maybe add 'u16 p' for pointers.
     union {         
         u16 u;
         i16 i;
-        u16 f;
+        f16 f;
     };
 } Value;
 
@@ -291,8 +291,8 @@ void emit_string(const String* s);
 extern bool opt_trace_vm;
 __attribute__((noreturn)) void vm_die(const char* msg);
 u16 vm_run(const u8* vm_pc_base);
-u16 f16_from_float(float f);
-float f16_to_float(u16 u);
+f16 f16_from_float(float f);
+float f16_to_float(f16 f);
 const char* debug_op_name(u8 op);
 Value get_value(const u8* p);
 void set_value(u8* p, Value v);
