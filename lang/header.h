@@ -249,7 +249,7 @@ extern String* interned_string_object;
 extern String* interned_string_bom;
 extern String* interned_string_unknown;
 void strings_init();
-String* string_from_token();
+String* string_intern_token();
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, i16 len);
 String* string_new_uninited(i16 len);

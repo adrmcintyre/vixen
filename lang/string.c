@@ -54,7 +54,7 @@ void strings_init()
 }
 
 // Returns an interned string from the last lexed token.
-String* string_from_token()
+String* string_intern_token()
 {
     if (token_len == 1) {
         return string_from_char(*token_ptr);

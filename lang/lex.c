@@ -190,7 +190,7 @@ String* lex_word()
     input_ptr = inp;
     token_len = input_ptr - token_ptr;
 
-    String* name = string_from_token();
+    String* name = string_intern_token();
     return name;
 }
 
