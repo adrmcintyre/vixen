@@ -429,34 +429,6 @@ Dict* dict_new_presized(u16 min_used)
     return dict_internal_new(new_keys, 0);
 }
 
-Dict* dict_new_from_items(Value* keys_and_values, u16 length)
-{
-    Value* kvs = keys_and_values;
-
-    for (u16 i = 0; i < length; i++) {
-        if (kvs->k != kind_string) {
-            die("string keys only please!");
-        }
-        kvs += 2;
-    }
-
-    Dict *dict = dict_new_presized(length);
-
-    kvs = keys_and_values;
-
-    for (u16 i = 0; i < length; i++) {
-        Value key = *kvs;
-        kvs++;
-
-        Value value = *kvs;
-        kvs++;
-
-        dict_set_item(dict, key, value);
-    }
-
-    return dict;
-}
-
 static void dict_delete_common(
     Dict *dict,
     u16 hash,

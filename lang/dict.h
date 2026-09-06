@@ -38,8 +38,7 @@ typedef struct Dict {
 } Dict;
 
 extern Dict* dict_new();
-extern Dict* dict_new_presized(u16 minused);
-extern Dict* dict_new_from_items(Value* keys_and_values, u16 length);
+extern Dict* dict_new_presized(u16 min_used);
 extern Value dict_get_item(Dict *dict, Value key);
 extern void dict_set_item(Dict* dict, Value key, Value value);
 extern int dict_has_item(Dict* dict, Value key);
