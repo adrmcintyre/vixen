@@ -347,10 +347,11 @@ void parse_class()
 {
     if (control_stack->len != 0) parser_die("class only allowed at top level");
     if (active_class != 0) parser_die("class not allowed inside class");
-    if (!lex_word()) parser_die("missing name");
-    if (lookup_keyword()) parser_die("reserved word cannot be used here");
 
-    String* name = string_from_token();
+    String* name = lex_word();
+    if (name == 0) parser_die("missing name");
+    if (lookup_keyword(name)) parser_die("reserved word cannot be used here");
+
     Value nameval = {.k=kind_string, .u=to_p16(name)};
 
     Class* klass = class_new();
@@ -392,10 +393,10 @@ void parse_func()
 {
     if (control_stack->len != 0) parser_die("func only allowed at top level or class level");
 
-    if (!lex_word()) parser_die("missing name");
-    if (lookup_keyword()) parser_die("reserved word cannot be used here");
+    String* name = lex_word();
+    if (name==0) parser_die("missing name");
+    if (lookup_keyword(name)) parser_die("reserved word cannot be used here");
 
-    String* name = string_from_token();
     Value nameval = {.k=kind_string, .u=to_p16(name)};
 
     Func* func = func_new();
@@ -411,9 +412,9 @@ void parse_func()
     }
     if (!lex_char(')')) {
         while(1) {
-            if (!lex_word()) parser_die("missing parameter name");
-            if (lookup_keyword()) parser_die("reserved word cannot be used here");
-            String* argname = string_from_token();
+            String* argname = lex_word();
+            if (argname == 0) parser_die("missing parameter name");
+            if (lookup_keyword(argname)) parser_die("reserved word cannot be used here");
             Value argnameval = {.k=kind_string, .u=to_p16(argname)};
 
             if (dict_has_item(func_slots, argnameval)) {
@@ -590,25 +591,22 @@ void parse_until()
 void parse_for()
 {
     push_control(op_for);
-    if (!lex_word()) {
-        die("expected identifier");
-    }
-    if (lookup_keyword()) {
+    String* name1 = lex_word();
+    String* name2 = 0;
+    if (name1 == 0) die("expected identifier");
+    if (lookup_keyword(name1)) {
         die("reserved word cannot be used here");
     }
-    String* name1 = string_from_token();
-    String* name2 = 0;
     if (lex_char(',')) {
-        if (!lex_word()) {
-            die("expected identifier");
-        }
-        if (lookup_keyword()) {
+        name2 = lex_word();
+        if (name2 == 0) die("expected identifier");
+        if (lookup_keyword(name2)) {
             die("reserved word cannot be used here");
         }
-        name2 = string_from_token();
     }
 
-    if (!(lex_word() && lookup_keyword() && kw.op == op_in)) {
+    String* kwd = lex_word();
+    if (!(kwd != 0 && lookup_keyword(kwd) && kw.op == op_in)) {
         die("expected 'in' keyword");
     }
 
@@ -721,8 +719,9 @@ u8 parse_cmd_args()
 // - `<expr> = <expr>`
 void parse_stmt()
 {
-    if (lex_word()) {
-        if (lookup_keyword()) {
+    String* name = lex_word();
+    if (name != 0) {
+        if (lookup_keyword(name)) {
             Op opcode = kw.op;
             if (kw.info >= info_cmd0 && kw.info < info_cmd_any) {
                 OpData save = kw;
@@ -750,7 +749,6 @@ void parse_stmt()
 
         // <name> = <expr>
         if (lex_char('=')) {
-            String* name = string_from_token();
             parse_expr();
             emit_assign(name);
             return;

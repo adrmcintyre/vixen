@@ -219,7 +219,7 @@ u16 hash_mem(const u8* p, u16 len);
 
 // Keywords
 extern OpData kw;
-bool lookup_keyword();
+bool lookup_keyword(String* word);
 
 // Operators
 extern const u8 binops[];
@@ -263,7 +263,7 @@ extern const u8* input_ptr;
 extern const u8* token_ptr;
 extern i16 token_len;
 bool lex_char(u8 ch);
-bool lex_word();
+String* lex_word();
 void unlex_word();
 bool lex_peek_stmt_end();
 Value lex_number();

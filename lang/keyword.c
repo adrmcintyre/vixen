@@ -82,21 +82,20 @@ const u8* keywords[] = {
     keywords_gow
 };
 
-// Returns 1 if token_ptr..token_ptr+token_len identifies a keyword
-// with kw set to op and info.
+// Returns 1 if word identifies a keyword, leaving kw set to op and info.
 OpData kw;
 
 // TODO doc
-bool lookup_keyword()
+bool lookup_keyword(String* word)
 {
-    const u8 *token_end_ptr = token_ptr + token_len;
-    u8 ch = *token_ptr;
+    const u8 *word_end_ptr = word->data + word->len;
+    u8 ch = *word->data;
     u16 i = ch & 7;
     const u8 *kwd_ptr = keywords[i];
 
     kw.op = (Op) *kwd_ptr++;
     while(kw.op != fail) {
-        const u8* p = token_ptr;
+        const u8* p = word->data;
 
         kw.info = (OpInfo) *kwd_ptr++;
 
@@ -105,7 +104,7 @@ bool lookup_keyword()
             ch = *p;
             kwd_ch = *kwd_ptr++;
             if (kwd_ch & 0x80) {
-                if (p != token_end_ptr) break;
+                if (p != word_end_ptr) break;
                 return true;
             }
             if (kwd_ch > ch) {

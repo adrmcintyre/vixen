@@ -434,18 +434,17 @@ void parse_terminal_unindexed()
 
     if (parse_lit_dict()) return;
 
-    if (!lex_word()) {
+    String* word = lex_word();
+    if (word == 0) {
         parser_die("expecting identifier or value");
     }
 
-    if (lookup_keyword()) {
+    if (lookup_keyword(word)) {
         parse_keyword_args();
-        return;
     }
-
-    String* name = string_from_token();
-
-    emit_ident(name);
+    else {
+        emit_ident(word);
+    }
 }
 
 // Parses a property or method reference or invocation, and emits
@@ -461,8 +460,8 @@ bool parse_dot()
 {
     if (!lex_char('.')) return false;
 
-    if (!lex_word()) die("expected method or property name");
-    String* name = string_from_token();
+    String* name = lex_word();
+    if (name == 0) die("expected method or property name");
 
     u16 nargs = parse_args();
     if (nargs > 0) {
@@ -494,8 +493,8 @@ bool parse_lit_object()
     String* key;
     if (!lex_char('}')) {
         push_opdata(opdata_mark);
-        if (!lex_word()) die("missing property");
-        key = string_from_token();
+        String* key = lex_word();
+        if (key == 0) die("missing property");
         emit_op(op_lit_string);
         emit_string(key);
 
@@ -505,8 +504,8 @@ bool parse_lit_object()
         nargs += 1;
         while(lex_char(',')) {
             push_opdata(opdata_mark);
-            if (!lex_word()) die("missing property");
-            key = string_from_token();
+            String* key = lex_word();
+            if (key == 0) die("missing property");
             emit_op(op_lit_string);
             emit_string(key);
 

@@ -160,11 +160,11 @@ String* lex_string()
 
 // Looks for a word in the input /[_a-zA-z][_a-zA-Z0-9]*/
 //
-// Returns 1 if a word was recognised, setting token_ptr and
+// Returns String* if a word was recognised, setting token_ptr and
 // advancing input_ptr.
 //
 // Otherwise returns 0, leaving input_ptr unchanged.
-bool lex_word()
+String* lex_word()
 {
     lex_space();
 
@@ -190,7 +190,8 @@ bool lex_word()
     input_ptr = inp;
     token_len = input_ptr - token_ptr;
 
-    return true;
+    String* name = string_from_token();
+    return name;
 }
 
 // Resets the input ptr to the start of the last word recognised. 
