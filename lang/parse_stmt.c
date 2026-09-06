@@ -607,9 +607,10 @@ void parse_for()
         }
         name2 = string_from_token();
     }
-    if (!lex_word()) die("lex_word bork");
-    if (!lookup_keyword()) die("lookup_keyword bork");
-    if (kw.op != op_in) die("kw.op != in bork");
+
+    if (!(lex_word() && lookup_keyword() && kw.op == op_in)) {
+        die("expected 'in' keyword");
+    }
 
     parse_expr();
     if (lex_char(',')) {
