@@ -2,76 +2,83 @@
 
 // TODO - document table format
 
+typedef struct {
+    char *name;
+    Op op;
+    OpInfo info;
+} Keyword;
+
 // each table should be arranged in ascii order
-const u8 keywords_hpx[] = {
-    op_pop,      info_fn1,      'p','o','p',
-    op_print,    info_cmd_any,  'p','r','i','n','t',
-    fail, 0
+const Keyword keywords_hpx[] = {
+    {"pop",         op_pop,         info_fn1,       },
+    {"print",       op_print,       info_cmd_any,   },
+    {0,             fail,           0,              },
 };
-const u8 keywords_aiqy[] = {
-    op_inf,      info_const,    'I','n','f',
-
-    op_abs,      info_fn1,      'a','b','s',
-    op_append,   info_cmd2,     'a','p','p','e','n','d',
-    op_asc,      info_fn1,      'a','s','c',
-
-    op_if,       info_control,  'i','f',
-    op_in,       info_control,  'i','n',
-    op_input,    info_cmd_any,  'i','n','p','u','t',
-    op_int,      info_fn1,      'i','n','t',
-    fail, 0
+const Keyword keywords_aiqy[] = {
+    {"Inf",         op_inf,         info_const,    },
+     
+    {"abs",         op_abs,         info_fn1,      },
+    {"append",      op_append,      info_cmd2,     },
+    {"asc",         op_asc,         info_fn1,      },
+     
+    {"if",          op_if,          info_control,  },
+    {"in",          op_in,          info_control,  },
+    {"input",       op_input,       info_cmd_any,  },
+    {"int",         op_int,         info_fn1,      },
+    {0,             fail,           0,             },
 };
-const u8 keywords_bjrz[] = {
-    op_break,    info_control,  'b','r','e','a','k',
-    op_repeat,   info_control,  'r','e','p','e','a','t',
-    op_return,   info_control,  'r','e','t','u','r','n',
-    op_rnd,      info_fn0,      'r','n','d',
-    fail, 0
+const Keyword keywords_bjrz[] = {
+    {"break",       op_break,       info_control,  },
+     
+    {"repeat",      op_repeat,      info_control,  },
+    {"return",      op_return,      info_control,  },
+    {"rnd",         op_rnd,         info_fn0,      },
+    {0,             fail,           0,             },
 };
-const u8 keywords_cks[] = {
-    op_chr,      info_fn1,      'c','h','r',
-    op_class,    info_control,  'c','l','a','s','s',
-    op_continue, info_control,  'c','o','n','t','i','n','u','e',
-
-    op_sgn,      info_fn1,      's','g','n',
-    op_sqr,      info_fn1,      's','q','r',
-    op_stop,     info_cmd0,     's','t','o','p',
-    op_str,      info_fn1,      's','t','r',
-    fail, 0
+const Keyword keywords_cks[] = {
+    {"chr",         op_chr,         info_fn1,      },
+    {"class",       op_class,       info_control,  },
+    {"continue",    op_continue,    info_control,  },
+     
+    {"sgn",         op_sgn,         info_fn1,      },
+    {"sqr",         op_sqr,         info_fn1,      },
+    {"stop",        op_stop,        info_cmd0,     },
+    {"str",         op_str,         info_fn1,      },
+    {0,             fail,           0,             },
 };
-const u8 keywords_dlt[] = {
-    op_true,     info_const,    'T','r','u','e',
-
-    op_len,      info_fn1,      'l','e','n',
-    fail, 0
+const Keyword keywords_dlt[] = {
+    {"True",        op_true,        info_const,    },
+    
+    {"len",         op_len,         info_fn1,      },
+    {0,             fail,           0,             },
 };
-const u8 keywords_emu[] = {
-    op_else,     info_control,  'e','l','s','e',
-    op_end,      info_control,  'e','n','d',
-    op_endif,    info_control,  'e','n','d','i','f',
-    op_extend,   info_cmd2,     'e','x','t','e','n','d',
-
-    op_until,    info_control,  'u','n','t','i','l',
-    fail, 0
+const Keyword keywords_emu[] = {
+    {"else",        op_else,        info_control,  },
+    {"end",         op_end,         info_control,  },
+    {"endif",       op_endif,       info_control,  },
+    {"extend",      op_extend,      info_cmd2,     },
+     
+    {"until",       op_until,       info_control,  },
+    {0,             fail,           0,             },
 };
-const u8 keywords_fnv[] = {
-    op_false,    info_const,    'F','a','l','s','e',
-    op_nan,      info_const,    'N','a','N',
-    op_none,     info_const,    'N','o','n','e',
-    op_float,    info_fn1,      'f','l','o','a','t',
-    op_for,      info_control,  'f','o','r',
-    op_func,     info_control,  'f','u','n','c',
-    op_next,     info_control,  'n','e','x','t',
-    fail, 0
+const Keyword keywords_fnv[] = {
+    {"False",       op_false,       info_const,    },
+    {"NaN",         op_nan,         info_const,    },
+    {"None",        op_none,        info_const,    },
+    {"float",       op_float,       info_fn1,      },
+    {"for",         op_for,         info_control,  },
+    {"func",        op_func,        info_control,  },
+    {"next",        op_next,        info_control,  },
+    {0,             fail,           0,             },
 };
-const u8 keywords_gow[] = {
-    op_wend,     info_control,  'w','e','n','d',
-    op_while,    info_control,  'w','h','i','l','e',
-    fail, 0
+const Keyword keywords_gow[] = {
+    {"wend",        op_wend,        info_control,  },
+    {"while",       op_while,       info_control,  },
+    {0,             fail,           0,             },
 };
 
 // Table of keywords indexed by the bottom 3 bits of the first character.
-const u8* keywords[] = {
+const Keyword* keywords[] = {
     keywords_hpx,
     keywords_aiqy,
     keywords_bjrz,
@@ -82,45 +89,49 @@ const u8* keywords[] = {
     keywords_gow
 };
 
-// Returns 1 if word identifies a keyword, leaving kw set to op and info.
-OpData kw;
-
 // TODO doc
-bool lookup_keyword(String* word)
+OpData lookup_keyword(const u8* word_ptr, u16 word_len)
 {
-    const u8 *word_end_ptr = word->data + word->len;
-    u8 ch = *word->data;
+    const u8 *word_end_ptr = word_ptr + word_len;
+    u8 ch = *word_ptr;
     u16 i = ch & 7;
-    const u8 *kwd_ptr = keywords[i];
+    const Keyword *kwd_ptr = keywords[i];
 
-    kw.op = (Op) *kwd_ptr++;
-    while(kw.op != fail) {
-        const u8* p = word->data;
-
-        kw.info = (OpInfo) *kwd_ptr++;
-
-        u8 kwd_ch;
-        while(1) {
-            ch = *p;
-            kwd_ch = *kwd_ptr++;
-            if (kwd_ch & 0x80) {
-                if (p != word_end_ptr) break;
-                return true;
-            }
-            if (kwd_ch > ch) {
-                return false;
-            }
-            if (kwd_ch < ch) {
-                // skip until id byte
-                while(1) {
-                    kwd_ch = *kwd_ptr++;
-                    if (kwd_ch & 0x80) break;
+    while (kwd_ptr->op != fail) {
+        const u8* namep = (const u8*) kwd_ptr->name;
+        const u8* wordp = word_ptr;
+        while (1) {
+            u8 namech = *namep;
+            if (namech == 0) {
+                // exact match
+                if (wordp == word_end_ptr) {
+                    return (OpData){.op=kwd_ptr->op, .info=kwd_ptr->info};
                 }
+                // input was just a prefix of the current keyword
                 break;
             }
-            p++;
+            u8 wordch = *wordp;
+            if (namech < wordch) {
+                break;
+            }
+            if (namech > wordch) {
+                return (OpData){.op=fail};
+            }
+            namep++;
+            wordp++;
         }
-        kw.op = (Op) kwd_ch;
+        kwd_ptr++;
     }
-    return false;
+    return (OpData){.op=fail};
+}
+
+OpData opdata_from_value(Value value)
+{
+    return (OpData){.op=(value.u>>8), .info=(value.u & 0xff)};
+}
+
+Value opdata_to_value(OpData opdata)
+{
+    u16 u = ((u16)opdata.op)<<8 | (u16)(opdata.info);
+    return (Value){.k=kind_keyword, .u=u};
 }

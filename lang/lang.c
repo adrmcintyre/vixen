@@ -20,6 +20,13 @@ __attribute__((noreturn)) void die(const char* msg)
     exit(1);
 }
 
+__attribute__((noreturn)) void unreachable()
+{
+    fflush(stdout);
+    fprintf(stderr, "!!! UNREACHABLE CODE !!!\n");
+    exit(1);
+}
+
 // Print msg generated at compile time, and abort the program.
 void parser_die(const char* msg)
 {

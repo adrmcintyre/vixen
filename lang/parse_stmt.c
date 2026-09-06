@@ -348,10 +348,7 @@ void parse_class()
     if (control_stack->len != 0) parser_die("class only allowed at top level");
     if (active_class != 0) parser_die("class not allowed inside class");
 
-    String* name = lex_word();
-    if (name == 0) parser_die("missing name");
-    if (lookup_keyword(name)) parser_die("reserved word cannot be used here");
-
+    String* name = must_lex_ident();
     Value nameval = {.k=kind_string, .u=to_p16(name)};
 
     Class* klass = class_new();
@@ -393,10 +390,7 @@ void parse_func()
 {
     if (control_stack->len != 0) parser_die("func only allowed at top level or class level");
 
-    String* name = lex_word();
-    if (name==0) parser_die("missing name");
-    if (lookup_keyword(name)) parser_die("reserved word cannot be used here");
-
+    String* name = must_lex_ident();
     Value nameval = {.k=kind_string, .u=to_p16(name)};
 
     Func* func = func_new();
@@ -412,9 +406,7 @@ void parse_func()
     }
     if (!lex_char(')')) {
         while(1) {
-            String* argname = lex_word();
-            if (argname == 0) parser_die("missing parameter name");
-            if (lookup_keyword(argname)) parser_die("reserved word cannot be used here");
+            String* argname = must_lex_ident();
             Value argnameval = {.k=kind_string, .u=to_p16(argname)};
 
             if (dict_has_item(func_slots, argnameval)) {
@@ -583,6 +575,19 @@ void parse_until()
     end_loop(op_jfalse);
 }
 
+// TODO - doc
+void must_lex_op_in()
+{
+    Value wordval = lex_word();
+    if (wordval.k == kind_keyword) {
+        OpData opdata = opdata_from_value(wordval);
+        if (opdata.op == op_in) {
+            return;
+        }
+    }
+    parser_die("expecting 'in' keyword");
+}
+
 // Parses the remainder of a `for` control statement.
 //
 // `/for/ <ident> in <expr>` - iterate dict keys / array values
@@ -591,29 +596,18 @@ void parse_until()
 void parse_for()
 {
     push_control(op_for);
-    String* name1 = lex_word();
+    String* name1 = must_lex_ident();
     String* name2 = 0;
-    if (name1 == 0) die("expected identifier");
-    if (lookup_keyword(name1)) {
-        die("reserved word cannot be used here");
-    }
     if (lex_char(',')) {
-        name2 = lex_word();
-        if (name2 == 0) die("expected identifier");
-        if (lookup_keyword(name2)) {
-            die("reserved word cannot be used here");
-        }
+        name2 = must_lex_ident();
     }
 
-    String* kwd = lex_word();
-    if (!(kwd != 0 && lookup_keyword(kwd) && kw.op == op_in)) {
-        die("expected 'in' keyword");
-    }
+    must_lex_op_in();
 
     parse_expr();
     if (lex_char(',')) {
         if (name2 != 0) {
-            die("range not expected with 'for <key>,<value>' syntax");
+            die("'for <key>,<value>' syntax does not accept a range");
         }
         parse_expr();
 
@@ -684,8 +678,7 @@ void parse_control_stmt(Op op)
     case op_func: parse_func(); break;
     case op_return: parse_return(); break;
     case op_end: parse_end(); break;
-    default:
-        die("unreachable");
+    default: unreachable();
     }
 }
 
@@ -719,43 +712,49 @@ u8 parse_cmd_args()
 // - `<expr> = <expr>`
 void parse_stmt()
 {
-    String* name = lex_word();
-    if (name != 0) {
-        if (lookup_keyword(name)) {
-            Op opcode = kw.op;
-            if (kw.info >= info_cmd0 && kw.info < info_cmd_any) {
-                OpData save = kw;
+    Value word = lex_word();
+    switch (word.k) {
+        case kind_keyword: {
+            OpData opdata = opdata_from_value(word);
+            if (opdata.info >= info_cmd0 && opdata.info < info_cmd_any) {
                 u16 nargs = parse_cmd_args();
-                kw = save;
-                u16 want = kw.info-info_cmd0;
+                u16 want = opdata.info-info_cmd0;
                 if (nargs < want) parser_die("too few arguments");
                 if (nargs > want) parser_die("too many arguments");
-                emit_op(opcode);
+                emit_op(opdata.op);
             }
-            else if (kw.info == info_cmd_any) {
+            else if (opdata.info == info_cmd_any) {
                 // TODO check arg counts
                 u8 nargs = parse_cmd_args();
-                emit_op(opcode);
+                emit_op(opdata.op);
                 emit_byte(nargs);
             }
-            else if (kw.info == info_control) {
-                parse_control_stmt(opcode);
+            else if (opdata.info == info_control) {
+                parse_control_stmt(opdata.op);
             }
             else {
                 parser_die("expected a command or control statement");
             }
             return;
         }
-
-        // <name> = <expr>
-        if (lex_char('=')) {
-            parse_expr();
-            emit_assign(name);
-            return;
+        case kind_string: {
+            // <name> = <expr>
+            if (lex_char('=')) {
+                parse_expr();
+                emit_assign((String*) from_p16(word.u));
+                return;
+            }
+            else {
+                unlex_word();
+                break;
+            }
         }
+        case kind_fail:
+            break;
+        default:
+            unreachable();
     }
 
-    unlex_word();
     parse_expr();
 
     // <expr> = <expr>
@@ -800,7 +799,7 @@ void parse_stmt()
                 emit_op(op_set_prop);
                 break;
             default:
-                die("invalid asssignment");
+                unreachable();
         }
         memcpy(code_ptr, last_op_and_args+1, last_op_len-1);
         code_ptr += last_op_len-1;

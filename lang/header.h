@@ -136,7 +136,11 @@ typedef struct {
 
 // Enumerates each value type.
 typedef enum {
-    kind_fail,      // an internal failure
+    // internal kinds, not exposed to the user
+    kind_fail,      // general failure
+    kind_keyword,   // keyword data
+    kind_token,     // a token in the program text
+
     kind_none,      // None - value is ignored
     kind_bool,      // True or False
     kind_int,       // an integer
@@ -144,7 +148,6 @@ typedef enum {
     kind_string,    // a String*
     kind_array,     // an Array*
     kind_dict,      // a Dict*
-    kind_token,     // a token in the program text
     kind_func,      // a Func*
     kind_class,     // a Class*
     kind_object,    // an Object*
@@ -215,11 +218,13 @@ extern const u8* prog_base;
 
 // Utils
 __attribute__((noreturn)) void die(const char* msg);
+__attribute__((noreturn)) void unreachable();
 u16 hash_mem(const u8* p, u16 len);
 
 // Keywords
-extern OpData kw;
-bool lookup_keyword(String* word);
+OpData lookup_keyword(const u8* word, u16 word_len);
+OpData opdata_from_value(Value value);
+Value opdata_to_value(OpData opdata);
 
 // Operators
 extern const u8 binops[];
@@ -263,7 +268,8 @@ extern const u8* input_ptr;
 extern const u8* token_ptr;
 extern i16 token_len;
 bool lex_char(u8 ch);
-String* lex_word();
+Value lex_word();
+String* must_lex_ident();
 void unlex_word();
 bool lex_peek_stmt_end();
 Value lex_number();

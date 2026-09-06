@@ -164,7 +164,7 @@ String* lex_string()
 // advancing input_ptr.
 //
 // Otherwise returns 0, leaving input_ptr unchanged.
-String* lex_word()
+Value lex_word()
 {
     lex_space();
 
@@ -177,7 +177,7 @@ String* lex_word()
             (ch >= 'a' && ch <= 'z') ||
             (ch >= 'A' && ch <= 'Z')
     )) {
-        return false;
+        return (Value){.k=kind_fail};
     }
 
     do {
@@ -190,8 +190,13 @@ String* lex_word()
     input_ptr = inp;
     token_len = input_ptr - token_ptr;
 
+    OpData opdata = lookup_keyword(token_ptr, token_len);
+    if (opdata.op != fail) {
+        return opdata_to_value(opdata);
+    }
+
     String* name = string_intern_token();
-    return name;
+    return (Value){.k=kind_string, .u=to_p16(name)};
 }
 
 // Resets the input ptr to the start of the last word recognised. 
@@ -200,6 +205,23 @@ void unlex_word()
 {
     input_ptr = token_ptr;
 }
+
+// TODO - doc
+String* must_lex_ident()
+{
+    Value keyval = lex_word();
+    switch (keyval.k) {
+        case kind_fail:
+            parser_die("expecting identifier");
+        case kind_keyword:
+            parser_die("unexpected keyword");
+        case kind_string: {
+            return (String*) from_p16(keyval.u);
+        }
+        default: unreachable();
+    }
+}
+
 
 // Looks in the input for one of the operators from the supplied ops table.
 //

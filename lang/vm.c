@@ -1545,7 +1545,7 @@ void vm_iter_item()
             break;
         }
         default:
-            vm_die("unreachable");
+            unreachable();
     }
 }
    
@@ -1594,7 +1594,7 @@ void vm_iter_kv()
             break;
         }
         default:
-            vm_die("unreachable");
+            unreachable();
     }
 
 }

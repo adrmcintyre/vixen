@@ -35,16 +35,14 @@ void expr_init()
 
 void push_opdata(OpData opdata)
 {
-    Value v;
-    v.k = kind_int;
-    v.u = ((u16)opdata.op) << 8 | ((u16)opdata.info);
+    Value v = opdata_to_value(opdata);
     array_append(pending_ops, v);
 }
 
 OpData peek_opdata()
 {
     Value v = array_get(pending_ops, -1);
-    return (OpData){.op = v.u>>8, .info = v.u & 0xff};
+    return opdata_from_value(v);
 }
 
 void drop_opdata()
@@ -296,15 +294,12 @@ bool parse_index_arg()
 // - <empty>
 // - `()`
 // - `( <expr> , ... )`
-void parse_keyword_args()
+void parse_keyword_args(OpData kw)
 {
     if (kw.info == info_const) {
     }
     else if (kw.info >= info_fn0 && kw.info <= info_fn3) {
-        // parse_args may trample kw
-        OpData save = kw;
         u16 nargs = parse_args();
-        kw = save;
         if (nargs == 0) parser_die("missing arguments '(...)'");
         u16 want = kw.info-info_fn0;
         if (nargs-1 < want) parser_die("too few arguments");
@@ -434,16 +429,18 @@ void parse_terminal_unindexed()
 
     if (parse_lit_dict()) return;
 
-    String* word = lex_word();
-    if (word == 0) {
-        parser_die("expecting identifier or value");
-    }
-
-    if (lookup_keyword(word)) {
-        parse_keyword_args();
-    }
-    else {
-        emit_ident(word);
+    Value wordval = lex_word();
+    switch (wordval.k) {
+        case kind_fail:
+            parser_die("expecting identifier or value");
+        case kind_keyword:
+            parse_keyword_args(opdata_from_value(wordval));
+            break;
+        case kind_string:
+            emit_ident((String*) from_p16(wordval.u));
+            break;
+        default:
+            unreachable();
     }
 }
 
@@ -460,9 +457,7 @@ bool parse_dot()
 {
     if (!lex_char('.')) return false;
 
-    String* name = lex_word();
-    if (name == 0) die("expected method or property name");
-
+    String* name = must_lex_ident();
     u16 nargs = parse_args();
     if (nargs > 0) {
         emit_op(op_call_method);
@@ -490,33 +485,27 @@ bool parse_lit_object()
     if (!lex_char('{')) return false;
 
     u16 nargs = 0;
-    String* key;
     if (!lex_char('}')) {
         push_opdata(opdata_mark);
-        String* key = lex_word();
-        if (key == 0) die("missing property");
+        String* key = must_lex_ident();
         emit_op(op_lit_string);
         emit_string(key);
 
-        if (!lex_char(':')) parser_die("missing ':'");
+        if (!lex_char(':')) parser_die("expecting ':'");
         parse_expr();
-
         nargs += 1;
+
         while(lex_char(',')) {
             push_opdata(opdata_mark);
-            String* key = lex_word();
-            if (key == 0) die("missing property");
+            key = must_lex_ident();
             emit_op(op_lit_string);
             emit_string(key);
 
-            if (!lex_char(':')) parser_die("missing ':'");
+            if (!lex_char(':')) parser_die("expecting ':'");
             parse_expr();
-
             nargs += 1;
         }
-        if (!lex_char('}')) {
-            parser_die("missing '}'");
-        }
+        if (!lex_char('}')) parser_die("expecting '}'");
     }
 
     emit_op(op_lit_object);
