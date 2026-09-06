@@ -23,7 +23,7 @@ Func* active_func;
 u8 slot_max = 64;
 
 // Initialises the statement parser.
-void stmt_init()
+void stmt_init(void)
 {
     // TODO move to separate init func?
     if (control_stack == 0) {
@@ -61,7 +61,7 @@ void push_control(Op op)
 
 // Pops and returns the op corresponding to the most recently started
 // control structure. Returns fail if not inside a control structure.
-Op pop_control()
+Op pop_control(void)
 {
     Value opval = array_pop(control_stack);
     if (opval.k == kind_fail) {
@@ -71,7 +71,7 @@ Op pop_control()
 }
 
 // Records the beginning of a loop construct.
-void begin_loop()
+void begin_loop(void)
 {
     array_append(begin_loop_stack, (Value){.k=kind_int, .u=to_p16(code_ptr)});
     array_append(end_loop_stack, (Value){.k=kind_int, .u=end_loop_count});
@@ -142,7 +142,7 @@ void emit_forward_jump(u8 jump_op)
 }
 
 // Resolves the most recent forward jump to the current location.
-void resolve_forward_jump()
+void resolve_forward_jump(void)
 {
     Value refval = array_pop(forward_jump_stack);
     if (refval.k == kind_fail) {
@@ -163,7 +163,7 @@ void emit_potential_method_ref(String* name)
 
 // Resolves any ambiguous identifier references inside the active
 // class's method definitions.
-void resolve_potential_method_refs()
+void resolve_potential_method_refs(void)
 {
     u8* saved_code_ptr = code_ptr;
     while (1) {
@@ -343,7 +343,7 @@ void emit_for2(String* key_name, String* value_name)
 // is invalid.
 //
 // - `/class/ <ident>`
-void parse_class()
+void parse_class(void)
 {
     if (control_stack->len != 0) parser_die("class only allowed at top level");
     if (active_class != 0) parser_die("class not allowed inside class");
@@ -363,7 +363,7 @@ void parse_class()
 }
 
 // Returns a newly allocated function descriptor.
-Func* func_new()
+Func* func_new(void)
 {
     // TODO could include name field (String)
     Func* func = (Func*) heap_alloc(sizeof(Func));
@@ -383,7 +383,7 @@ Func* func_new()
 //
 // `/func/ <ident> ()`
 // `/func/ <ident> ( <ident>, ... )`
-void parse_func()
+void parse_func(void)
 {
     if (control_stack->len != 0) parser_die("func only allowed at top level or class level");
 
@@ -450,7 +450,7 @@ void parse_func()
 //
 // - `/return/`
 // - `/return/ <expr>`
-void parse_return()
+void parse_return(void)
 {
     if (active_func == 0) parser_die("'return' is not inside a func");
 
@@ -466,7 +466,7 @@ void parse_return()
 // Tidies up at the end of a class or function definition.
 //
 // - `/end/`
-void parse_end()
+void parse_end(void)
 {
     // end of a class definition?
     if (control_stack->len == 0 && active_class != 0) {
@@ -491,7 +491,7 @@ void parse_end()
 // Parses the remainder of an `if` control statement.
 //
 // `/if/ <expr>`
-void parse_if()
+void parse_if(void)
 {
     push_control(op_if);
     parse_expr();
@@ -503,7 +503,7 @@ void parse_if()
 // Aborts if an `if` block is not currently active.
 //
 // `/else/`
-void parse_else()
+void parse_else(void)
 {
     if (pop_control() != op_if) parser_die("'else' without 'if'");
     push_control(op_else);
@@ -521,7 +521,7 @@ void parse_else()
 // Aborts if an `if` block is not currently active.
 //
 // `/endif/`
-void parse_endif()
+void parse_endif(void)
 {
     Op popped = pop_control();
     if (popped != op_if && popped != op_else) parser_die("'endif' without 'if'");
@@ -532,7 +532,7 @@ void parse_endif()
 // Parses the remainder of a `while` control statement.
 //
 // `/while/ <expr>`
-void parse_while()
+void parse_while(void)
 {
     push_control(op_while);
     begin_loop();
@@ -545,7 +545,7 @@ void parse_while()
 // Aborts if a `while` block is not currently active.
 //
 // `/wend/`
-void parse_wend()
+void parse_wend(void)
 {
     if (pop_control() != op_while) parser_die("'wend' without 'while'");
     end_loop(op_jump);
@@ -554,7 +554,7 @@ void parse_wend()
 // Parses the remainder of a `repeat` control statement.
 //
 // `/repeat/`
-void parse_repeat()
+void parse_repeat(void)
 {
     push_control(op_repeat);
     begin_loop();
@@ -565,7 +565,7 @@ void parse_repeat()
 // Aborts if a `repeat` block is not currently active.
 //
 // `/until/ <expr>`
-void parse_until()
+void parse_until(void)
 {
     if (pop_control() != op_repeat) parser_die("'until' without 'repeat'");
     parse_expr();
@@ -573,7 +573,7 @@ void parse_until()
 }
 
 // TODO - doc
-void must_lex_op_in()
+void must_lex_op_in(void)
 {
     Value wordval = lex_word();
     if (wordval.k == kind_keyword) {
@@ -590,7 +590,7 @@ void must_lex_op_in()
 // `/for/ <ident> in <expr>` - iterate dict keys / array values
 // `/for/ <ident> , <ident> in <expr>` - iterate keys and values
 // `/for/ <ident> in <expr> , <expr>` - iterate an integer range
-void parse_for()
+void parse_for(void)
 {
     push_control(op_for);
     String* name1 = must_lex_ident();
@@ -623,7 +623,7 @@ void parse_for()
 // Aborts if a `for` block is not currently active.
 //
 // `/next/`
-void parse_next()
+void parse_next(void)
 {
     if (pop_control() != op_for) parser_die("'next' without 'for'");
     end_loop(op_jump);
@@ -635,7 +635,7 @@ void parse_next()
 // Aborts if a `while` or `until` block is not currently active.
 //
 // `/break/`
-void parse_break()
+void parse_break(void)
 {
     if (!emit_end_loop_jump(op_jump)) parser_die("'break' is not in a loop");
 }
@@ -643,7 +643,7 @@ void parse_break()
 // Parses the remainder of a `continue` statement.
 //
 // Aborts if a loop block is not currenly active.
-void parse_continue()
+void parse_continue(void)
 {
     Value refval = array_get(begin_loop_stack, -1);
     if (refval.k == kind_fail) parser_die("'continue' is not in a loop");
@@ -686,7 +686,7 @@ void parse_control_stmt(Op op)
 //
 // `(cmd)`
 // `(cmd) <expr>, ...`
-u8 parse_cmd_args()
+u8 parse_cmd_args(void)
 {
     if (lex_peek_stmt_end()) return 0;
 
@@ -707,7 +707,7 @@ u8 parse_cmd_args()
 // - `<control-stmt>`
 // - `<ident> = <expr>`
 // - `<expr> = <expr>`
-void parse_stmt()
+void parse_stmt(void)
 {
     Value word = lex_word();
     switch (word.k) {
@@ -808,7 +808,7 @@ void parse_stmt()
 }
 
 // Initialises the parser.
-void parse_start()
+void parse_start(void)
 {
     // TODO should be somewhere better for this...
     heap_init();
@@ -828,7 +828,7 @@ void parse_start()
 // - `# comment text`
 // - `;`
 // - `<newline>`
-void parse_line()
+void parse_line(void)
 {
     expr_init();
 
@@ -847,7 +847,7 @@ void parse_line()
 // Wraps up parsing a program.
 //
 // Aborts if input has not been exhausted, or there are unclosed control blocks.
-void parse_finish()
+void parse_finish(void)
 {
     if (!lex_end_of_stream()) parser_die("unexpected characters at end of line");
 

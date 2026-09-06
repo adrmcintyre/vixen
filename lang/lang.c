@@ -20,7 +20,7 @@ __attribute__((noreturn)) void die(const char* msg)
     exit(1);
 }
 
-__attribute__((noreturn)) void unreachable()
+__attribute__((noreturn)) void unreachable(void)
 {
     fflush(stdout);
     fprintf(stderr, "!!! UNREACHABLE CODE !!!\n");
@@ -42,7 +42,7 @@ u8* code_base;
 u8* vm_stack_base;
 
 // Initialise the memory map.
-void mem_init()
+void mem_init(void)
 {
     mem_base = (u8*)malloc(mem_size);
     heap_base = mem_base + mem_heap_offset;

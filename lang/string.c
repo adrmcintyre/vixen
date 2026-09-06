@@ -27,7 +27,7 @@ String* interned_string_bom;
 String* interned_string_unknown;
 
 // Initialises the strings module.
-void strings_init()
+void strings_init(void)
 {
     interned_strings = dict_new();
     last_token = (Token*) heap_alloc(sizeof(Token));
@@ -53,8 +53,9 @@ void strings_init()
     for(int i=0; i<256; i++) interned_char_strings[i] = 0;
 }
 
+// TODO convert to take token args
 // Returns an interned string from the last lexed token.
-String* string_intern_token()
+String* string_intern_token(void)
 {
     if (token_len == 1) {
         return string_from_char(*token_ptr);

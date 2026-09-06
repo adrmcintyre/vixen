@@ -16,18 +16,19 @@ typedef struct HeapObj {
 u8* heap_top;
 u8* heap_end;
 
-void heap_init() {
+void heap_init(void) {
     heap_top = heap_base;
     heap_end = heap_base + 0x1000;
 }
 
 u8* heap_alloc(u16 bytes)
 {
-    if (heap_end-heap_top < bytes+sizeof(HeapObj)) die("heap full");
+    u8* new_heap_top = heap_top + sizeof(HeapObj) + bytes;
+    if (new_heap_top > heap_end) die("heap full");
 
     HeapObj* obj = (HeapObj*) heap_top;
-    heap_top += sizeof(HeapObj) + bytes;
-    obj->next = (HeapObj*) heap_top;
+    obj->next = (HeapObj*) new_heap_top;
+    heap_top = new_heap_top;
 
     return &obj->data[0];
 }

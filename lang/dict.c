@@ -6,8 +6,9 @@
 #include <string.h>
 
 //TODO
-void heap_free(void* p)
-{}
+void heap_free(__attribute__((unused)) void* p)
+{
+}
 
 static const u16 sizeof_DictEntry = sizeof(DictEntry);
 
@@ -129,7 +130,7 @@ static Dict* dict_internal_new(DictKeys *keys, u16 used)
     return dict;
 }
 
-Dict* dict_new() {
+Dict* dict_new(void) {
     return dict_internal_new(EMPTY_DICT_KEYS, 0);
 }
 
@@ -433,7 +434,7 @@ static void dict_delete_common(
     Dict *dict,
     u16 hash,
     i16 ix,
-    Value old_value)
+    __attribute__((unused)) Value old_value)
 {
     u16 hashpos = dictkeys_look_index(dict->keys, hash, ix);
 
@@ -465,7 +466,7 @@ u16 dict_length(Dict* dict)
     return dict->used;
 }
 
-u16 dict_iter_init(Dict* dict)
+u16 dict_iter_init(__attribute__((unused)) Dict* dict)
 {
     return 0;
 }

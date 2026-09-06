@@ -37,7 +37,7 @@ typedef struct Dict {
     DictKeys* keys;
 } Dict;
 
-extern Dict* dict_new();
+extern Dict* dict_new(void);
 extern Dict* dict_new_presized(u16 min_used);
 extern Value dict_get_item(Dict *dict, Value key);
 extern void dict_set_item(Dict* dict, Value key, Value value);

@@ -218,7 +218,7 @@ extern const u8* prog_base;
 
 // Utils
 __attribute__((noreturn)) void die(const char* msg);
-__attribute__((noreturn)) void unreachable();
+__attribute__((noreturn)) void unreachable(void);
 u16 hash_mem(const u8* p, u16 len);
 
 // Keywords
@@ -231,7 +231,7 @@ extern const u8 binops[];
 extern const u8 unops[];
 
 // Heap
-void heap_init();
+void heap_init(void);
 u8* heap_alloc(u16 n);
 
 // Identifiers
@@ -253,8 +253,8 @@ extern String* interned_string_class;
 extern String* interned_string_object;
 extern String* interned_string_bom;
 extern String* interned_string_unknown;
-void strings_init();
-String* string_intern_token();
+void strings_init(void);
+String* string_intern_token(void);
 String* string_from_char(u8 ch);
 String* string_from_data(const u8* data, i16 len);
 String* string_new_uninited(i16 len);
@@ -268,14 +268,14 @@ extern const u8* input_ptr;
 extern const u8* token_ptr;
 extern i16 token_len;
 bool lex_char(u8 ch);
-Value lex_word();
-String* must_lex_ident();
-void unlex_word();
-bool lex_peek_stmt_end();
-Value lex_number();
-String* lex_string();
-bool lex_comment();
-bool lex_end_of_stream();
+Value lex_word(void);
+String* must_lex_ident(void);
+void unlex_word(void);
+bool lex_peek_stmt_end(void);
+Value lex_number(void);
+String* lex_string(void);
+bool lex_comment(void);
+bool lex_end_of_stream(void);
 
 // Code generation
 extern bool opt_trace_emit;

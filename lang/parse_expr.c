@@ -8,8 +8,8 @@
 // Expression parsing
 //
 
-OpData lex_unop();
-OpData lex_binop();
+OpData lex_unop(void);
+OpData lex_binop(void);
 
 const OpInfo prec_max  = 0xf;
 const OpInfo prec_mark = 0x1;
@@ -19,10 +19,10 @@ const OpData opdata_mark = { .op = mark, .info = 0x21 };
 Array* pending_ops;
 const u16 default_pending_ops_cap = 16;
 
-void parse_expr();
+void parse_expr(void);
 
 // Initialises the state of the expression parser.
-void expr_init()
+void expr_init(void)
 {
     // TODO need separate init for this
     if (pending_ops == 0) {
@@ -39,13 +39,13 @@ void push_opdata(OpData opdata)
     array_append(pending_ops, v);
 }
 
-OpData peek_opdata()
+OpData peek_opdata(void)
 {
     Value v = array_get(pending_ops, -1);
     return opdata_from_value(v);
 }
 
-void drop_opdata()
+void drop_opdata(void)
 {
     array_pop(pending_ops);
 }
@@ -54,7 +54,7 @@ void drop_opdata()
 // opcodes.
 //
 // - e.g. `not - - ~`
-void parse_unops()
+void parse_unops(void)
 {
     while(1) {
         OpData opdata = lex_unop();
@@ -71,7 +71,7 @@ void parse_unops()
 // - `<integer>`
 // - `<float>`
 // - `<string>`
-bool parse_atom()
+bool parse_atom(void)
 {
     // TODO - maybe parse true/false literals here
     Value numval = lex_number();
@@ -109,7 +109,7 @@ bool parse_atom()
 //
 // - `[ ]`
 // - `[ <expr> , ... ]`
-bool parse_lit_array()
+bool parse_lit_array(void)
 {
     if (!lex_char('[')) {
         return false;
@@ -144,7 +144,7 @@ bool parse_lit_array()
 //
 // - `{ }`
 // - `{ <ident> : <expr> , ... }`
-bool parse_lit_dict()
+bool parse_lit_dict(void)
 {
     if (!lex_char('{')) {
         return false;
@@ -186,7 +186,7 @@ bool parse_lit_dict()
 // Aborts if expression is malformed.
 //
 // `( <expr> )`
-bool parse_paren_expr()
+bool parse_paren_expr(void)
 {
     if (!lex_char('(')) return false;
 
@@ -206,7 +206,7 @@ bool parse_paren_expr()
 //
 // - `( )`
 // - `( <expr> , ... )`
-u16 parse_args()
+u16 parse_args(void)
 {
     if (!lex_char('(')) {
         return 0;
@@ -244,7 +244,7 @@ u16 parse_args()
 // - `[ <expr> : ]`
 // - `[ : <expr> ]`
 // - `[ : ]`
-bool parse_index_arg()
+bool parse_index_arg(void)
 {
     if (!lex_char('[')) return false;
 
@@ -419,7 +419,7 @@ void emit_ident(String* name)
 // - `<ident>`
 // - `<const-keyword>`
 // - `<func-keyword> ( ... )`
-void parse_terminal_unindexed()
+void parse_terminal_unindexed(void)
 {
     if (parse_paren_expr()) return;
 
@@ -453,7 +453,7 @@ void parse_terminal_unindexed()
 //
 // - `.<ident>`
 // - `.<ident> ( ... )`
-bool parse_dot()
+bool parse_dot(void)
 {
     if (!lex_char('.')) return false;
 
@@ -480,7 +480,7 @@ bool parse_dot()
 //
 // - `{}`
 // - `{ <ident> : <expr> , ... }
-bool parse_lit_object()
+bool parse_lit_object(void)
 {
     if (!lex_char('{')) return false;
 
@@ -522,7 +522,7 @@ bool parse_lit_object()
 // - `<terminal> .<ident>`
 // - `<terminal> .<ident> ( ... )`
 // - `<terminal> { ... }`
-void parse_terminal()
+void parse_terminal(void)
 {
     parse_terminal_unindexed();
 
@@ -553,7 +553,7 @@ void parse_terminal()
 // - `<terminal>`
 // - `<unop> <expr>`
 // - `<expr> <binop> <expr>`
-void parse_expr()
+void parse_expr(void)
 {
     while(1) {
         parse_unops();

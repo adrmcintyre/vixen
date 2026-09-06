@@ -54,7 +54,7 @@ extern void set_value(u8* p, Value v)
 //
 
 // Fetches a single byte from the instruction stream.
-u8 fetch_byte()
+u8 fetch_byte(void)
 {
     u8 b = *from_p16(vm_pc);
     vm_pc += 1;
@@ -62,7 +62,7 @@ u8 fetch_byte()
 }
 
 // Fetches a 16-bit word from the instruction stream.
-u16 fetch_word()
+u16 fetch_word(void)
 {
     u16 w = *(u16*) from_p16(vm_pc);
     vm_pc += sizeof(u16);
@@ -70,7 +70,7 @@ u16 fetch_word()
 }
 
 // Fetches a 16-bit pointer-to-byte from the instruction stream.
-u8* fetch_ptr()
+u8* fetch_ptr(void)
 {
     return from_p16(fetch_word());
 }
@@ -170,21 +170,21 @@ void push_val_checked(Kind kind, u16 value)
 }
 
 // Pops and returns a single byte from the stack.
-u8 pop_byte()
+u8 pop_byte(void)
 {
     vm_sp -= 1;
     return *from_p16(vm_sp);
 }
 
 // Pops and returns a 16-bit word from the stack.
-u16 pop_word()
+u16 pop_word(void)
 {
     vm_sp -= 2;
     return *(u16*) from_p16(vm_sp);
 }
 
 // Pops a Value of any type from the stack and returns it.
-Value pop_val()
+Value pop_val(void)
 {
     Value v;
     v.u = pop_word();
@@ -194,7 +194,7 @@ Value pop_val()
 
 // Pops a Value of any type from the stack, and returns False if it was
 // either False or None, otherwise returns True.
-Value pop_bool()
+Value pop_bool(void)
 {
     Value v = pop_val();
     // convert None, False to False, everything else to True
@@ -207,7 +207,7 @@ Value pop_bool()
 
 // Pops an integer Value from the stack and returns it.
 // - Aborts the program if the value was not an integer.
-Value pop_int()
+Value pop_int(void)
 {
     Value v = pop_val();
     if (v.k == kind_int) return v;
@@ -216,7 +216,7 @@ Value pop_int()
 
 // Pops a float Value from the stack and returns it.
 // - Aborts the program if the value was not a float.
-Value pop_float()
+Value pop_float(void)
 {
     Value v = pop_val();
     if (v.k == kind_float) return v;
@@ -225,7 +225,7 @@ Value pop_float()
 
 // Pops two Values of any type from the stack, setting vm_b to the top value
 // and vm_a to the 2nd from top value, coercing both to bool.
-void pop_bools()
+void pop_bools(void)
 {
     vm_b = pop_bool();
     vm_a = pop_bool();
@@ -234,7 +234,7 @@ void pop_bools()
 // Pops two integer Values from the stack, setting vm_b to the top item and
 // vm_a to the 2nd from top item.
 // - Aborts the program if either value was not an integer.
-void pop_ints()
+void pop_ints(void)
 {
     vm_b = pop_int();
     vm_a = pop_int();
@@ -242,7 +242,7 @@ void pop_ints()
 
 // Pops a numeric Value (integer or float) from the stack and returns it.
 // - Aborts the program if the value was not an integer or float.
-Value pop_num()
+Value pop_num(void)
 {
     Value v = pop_val();
 
@@ -259,7 +259,7 @@ Value pop_num()
 // and vm_a to the 2nd from top value. If either value was float, coerces
 // the other to float as well.
 // - Aborts the program if either value was not an integer or float.
-void pop_nums()
+void pop_nums(void)
 {
     vm_b = pop_num();
     vm_a = pop_num();
@@ -278,7 +278,7 @@ void pop_nums()
 
 // Pops a string Value from the stack and returns it.
 // - Aborts the program if the value was not a string.
-Value pop_str()
+Value pop_str(void)
 {
     Value v = pop_val();
     if (v.k == kind_string) return v;
@@ -287,7 +287,7 @@ Value pop_str()
 
 // Pops an array Value from the stack and returns it.
 // - Aborts the program if the value was not an array.
-Value pop_array()
+Value pop_array(void)
 {
     Value v = pop_val();
     if (v.k == kind_array) return v;
@@ -296,7 +296,7 @@ Value pop_array()
 
 // Pops a dict Value from the stack and returns it.
 // - Aborts the program if the value was not a dict.
-Value pop_dict()
+Value pop_dict(void)
 {
     Value v = pop_val();
     if (v.k == kind_dict) return v;
@@ -307,7 +307,7 @@ Value pop_dict()
 // and vm_a to the 2nd from top value. If one value was float and the other
 // integer, coerces the non-integer to float.
 // - Aborts the program if the two values' types differ (after coercion).
-void pop_vals()
+void pop_vals(void)
 {
     vm_b = pop_val();
     vm_a = pop_val();
@@ -334,7 +334,7 @@ void pop_vals()
 // Negates the numeric Value at top-of-stack, keeping the same type.
 //
 // [..., A:num] => [..., -A:num]
-void vm_neg()
+void vm_neg(void)
 {
     vm_a = pop_num();
     if (vm_a.k == kind_int) {
@@ -350,7 +350,7 @@ void vm_neg()
 // values are first coerced to float before leaving a float result.
 //
 // [..., A:num, B:num] => [..., A*B:num]
-void vm_mul()
+void vm_mul(void)
 {
     pop_nums();
     if (vm_a.k == kind_int) {
@@ -366,7 +366,7 @@ void vm_mul()
 // values are first coerced to float before leaving a float result.
 //
 // [..., A:num, B:num] => [..., A/B:num]
-void vm_div()
+void vm_div(void)
 {
     pop_nums();
     if (vm_a.k == kind_int) {
@@ -382,7 +382,7 @@ void vm_div()
 // values are first coerced to float before leaving a float result.
 //
 // [..., A:num, B:num] => [..., A-B:num]
-void vm_sub()
+void vm_sub(void)
 {
     pop_nums();
     if (vm_a.k == kind_int) {
@@ -397,7 +397,7 @@ void vm_sub()
 // after integer division.
 //
 // [..., A:int, B:int] => [..., A%B:int]
-void vm_mod()
+void vm_mod(void)
 {
     pop_ints();
     push_int(vm_a.i % vm_b.i);
@@ -413,7 +413,7 @@ void vm_mod()
 // When both Values are strings or both arrays, leaves their concatentation.
 // [..., A:string, B:string] => [..., string_concat(A,B):string]
 // [..., A:array, B:array]   => [..., array_concat(A,B):array]
-void vm_add()
+void vm_add(void)
 {
     //TODO - maybe even + and - for dictionaries?
     pop_vals();
@@ -526,7 +526,7 @@ void vm_relop(u8 op)
 // TODO what to do for int overflow?
 //
 // [..., A:num] => [..., abs(A):num]
-void fn_abs()
+void fn_abs(void)
 {
     vm_a = pop_num();
     if (vm_a.k == kind_int) {
@@ -545,7 +545,7 @@ void fn_abs()
 // - S = -1 when A<0
 // - S = 0 when A==0
 // - S = +1 when A>0
-void fn_sgn()
+void fn_sgn(void)
 {
     vm_a = pop_num();
     if (vm_a.k == kind_int) {
@@ -559,7 +559,7 @@ void fn_sgn()
 // Pushes an integer Value chosen uniformly at random from the range 0..32767.
 //
 // [...] => [..., R:int]
-void fn_rnd()
+void fn_rnd(void)
 {
     push_int(random() & 0x7fff);
 }
@@ -569,7 +569,7 @@ void fn_rnd()
 // - Pushes NaN when A<0.
 //
 // [..., A:num] => [..., sqrt(A):float]
-void fn_sqr()
+void fn_sqr(void)
 {
     vm_a = pop_num();
     if (vm_a.k == kind_int) {
@@ -588,7 +588,7 @@ void fn_sqr()
 // [..., A:int]    => [..., A:int]
 // [..., A:float]  => [..., int(A):int]
 // [..., A:string] => [..., atoi(A):int]
-void fn_int()
+void fn_int(void)
 {
     vm_a = pop_val();
     switch(vm_a.k) {
@@ -633,7 +633,7 @@ void fn_int()
 // [..., A:float]  => [..., A:float]
 // [..., A:int]    => [..., float(A):float]
 // [..., A:string] => [..., atof(A):float]
-void fn_float()
+void fn_float(void)
 {
     vm_a = pop_val();
 
@@ -680,7 +680,7 @@ void fn_float()
 //
 // [..., ""]        => [..., 0:int]
 // [..., A:string]  => [..., ord(A[0]):int]
-void fn_asc()
+void fn_asc(void)
 {
     vm_a = pop_str();
     String* str = (String*) from_p16(vm_a.u);
@@ -694,7 +694,7 @@ void fn_asc()
 // - TODO - abort if A is outside 0..255 ?
 //
 // [..., A:int] => [..., chr(A):string]
-void fn_chr()
+void fn_chr(void)
 {
     vm_a = pop_int();
     u8 ch = vm_a.u & 0xff;
@@ -706,7 +706,7 @@ void fn_chr()
 // a string Value.
 //
 // [..., A:any] => [..., S:string]
-void fn_str()
+void fn_str(void)
 {
     vm_a = pop_val();
 
@@ -785,7 +785,7 @@ void fn_str()
 // [..., A:string] => [..., string_length(A):int]
 // [..., A:array]  => [..., array_length(A):int]
 // [..., A:dict]   => [..., dict_length(A):int]
-void fn_len()
+void fn_len(void)
 {
     vm_a = pop_val();
     i16 n;
@@ -815,7 +815,7 @@ void fn_len()
 // the elements of A followed by those of B.
 //
 // [..., A:array, B:array] => [..., A++B:array]
-void vm_append()
+void vm_append(void)
 {
     vm_b = pop_val();
     vm_a = pop_array();
@@ -827,7 +827,7 @@ void vm_append()
 //
 // [..., A:array, B:array] => [...]
 // A:array <= A++B
-void vm_extend()
+void vm_extend(void)
 {
     vm_b = pop_array();
     vm_a = pop_array();
@@ -842,7 +842,7 @@ void vm_extend()
 //
 // [..., A:array] => [..., A[0]:any]
 // A:array <= A[1:]
-void vm_pop()
+void vm_pop(void)
 {
     vm_a = pop_array();
     Array* arr = (Array*) from_p16(vm_a.u);
@@ -958,7 +958,7 @@ void vm_print(Value val)
 //
 // <opcode> <n:byte>
 // [..., A_0:any ... A_n-1:any] => [...]
-void proc_print()
+void proc_print(void)
 {
     u8 n = fetch_byte();
     vm_sp -= n * sizeof_Value;
@@ -979,7 +979,7 @@ void proc_print()
 //
 // <opcode> <prop:String*>
 // [..., A:any] => [...]
-void vm_set_global_prop()
+void vm_set_global_prop(void)
 {
     vm_a = pop_val();
 
@@ -991,7 +991,7 @@ void vm_set_global_prop()
 //
 // <opcode> <prop:String*>
 // [...] => [..., V:any]
-void vm_get_global_prop()
+void vm_get_global_prop(void)
 {
     vm_check_stack(sizeof_Value);
 
@@ -1005,7 +1005,7 @@ void vm_get_global_prop()
 //
 // <opcode> <n:word>
 // [..., A:any] => [...]
-void vm_set_func_slot()
+void vm_set_func_slot(void)
 {
     u16 slot = fetch_word();
     vm_a = pop_val();
@@ -1017,7 +1017,7 @@ void vm_set_func_slot()
 //
 // <opcode> <n:word>
 // [...] => [..., V:any]
-void vm_get_func_slot()
+void vm_get_func_slot(void)
 {
     vm_check_stack(sizeof_Value);
 
@@ -1028,7 +1028,7 @@ void vm_get_func_slot()
 }
 
 // Returns the implicit self argument for methods (i.e. slot 0 in the frame).
-Object* get_self()
+Object* get_self(void)
 {
     u8* frame = from_p16(vm_fp + 0 * sizeof_Value);
     Value self = get_value(frame);
@@ -1039,7 +1039,7 @@ Object* get_self()
 //
 // <opcode> <class:Class*> <prop:String*>
 // [..., A:any] => [...]
-void vm_set_class_prop()
+void vm_set_class_prop(void)
 {
     Class* klass = (Class*) fetch_ptr();
     String* prop = (String*) fetch_ptr();
@@ -1051,7 +1051,7 @@ void vm_set_class_prop()
     dict_set_item(klass->props, propval, vm_a);
 }
 
-void vm_get_class_prop()
+void vm_get_class_prop(void)
 {
     vm_die("UNUSED");
 }
@@ -1060,7 +1060,7 @@ void vm_get_class_prop()
 //
 // <opcode> <class:Class*> <method:String*>
 // [..., A:func] => [...]
-void vm_set_class_method()
+void vm_set_class_method(void)
 {
     Class* klass = (Class*) fetch_ptr();
     String* method = (String*) fetch_ptr();
@@ -1074,7 +1074,7 @@ void vm_set_class_method()
 //
 // <opcode> <n:word>
 // [..., A:any] => [...]
-void vm_set_object_slot()
+void vm_set_object_slot(void)
 {
     vm_a = pop_val();
 
@@ -1089,7 +1089,7 @@ void vm_set_object_slot()
 // <opcode> <n:word>
 // [...] => [..., V:any]
 // 
-void vm_get_object_slot()
+void vm_get_object_slot(void)
 {
     vm_check_stack(sizeof_Value);
 
@@ -1108,7 +1108,7 @@ void vm_get_object_slot()
 //
 // <opcode> <n:byte>
 // [..., E_0:any, ..., E_n-1] => [..., A:array]
-void vm_lit_array()
+void vm_lit_array(void)
 {
     u8 nargs = fetch_byte();
     Array* array = array_new_presized(nargs, 0);
@@ -1128,7 +1128,7 @@ void vm_lit_array()
 // <opcode> <n:word>
 // [..., K_0:key, V_0:any, ..., K_n-1, V_n-1] => [..., D:dict]
 // where key is string|num|bool|none
-void vm_lit_dict()
+void vm_lit_dict(void)
 {
     u16 nargs = fetch_word();
 
@@ -1163,7 +1163,7 @@ void vm_lit_dict()
 //
 // [..., A:key, B:dict] => [..., X:bool]
 // where key is string|num|bool|none
-void vm_in()
+void vm_in(void)
 {
     vm_b = pop_val();
     vm_a = pop_val();
@@ -1201,7 +1201,7 @@ void vm_in()
 // [..., A:array, B:int] => [..., E:any]
 // [..., A:dict, B:key] => [..., E:any]
 // where key is string|num|bool|none
-void vm_get_index()
+void vm_get_index(void)
 {
     vm_b = pop_val();
     vm_a = pop_val();
@@ -1265,7 +1265,7 @@ void vm_get_index()
 // [..., A:dict, B:key, C:any] => [...] ; A[B] <= C
 // [..., A:dict, B:key, None] => [...] ; delete A[B]
 // where key is string|num|bool|none
-void vm_set_index()
+void vm_set_index(void)
 {
     // stack is (tos) value | index | container
     Value vm_c = pop_val();
@@ -1309,7 +1309,7 @@ void vm_set_index()
 //
 // <opcode> <n:byte>
 // [..., K:class, P_0:string, V_0:any, ..., P_n-1, V_n-1] => [..., O:object]
-void vm_lit_object()
+void vm_lit_object(void)
 {
     u8 nargs = fetch_byte();
 
@@ -1336,7 +1336,7 @@ void vm_lit_object()
 }
 
 // TODO - doc
-void vm_lit_method()
+void vm_lit_method(void)
 {
     Func* func = (Func*) fetch_ptr();
 
@@ -1362,7 +1362,7 @@ void vm_lit_method()
 // Method lookup:
 // [..., A:class] => [..., V:func]
 // [..., A:object] => [..., V:bom]
-void vm_get_prop()
+void vm_get_prop(void)
 {
     String* prop = (String*) fetch_ptr();
     Value key;
@@ -1408,7 +1408,7 @@ void vm_get_prop()
 //
 // <opcode> <prop:String*>
 // [..., A:object, B:any] => [...]
-void vm_set_prop()
+void vm_set_prop(void)
 {
     String* prop = (String*) fetch_ptr();
     Value key;
@@ -1434,7 +1434,7 @@ void vm_set_prop()
 // <opcode> <method:String*> <n:byte>
 // [..., Obj, Arg_0, ..., Arg_n-1] =>
 // [..., Obj, Arg_0, ..., Arg_n-1, Local_0, Local_m-1, old_fp, old_sp, ret_pc]
-void vm_call_method()
+void vm_call_method(void)
 {
     String* prop = (String*) fetch_ptr();
     u8 nargs = fetch_byte();
@@ -1476,7 +1476,7 @@ void vm_call_method()
 
 // TODO doc
 // [..., coll] => [..., coll, it]
-void vm_iter_init()
+void vm_iter_init(void)
 {
     Value collval = pop_val();
     push_val(collval.k, collval.u);
@@ -1502,7 +1502,7 @@ void vm_iter_init()
 // TODO doc
 // [..., coll, it] => [..., coll, next_it, item, <true>] - item found
 // [..., coll, it] => [..., coll, 0, <false>]      - no more items
-void vm_iter_item()
+void vm_iter_item(void)
 {
     Value itval = pop_val();
     Value collval = pop_val();
@@ -1548,7 +1548,7 @@ void vm_iter_item()
 // TODO doc
 // [..., coll, it] => [..., coll, next_it, key, value, <true>] - item found
 // [..., coll, it] => [..., coll, 0, <false>]                  - no more items
-void vm_iter_kv()
+void vm_iter_kv(void)
 {
     Value itval = pop_val();
     Value collval = pop_val();
@@ -1597,7 +1597,7 @@ void vm_iter_kv()
 
 // TODO doc
 // [..., <index>,<end>] => [..., <index>,<end>,<index> <= <end>]
-void vm_range_check()
+void vm_range_check(void)
 {
     Value endval = pop_int();
     Value indexval = pop_int();
@@ -1608,7 +1608,7 @@ void vm_range_check()
 
 // TODO doc
 // [..., <index>,<end>] => [..., <index+1>,<end>,<index>]
-void vm_range_next()
+void vm_range_next(void)
 {
     Value endval = pop_int();
     Value indexval = pop_int();
@@ -1695,7 +1695,7 @@ void vm_set_slice(u8 has_start, u8 has_end)
 //
 
 // TODO doc
-void vm_call()
+void vm_call(void)
 {
     // number of args to supply to the callable
     u8 call_nargs = fetch_byte();
@@ -1757,7 +1757,7 @@ void vm_call()
 }
 
 // TODO doc
-void vm_return()
+void vm_return(void)
 {
     vm_a = pop_val();
 
@@ -1772,7 +1772,7 @@ void vm_return()
 }
 
 // TODO doc
-void vm_return_none()
+void vm_return_none(void)
 {
     u16 old_pc = pop_word();
     u16 old_sp = pop_word();

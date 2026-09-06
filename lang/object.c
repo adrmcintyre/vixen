@@ -3,7 +3,7 @@
 #include "dict.h"
 
 // Returns a newly allocated class descriptor.
-extern Class* class_new()
+extern Class* class_new(void)
 {
     Class* klass = (Class*) heap_alloc(sizeof(Class));
     klass->methods = dict_new();

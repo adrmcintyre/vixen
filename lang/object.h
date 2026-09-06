@@ -20,7 +20,7 @@ typedef struct {
     Func* func;
 } BoundObjectMethod;
 
-Class* class_new();
+Class* class_new(void);
 Value class_get_prop_by_name(Class* klass, Value name);
 Value class_get_method_by_name(Class* klass, Value name);
 
