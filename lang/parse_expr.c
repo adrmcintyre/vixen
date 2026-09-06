@@ -4,8 +4,6 @@
 #include "dict.h"
 #include "object.h"
 
-#include <stdlib.h>
-
 ///////////////////////////////////////////////////////////////////////////////
 // Expression parsing
 //
@@ -78,30 +76,31 @@ void parse_unops()
 bool parse_atom()
 {
     // TODO - maybe parse true/false literals here
-    Kind kind = lex_number();
+    Value numval = lex_number();
 
-    if (kind == kind_int) {
-        int i = atoi((const char*) token_ptr);
-        emit_op(op_lit_int);
-        emit_word(i & 0xffff);
-        return true;
+    switch (numval.k) {
+        case kind_fail: {
+            parser_die("malformed number");
+        }
+        case kind_int:
+            emit_op(op_lit_int);
+            emit_word(numval.i);
+            break;
+        case kind_float:
+            emit_op(op_lit_float);
+            emit_word(numval.f);
+            break;
+        default: {
+            const String* str = lex_string();
+            if (!str) {
+                return false;
+            }
+            emit_op(op_lit_string);
+            emit_string(str);
+            break;
+        }
     }
-    if (kind == kind_float) {
-        float f = (float) atof((const char*) token_ptr);
-        u16 f16 = f16_from_float(f);
-        emit_op(op_lit_float);
-        emit_word(f16);
-        return true;
-    }
-
-    const String* str = lex_string();
-    if (str) {
-        emit_op(op_lit_string);
-        emit_string(str);
-        return true;
-    }
-
-    return false;
+    return true;
 }
 
 // Parses an array literal, and emits the code to construct it.

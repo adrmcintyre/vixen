@@ -266,7 +266,7 @@ bool lex_char(u8 ch);
 bool lex_word();
 void unlex_word();
 bool lex_peek_stmt_end();
-Kind lex_number();
+Value lex_number();
 String* lex_string();
 bool lex_comment();
 bool lex_end_of_stream();

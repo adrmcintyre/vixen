@@ -1,6 +1,8 @@
 #include "header.h"
 #include "parse.h"
 
+#include <stdlib.h>
+
 const OpData opdata_fail = { .op = fail, .info = 0x0f };
 
 const u8* prog_base;
@@ -23,49 +25,73 @@ void lex_space()
 // Returns kind_int if an integer was recognised, or kind_float for a float,
 // setting token_ptr and advancing input_ptr.
 //
-// Returns kind_fail if neither recognised, with input_ptr unchanged.
-Kind lex_number()
+// Returns kind_none if neither recognised, with input_ptr unchanged.
+// Returns kind_fail if partially recognised number is badly terminated.
+Value lex_number()
 {
+    const Value VALUE_FAIL = {.k=kind_fail};
+    const Value VALUE_NONE = {.k=kind_none};
+
     lex_space();
 
     const u8* p = input_ptr;
-    u8 digits = 0;
-    u8 dp = 0;
+    bool has_digits = false;
+    bool has_dp = false;
 
     u8 ch = *p;
     if (ch == '+' || ch == '-') ch = *++p;
     while(1) {
         if (ch == '.') {
-            if (dp) break;
-            dp = 1;
+            if (has_dp) return VALUE_FAIL;
+            has_dp = true;
+        }
+        else if (ch >= '0' && ch <= '9') {
+            has_digits = true;
+        }
+        else if (ch == 'e' || ch == 'E') {
+            break;
+        }
+        else if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_') {
+            return has_digits ? VALUE_FAIL : VALUE_NONE;
         }
         else {
-            if (ch < '0') break;
-            if (ch > '9') break;
-            digits = 1;
+            break;
         }
         ch = *++p;
     }
-    if (!digits) return kind_fail;
+    if (!has_digits) return VALUE_NONE;
 
-    u8 nexp = 0;
-    if (ch == 'e') {
+    bool has_exp_digits = false;
+    if (ch == 'e' || ch == 'E') {
         ch = *++p;
         if (ch == '+' || ch == '-') ch = *++p;
         while(1) {
-            if (ch < '0') break;
-            if (ch > '9') break;
-            nexp = 1;
-            ch = *++p;
+            if (ch >= '0' && ch <= '9') {
+                has_exp_digits = true;
+                ch = *++p;
+            }
+            else if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_') {
+                return VALUE_FAIL;
+            }
+            else {
+                break;
+            }
         }
-        if (nexp == 0) parser_die("malformed number");
+        if (!has_exp_digits) return VALUE_FAIL;    // malformed number
     }
 
     token_ptr = input_ptr;
     input_ptr = p;
     token_len = input_ptr - token_ptr;
 
-    return (dp || nexp) ? kind_float : kind_int;
+    if (has_dp || has_exp_digits) {
+        double f = atof((const char*) token_ptr);
+        return (Value){.k=kind_float, .f=f16_from_float(f)};
+    }
+    else {
+        int i = atoi((const char*) token_ptr);
+        return (Value){.k=kind_int, .i=(i16)i};
+    }
 }
 
 // Looks for a string literal in the input.
