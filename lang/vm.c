@@ -709,8 +709,7 @@ void fn_chr()
 void fn_str()
 {
     vm_a = pop_val();
-    u8 buf[16];
-    u16 len;
+
     switch(vm_a.k) {
         case kind_none:
             push_val(kind_string, to_p16(interned_string_none));
@@ -1227,8 +1226,6 @@ void vm_get_index()
             }
 
             Array* array = (Array*) from_p16(vm_a.u);
-            i16 len = (i16) array->len;
-
             Value elt = array_get(array, vm_b.i);
             if (elt.k == kind_fail) vm_die("array index out of range");
             push_val(elt.k, elt.u);
@@ -1279,7 +1276,6 @@ void vm_set_index()
         case kind_array: {
             Array* array = (Array*) from_p16(vm_a.u);
             if (vm_b.k != kind_int) vm_die("expected int index");
-            i16 len = array->len;
             if (!array_set(array, vm_b.i, vm_c)) vm_die("index out of range");
             break;
         }
@@ -1856,7 +1852,7 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_land: 
                 vm_b = pop_val();
                 vm_a = pop_val();
-                if (vm_a.k == kind_none || vm_a.k == kind_bool && !vm_a.u) {
+                if (vm_a.k == kind_none || (vm_a.k == kind_bool && !vm_a.u)) {
                     push_val(vm_a.k, vm_a.u); 
                 }
                 else {
@@ -1867,7 +1863,7 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_lor:
                 vm_b = pop_val(); 
                 vm_a = pop_val();
-                if (vm_a.k == kind_bool && !vm_a.u || vm_a.k == kind_none) {
+                if (vm_a.k == kind_none || (vm_a.k == kind_bool && !vm_a.u)) {
                     push_val(vm_b.k, vm_b.u); 
                 }
                 else {

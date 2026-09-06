@@ -102,13 +102,13 @@ static DictKeys* dictkeys_new(u16 size)
 
     DictKeys* keys = (DictKeys*) heap_alloc(sizeof_DictKeys
                         + index_bytes
-                        + sizeof_DictEntry * usable);
+                        + usable * sizeof_DictEntry);
     keys->mask = size-1;
     keys->usable = usable;
     keys->nentries = 0;
     keys->index_bytes = index_bytes;
     memset(&keys->indices[0], 0xff, index_bytes);
-    memset(&keys->indices[index_bytes], 0, sizeof_DictEntry * usable);
+    memset(&keys->indices[index_bytes], 0, usable * sizeof_DictEntry);
     return keys;
 }
 
@@ -123,7 +123,7 @@ static void dictkeys_free(DictKeys* keys)
 
 static Dict* dict_internal_new(DictKeys *keys, u16 used)
 {
-    Dict *dict = (Dict*) heap_alloc(sizeof(Dict));
+    Dict *dict = (Dict*) heap_alloc(sizeof_Dict);
     dict->keys = keys;
     dict->used = used;
     return dict;

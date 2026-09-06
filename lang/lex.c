@@ -51,7 +51,7 @@ Value lex_number()
         else if (ch == 'e' || ch == 'E') {
             break;
         }
-        else if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_') {
+        else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_') {
             return has_digits ? VALUE_FAIL : VALUE_NONE;
         }
         else {
@@ -70,7 +70,7 @@ Value lex_number()
                 has_exp_digits = true;
                 ch = *++p;
             }
-            else if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_') {
+            else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_') {
                 return VALUE_FAIL;
             }
             else {

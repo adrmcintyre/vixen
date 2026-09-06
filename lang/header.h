@@ -22,7 +22,7 @@ typedef struct Class Class;
 // Enumerates all vm opcodes.
 typedef enum {
     fail = 0x80, // TODO - doc this
-    mark = 0x81, // TODO - doc this
+    mark = 0x81, // used at compile time to mark the start of a new expression on the operator stack
 
     // Arithmetic operators
     op_neg, op_mul, op_div, op_mod, op_add, op_sub,
@@ -129,10 +129,10 @@ typedef enum {
     info_control,   // a control statement (if, while, etc.)
 } OpInfo;
 
-// TODO doc
+// OpData categorises a keyword according to syntactic type and argument count.
 typedef struct {
-    Op op;
-    OpInfo info;
+    Op op;          // the keyword
+    OpInfo info;    // the category
 } OpData;
 
 // Enumerates each value type.

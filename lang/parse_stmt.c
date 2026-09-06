@@ -349,12 +349,9 @@ void parse_class()
     if (active_class != 0) parser_die("class not allowed inside class");
 
     String* name = must_lex_ident();
-    Value nameval = {.k=kind_string, .u=to_p16(name)};
 
     Class* klass = class_new();
-    Value klassval = {.k=kind_class, .u=to_p16(klass)};
 
-    // TODO define this op
     emit_op(op_lit_class);
     emit_word(to_p16(klass));
 
