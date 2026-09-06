@@ -1140,6 +1140,16 @@ void vm_lit_dict()
     while (nargs--) {
         Value key = get_value(item);
         item += sizeof_Value;
+        switch (key.k) {
+            case kind_none:
+            case kind_bool:
+            case kind_int:
+            case kind_float:
+            case kind_string:
+                break;
+            default:
+                vm_die("expected string or int or float or bool or none");
+        }
         Value value = get_value(item);
         item += sizeof_Value;
      
