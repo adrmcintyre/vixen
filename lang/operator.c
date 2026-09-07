@@ -20,7 +20,6 @@ const u8 binops[] = {
     op_add,  0x29, '+',
     op_sub,  0x29, '-',
 
-    op_asr,  0x28, '>','>','>',
     op_lsr,  0x28, '>','>',
     op_ge,   0x27, '>','=',
     op_gt,   0x27, '>',

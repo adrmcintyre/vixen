@@ -596,9 +596,14 @@ void fn_int(void)
             push_int(vm_a.i);
             break;
 
-        case kind_float:
-            push_int((i16) f16_to_float(vm_a.f));
+        case kind_float: {
+            float f = f16_to_float(vm_a.f);
+            if (isnan(f)) vm_die("cannot convert NaN to int");
+            if (isinf(f)) vm_die("cannot convert Inf to int");
+            if (f >= 32767.0 || f < -32768.0) vm_die("overflow");
+            push_int((i16) f);
             break;
+        }
 
         case kind_string: {
             const String* str = (String*) from_p16(vm_a.u);
@@ -1839,9 +1844,25 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_beor:   pop_ints(); push_int(vm_a.u ^ vm_b.u); break;
 
             // shift operators
-            case op_asr:    pop_ints(); push_int(vm_a.i >> vm_b.i); break;
-            case op_lsr:    pop_ints(); push_int(vm_a.u >> vm_b.i); break;   // TODO special treatment for -ve / +ve shifts?
-            case op_lsl:    pop_ints(); push_int(vm_a.u << vm_b.i); break;   // TODO special treatment for -ve / +ve shifts?
+            case op_lsr:
+                pop_ints();
+                if (vm_b.i >= 0) {
+                    push_int(vm_b.i < 16 ? (vm_a.u >> vm_b.i) : 0);
+                } else {
+                    vm_b.i = -vm_b.i;
+                    push_int(vm_b.i < 16 ? (vm_a.u << vm_b.i) : 0);
+                }
+                break;
+
+            case op_lsl:
+                pop_ints();
+                if (vm_b.i >= 0) {
+                    push_int(vm_b.i < 16 ? (vm_a.u << vm_b.i) : 0);
+                } else {
+                    vm_b.i = -vm_b.i;
+                    push_int(vm_b.i < 16 ? (vm_a.u >> vm_b.i) : 0);
+                }
+                break;
 
             // logical operators
             case op_lnot: 
