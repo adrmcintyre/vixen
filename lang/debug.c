@@ -17,7 +17,7 @@ const char* debug_op_names[] = {
     "op_bnot", "op_band", "op_bor", "op_beor",
 
     // Shift operators
-    "op_asr", "op_lsr", "op_lsl",
+    "op_lsr", "op_lsl",
     
     // Logical operators
     "op_lnot", "op_land", "op_lor",

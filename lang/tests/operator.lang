@@ -78,19 +78,15 @@ print 13 >> 1       #!6
 print -1 >> 1       #!32767
 print -32768 >> 7   #!256
 print -32768 >> 16  #!0
-
-## arithmetic right shift
-print 13 >>> 0      #!13
-print 13 >>> 1      #!6
-print -1 >>> 1      #!-1
-print -32768 >>> 7  #!-256
-print -32768 >>> 16 #!-1
+print -1 >> 260     #!0
+print 13 >> -2      #!52
 
 ## logical left shift
 print 13 << 0       #!13
 print 13 << 1       #!26
-
-#TODO negative shifts
+print 13 << 16      #!0
+print 13 << 260     #!0
+print 13 << -2      #!3
 
 ## bitwise ops
 print 12 & 10       #!8
