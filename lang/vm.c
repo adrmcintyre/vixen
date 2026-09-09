@@ -154,7 +154,7 @@ void push_dict(Dict* d)
     push_val(kind_dict, to_p16(d));
 }
 
-// Aborts the program if the stack has less then n bytes of headroom.
+// Aborts if the stack has less then n bytes of headroom.
 void vm_check_stack(u16 n)
 {
     if (vm_sp > vm_sp_max-n) vm_die("stack overflow");
@@ -206,7 +206,7 @@ Value pop_bool(void)
 }
 
 // Pops an integer Value from the stack and returns it.
-// - Aborts the program if the value was not an integer.
+// - Aborts if the value was not an integer.
 Value pop_int(void)
 {
     Value v = pop_val();
@@ -215,7 +215,7 @@ Value pop_int(void)
 }
 
 // Pops a float Value from the stack and returns it.
-// - Aborts the program if the value was not a float.
+// - Aborts if the value was not a float.
 Value pop_float(void)
 {
     Value v = pop_val();
@@ -233,7 +233,7 @@ void pop_bools(void)
 
 // Pops two integer Values from the stack, setting vm_b to the top item and
 // vm_a to the 2nd from top item.
-// - Aborts the program if either value was not an integer.
+// - Aborts if either value was not an integer.
 void pop_ints(void)
 {
     vm_b = pop_int();
@@ -241,7 +241,7 @@ void pop_ints(void)
 }
 
 // Pops a numeric Value (integer or float) from the stack and returns it.
-// - Aborts the program if the value was not an integer or float.
+// - Aborts if the value was not an integer or float.
 Value pop_num(void)
 {
     Value v = pop_val();
@@ -258,7 +258,7 @@ Value pop_num(void)
 // Pops two numeric Values from the stack, setting vm_b to the top value,
 // and vm_a to the 2nd from top value. If either value was float, coerces
 // the other to float as well.
-// - Aborts the program if either value was not an integer or float.
+// - Aborts if either value was not an integer or float.
 void pop_nums(void)
 {
     vm_b = pop_num();
@@ -277,7 +277,7 @@ void pop_nums(void)
 }
 
 // Pops a string Value from the stack and returns it.
-// - Aborts the program if the value was not a string.
+// - Aborts if the value was not a string.
 Value pop_str(void)
 {
     Value v = pop_val();
@@ -286,7 +286,7 @@ Value pop_str(void)
 }
 
 // Pops an array Value from the stack and returns it.
-// - Aborts the program if the value was not an array.
+// - Aborts if the value was not an array.
 Value pop_array(void)
 {
     Value v = pop_val();
@@ -295,7 +295,7 @@ Value pop_array(void)
 }
 
 // Pops a dict Value from the stack and returns it.
-// - Aborts the program if the value was not a dict.
+// - Aborts if the value was not a dict.
 Value pop_dict(void)
 {
     Value v = pop_val();
@@ -306,7 +306,8 @@ Value pop_dict(void)
 // Pops two Values of any type from the stack, setting vm_b to the top value,
 // and vm_a to the 2nd from top value. If one value was float and the other
 // integer, coerces the non-integer to float.
-// - Aborts the program if the two values' types differ (after coercion).
+//
+// - Aborts if the two values' types differ (after coercion).
 void pop_vals(void)
 {
     vm_b = pop_val();
@@ -331,9 +332,10 @@ void pop_vals(void)
 // Arithmetic operators
 //
 
-// Negates the numeric Value at top-of-stack, keeping the same type.
+// Replaces the numeric Value N with its negation -N, preserving its type.
 //
-// [..., A:num] => [..., -A:num]
+// [..., N:int] => [..., int]
+// [..., N:float] => [..., float]
 void vm_neg(void)
 {
     vm_a = pop_num();
@@ -345,11 +347,14 @@ void vm_neg(void)
     }
 }
 
-// Replaces the two numeric Values at top-of-stack with their product.
-// If both are integers, leaves an integer result, otherwise both
-// values are first coerced to float before leaving a float result.
+// Replaces two numeric Values A, B with their product A*B.
 //
-// [..., A:num, B:num] => [..., A*B:num]
+// [..., A:int, B:int] => [..., int]
+//
+// [..., A:float, B:num] => [..., float]
+// [..., A:num, B:float] => [..., float]
+//
+// - if A or B is float, both are coerced to float before multiplying.
 void vm_mul(void)
 {
     pop_nums();
@@ -361,11 +366,14 @@ void vm_mul(void)
     }
 }
 
-// Replaces the two numeric Values at top-of-stack with their quotient.
-// If both values are integers, leaves an integer result, otherwise both
-// values are first coerced to float before leaving a float result.
+// Replaces two numeric Values A, B with their quotient A/B.
 //
-// [..., A:num, B:num] => [..., A/B:num]
+// [..., int, int] => [..., int]
+//
+// [..., float, num] => [..., float]
+// [..., num, float] => [..., float]
+//
+// - if A or B is float, both are coerced to float before dividing.
 void vm_div(void)
 {
     pop_nums();
@@ -377,11 +385,14 @@ void vm_div(void)
     }
 }
 
-// Replaces the two numeric Values at top-of-stack with their difference.
-// If both values are integers, leaves an integer result, otherwises both
-// values are first coerced to float before leaving a float result.
+// Replaces two numeric Values A, B with their difference A-B.
 //
-// [..., A:num, B:num] => [..., A-B:num]
+// [..., int, int] => [..., int]
+//
+// [..., float, num] => [..., float]
+// [..., num, float] => [..., float]
+//
+// - if A or B is float, both are coerced to float before subtracting.
 void vm_sub(void)
 {
     pop_nums();
@@ -393,26 +404,35 @@ void vm_sub(void)
     }
 }
 
-// Replaces the two integer Values at top-of-stack with their remainder
-// after integer division.
+// Replaces two integer Values A, B with their modulus A mod B.
 //
-// [..., A:int, B:int] => [..., A%B:int]
+// [..., int, int] => [..., int]
 void vm_mod(void)
 {
     pop_ints();
-    push_int(vm_a.i % vm_b.i);
+    i16 r = vm_a.i % vm_b.i;
+    if (r != 0 && ((vm_a.u ^ vm_b.u)&0x8000)) {
+        // If signs differ, convert result from
+        // c99-style remainder to python-style modulo
+        r += vm_b.i;
+    }
+    push_int(r);
 }
 
-// Replaces the two Values at top-of-stack with a combined Value according
-// to their type.
+// Replaces two Values A, B with a combined Value A+B according to their type.
 //
-// When both Values are numeric, leaves the integer sum if both are integers,
-// otherwise coerces both to float before leaving a float result.
-// [..., A:num, B:num] => [..., A+B:num]
+// [..., int, int] => [..., int]
+// - numeric types are added.
 //
-// When both Values are strings or both arrays, leaves their concatentation.
-// [..., A:string, B:string] => [..., string_concat(A,B):string]
-// [..., A:array, B:array]   => [..., array_concat(A,B):array]
+// [..., float, num] => [..., float]
+// [..., num, float] => [..., float]
+// - if A or B is float, both are coerced to float before adding.
+//
+// [..., string, string] => [..., string]
+// - strings are concatenated.
+//
+// [..., array, array]   => [..., array]
+// - arrays are appended.
 void vm_add(void)
 {
     //TODO - maybe even + and - for dictionaries?
@@ -420,7 +440,6 @@ void vm_add(void)
 
     switch (vm_a.k) {
         case kind_int: {
-            // TODO check overflow?
             push_int(vm_a.i + vm_b.i);
             return;
         }
@@ -452,17 +471,22 @@ void vm_add(void)
 // Relational operators
 //
 
-// Replaces the two Values at top-of-stack with a bool Value according to their
-// comparison by the operator op_le, op_lt, op_gt, op_ge, op_eq, or op_ne,
-// indicating if the relation is true.
+// Replaces two Values A, B with a bool Value according to their comparison by
+// one of the operators op_le, op_lt, op_gt, op_ge, op_eq, or op_ne, indicating
+// if the relation is true.
 //
-// When the Values are numeric, if one is a float and the other integer,
-// coerces the non-integer to float before comparison.
-//
-// [..., A:num, B:num]       => [..., True|False]
-// [..., A:string, B:string] => [..., True|False]
-// - result is True when A op B,
+// - result is True if A op B holds,
 // - otherwise False.
+//
+// [..., A:int, B:int]       => [..., bool]
+// - numbers are compared numerically
+//
+// [..., A:float, B:num]       => [..., bool]
+// [..., A:num, B:float]       => [..., bool]
+// - if A or B is float, both are coerced to float before comparison.
+//
+// [..., A:string, B:string] => [..., bool]
+// - strings are compared lexicographically.
 void vm_relop(u8 op)
 {
     pop_vals();
@@ -521,11 +545,9 @@ void vm_relop(u8 op)
 // Built-in math functions
 //
 
-// Replaces the numeric Value at top-of-stack with its corresponding absolute
-// Value of the same type.
-// TODO what to do for int overflow?
+// Replaces numeric Value A with a positive Value of the type and magnitude.
 //
-// [..., A:num] => [..., abs(A):num]
+// [..., A:num] => [..., num]
 void fn_abs(void)
 {
     vm_a = pop_num();
@@ -537,14 +559,13 @@ void fn_abs(void)
     }
 }
 
-// Replaces the numeric Value at top-of-stack with an integer Value
-// according to its sign.
+// Replaces numeric Value A with an integer Value indicating A's sign.
 //
-// [..., A:num] => [..., S:int]
+// - result is 1 if A > 0
+// - result is 0  if A = 0
+// - result is -1 if A < 0
 //
-// - S = -1 when A<0
-// - S = 0 when A==0
-// - S = +1 when A>0
+// [..., A:num] => [..., int]
 void fn_sgn(void)
 {
     vm_a = pop_num();
@@ -558,17 +579,17 @@ void fn_sgn(void)
 
 // Pushes an integer Value chosen uniformly at random from the range 0..32767.
 //
-// [...] => [..., R:int]
+// [...] => [..., int]
 void fn_rnd(void)
 {
     push_int(random() & 0x7fff);
 }
 
-// Replaces the numeric Value at top-of-stack with its positive square root
-// as a float Value.
-// - Pushes NaN when A<0.
+// Replaces the numeric Value A with its positive square root as a float Value.
 //
-// [..., A:num] => [..., sqrt(A):float]
+// - result is NaN if A<0.
+//
+// [..., A:num] => [..., float]
 void fn_sqr(void)
 {
     vm_a = pop_num();
@@ -580,14 +601,17 @@ void fn_sqr(void)
     }
 }
 
-// Replaces the Value at top-of-stack with its equivalent as an integer Value.
-// - TODO confirm float rounding + overflow behaviour.
-// - TODO confirm string behaviour on overflow, leading base specifier.
-// - Aborts the program if value could not be converted to an integer.
+// Replaces the Value A with its equivalent as an integer Value.
 //
-// [..., A:int]    => [..., A:int]
-// [..., A:float]  => [..., int(A):int]
-// [..., A:string] => [..., atoi(A):int]
+// - Float values are truncated towards zero.
+// - Aborts if converted value does not fit valid integer range.
+//
+// [..., A:int]    => [..., int]
+// [..., A:float]  => [..., int]
+//
+// [..., A:string] => [..., int]
+// - Aborts if string does not consist of an optional leading
+//   sign followed by 1 or more digits and no other characters.
 void fn_int(void)
 {
     vm_a = pop_val();
@@ -630,14 +654,20 @@ void fn_int(void)
     }
 }
 
-// Replaces the Value at top-of-stack with its equivalent as a float Value.
-// - TODO confirm float rounding + overflow behaviour.
-// - TODO confirm string behaviour on overflow.
-// - Aborts the program if A could not be converted to a float.
+// Replaces Value A with its equivalent as a float Value.
 //
-// [..., A:float]  => [..., A:float]
-// [..., A:int]    => [..., float(A):float]
-// [..., A:string] => [..., atof(A):float]
+// [..., A:float]  => [..., float]
+// [..., A:int]    => [..., float]
+// - all numbers convert without error (although precision may be lost)
+//
+// [..., A:string] => [..., float]
+//
+// - string conversion aborts if A is not formatted as a valid float:
+//   -- optional sign `+|-`
+//   -- one or more digits `0-9`
+//   -- optional decimal point `.` at start, middle or end
+//   -- optional exponent: indicator `e|E`, optional sign `+|-`, one or more digits `0-9`
+//   -- no other characters.
 void fn_float(void)
 {
     vm_a = pop_val();
@@ -678,13 +708,14 @@ void fn_float(void)
 // Built-in string functions
 //
 
-// Replaces the string Value at top-of-stack with the integer Value of 
-// its first character's ASCII ordinal.
-// - Pushes 0 if the string is empty.
-// - TODO - perhaps abort if len(A) != 1 ?
+// Replaces string Value A with integer Value of its first character's
+// ASCII ordinal.
 //
-// [..., ""]        => [..., 0:int]
-// [..., A:string]  => [..., ord(A[0]):int]
+// - Pushes 0 if A is empty.
+//
+// [..., A:string]  => [..., int]
+//
+// - TODO - perhaps abort if len(A) != 1 ?
 void fn_asc(void)
 {
     vm_a = pop_str();
@@ -693,12 +724,12 @@ void fn_asc(void)
     else push_int(str->data[0]);
 }
 
-// Replaces the integer Value at top-of-stack with a single-character string
-// Value having that ASCII ordinal.
+// Replaces integer Value A with a string Value whose only character is
+// ASCII ordinal A.
 //
 // - TODO - abort if A is outside 0..255 ?
 //
-// [..., A:int] => [..., chr(A):string]
+// [..., A:int] => [..., string]
 void fn_chr(void)
 {
     vm_a = pop_int();
@@ -707,10 +738,9 @@ void fn_chr(void)
     push_val(kind_string, to_p16(str));
 }
 
-// Replaces a Value of any type at top-of-stack with its representation as
-// a string Value.
+// Replaces A with its representation as a string Value.
 //
-// [..., A:any] => [..., S:string]
+// [..., A:any] => [..., string]
 void fn_str(void)
 {
     vm_a = pop_val();
@@ -784,12 +814,11 @@ void fn_str(void)
     }
 }
 
-// Replaces the Value at top-of-stack with the integer Value of how many
-// elements it contains.
+// Replaces A with integer Value of how many elements it contains.
 //
-// [..., A:string] => [..., string_length(A):int]
-// [..., A:array]  => [..., array_length(A):int]
-// [..., A:dict]   => [..., dict_length(A):int]
+// [..., A:string] => [..., int] - character count
+// [..., A:array]  => [..., int] - element count
+// [..., A:dict]   => [..., int] - entry count
 void fn_len(void)
 {
     vm_a = pop_val();
@@ -816,10 +845,12 @@ void fn_len(void)
     push_int(n);
 }
 
-// Replaces two array Values at top-of-stack with a new array Value containing
-// the elements of A followed by those of B.
+// Updates array A by appending the element B.
 //
-// [..., A:array, B:array] => [..., A++B:array]
+// - Leaves no result.
+// - Array A is updated in-place.
+//
+// [..., A:array, B:any] => [...]
 void vm_append(void)
 {
     vm_b = pop_val();
@@ -828,10 +859,12 @@ void vm_append(void)
     array_append(arr, vm_b);
 }
 
-// Pops two array Values, and extends A in-place with B's elements.
+// Updates array A by append the elements of B.
+//
+// - Modifies A in-place.
+// - Leaves no result.
 //
 // [..., A:array, B:array] => [...]
-// A:array <= A++B
 void vm_extend(void)
 {
     vm_b = pop_array();
@@ -841,12 +874,12 @@ void vm_extend(void)
     array_set_slice(dst, dst->len, -1, src);
 }
 
-// Pops an array Value, pushes its first element onto the stack, and drops that
-// element from the array itself.
-// - Aborts the program if the array is empty.
+// Removes the last element of array A, and pushes it to the stack in its place.
 //
-// [..., A:array] => [..., A[0]:any]
-// A:array <= A[1:]
+// - Aborts if A is empty.
+// - Modifies A in place.
+//
+// [..., A:array] => [..., any]
 void vm_pop(void)
 {
     vm_a = pop_array();
@@ -860,7 +893,7 @@ void vm_pop(void)
 // Built-in procedures
 //
 
-// Prints a string representing the Value val.
+// Prints a representation of the Value val.
 void vm_print(Value val)
 {
     switch(val.k) {
@@ -958,11 +991,11 @@ void vm_print(Value val)
     }
 }
 
-// Pops <n> Values of any type from the stack and prints each separated
-// by <space> and terminated by <newline>.
+// Prints <n> Values A_i of any type separated by <space> and terminated
+// by <newline>.
 //
 // <opcode> <n:byte>
-// [..., A_0:any ... A_n-1:any] => [...]
+// [..., A_0..A_n-1:any] => [...]
 void proc_print(void)
 {
     u8 n = fetch_byte();
@@ -980,7 +1013,7 @@ void proc_print(void)
 // Accessors
 //
 
-// Sets the global variable named <prop> to the Value popped from the stack.
+// Sets the global variable named <prop> to the Value A.
 //
 // <opcode> <prop:String*>
 // [..., A:any] => [...]
@@ -992,10 +1025,10 @@ void vm_set_global_prop(void)
     dict_set_item(vm_globals, propval, vm_a);
 }
 
-// Pushes the Value in the global variable named <prop> onto the stack.
+// Pushes the Value in the global variable <prop> to the stack.
 //
 // <opcode> <prop:String*>
-// [...] => [..., V:any]
+// [...] => [..., any]
 void vm_get_global_prop(void)
 {
     vm_check_stack(sizeof_Value);
@@ -1006,10 +1039,10 @@ void vm_get_global_prop(void)
     push_val(val.k, val.u);
 }
 
-// Sets the current frame's <n>th slot to the Value popped from the stack.
+// Sets the current frame's <n>th slot to the Value A.
 //
 // <opcode> <n:word>
-// [..., A:any] => [...]
+// [..., |frame|, A:any] => [..., |updated_frame|]
 void vm_set_func_slot(void)
 {
     u16 slot = fetch_word();
@@ -1021,7 +1054,7 @@ void vm_set_func_slot(void)
 // Pushes the Value in the current frame's <n>th slot to the stack.
 //
 // <opcode> <n:word>
-// [...] => [..., V:any]
+// [... |frame|] => [..., |frame|, any]
 void vm_get_func_slot(void)
 {
     vm_check_stack(sizeof_Value);
@@ -1033,6 +1066,9 @@ void vm_get_func_slot(void)
 }
 
 // Returns the implicit self argument for methods (i.e. slot 0 in the frame).
+//
+// - Assumes the current frame is due to a method call.
+// - The stack is not affected.
 Object* get_self(void)
 {
     u8* frame = from_p16(vm_fp + 0 * sizeof_Value);
@@ -1040,7 +1076,7 @@ Object* get_self(void)
     return (Object*) from_p16(self.u);
 }
 
-// Sets <class>'s property named <prop> to the Value popped from the stack.
+// Sets <class>'s property named <prop> to the Value A.
 //
 // <opcode> <class:Class*> <prop:String*>
 // [..., A:any] => [...]
@@ -1061,7 +1097,7 @@ void vm_get_class_prop(void)
     vm_die("UNUSED");
 }
 
-// Sets <class>'s method named <method> to the func Value popped from the stack.
+// Sets <class>'s method named <method> to the func Value A.
 //
 // <opcode> <class:Class*> <method:String*>
 // [..., A:func] => [...]
@@ -1075,10 +1111,11 @@ void vm_set_class_method(void)
     dict_set_item(klass->methods, methodval, vm_a);
 }
 
-// Sets the current object's <n>th slot to the Value popped from the stack.
+// Sets the current object's <n>th slot to the Value A.
+// - Assumes the current frame is due to a method call.
 //
 // <opcode> <n:word>
-// [..., A:any] => [...]
+// [..., |frame|, A:any] => [..., |frame|]
 void vm_set_object_slot(void)
 {
     vm_a = pop_val();
@@ -1089,10 +1126,11 @@ void vm_set_object_slot(void)
     set_value(pslot, vm_a);
 }
 
-// Pushes the Value in the <n>th slot of the current object.
+// Pushes the Value in the <n>th slot of the current object to the stack.
+// - Assumes the current frame is due to a method call.
 //
 // <opcode> <n:word>
-// [...] => [..., V:any]
+// [..., |frame|] => [..., |frame|, any]
 // 
 void vm_get_object_slot(void)
 {
@@ -1109,10 +1147,11 @@ void vm_get_object_slot(void)
 // Literals
 //
 
-// Pushes a new array Value formed from <n> Values popped from the stack.
+// Replaces <n> Values E_i with a newly allocated array Value with the E_i as
+// elements.
 //
 // <opcode> <n:byte>
-// [..., E_0:any, ..., E_n-1] => [..., A:array]
+// [..., E_0..n-1:any] => [..., array]
 void vm_lit_array(void)
 {
     u8 nargs = fetch_byte();
@@ -1128,11 +1167,12 @@ void vm_lit_array(void)
     push_array(array);
 }
 
-// Pushes a new dict formed from <n> key/value pairs popped from the stack.
+// Replaces <n> pairs K_i:V_i with a newly allocated dict with the K_i as keys
+// and the V_i as their corresponding values.
 //
 // <opcode> <n:word>
-// [..., K_0:key, V_0:any, ..., K_n-1, V_n-1] => [..., D:dict]
-// where key is string|num|bool|none
+// [..., K_0:key,V_0:any, ..., K_n-1,V_n-1] => [..., dict]
+// - key is string|num|bool|none
 void vm_lit_dict(void)
 {
     u16 nargs = fetch_word();
@@ -1163,11 +1203,11 @@ void vm_lit_dict(void)
     push_dict(dict);
 }
 
-// Pops a key Value and a dict Value, and pushes a bool Value indicating
-// if the key exists in the dict.
+// Replaces key Value K and dict Value D, with a bool Value indicating
+// if the key K exists in dict D.
 //
-// [..., A:key, B:dict] => [..., X:bool]
-// where key is string|num|bool|none
+// [..., K:key, D:dict] => [..., bool]
+// - key is string|num|bool|none
 void vm_in(void)
 {
     vm_b = pop_val();
@@ -1199,13 +1239,16 @@ void vm_in(void)
     }
 }
 
-// Pops a container Value and an index Value, and pushes the element
-// corresponding to that index of the container.
+// Replaces container Value A and index Value B with B's element at index A.
 //
-// [..., A:string, B:int] => [..., E:any]
-// [..., A:array, B:int] => [..., E:any]
-// [..., A:dict, B:key] => [..., E:any]
-// where key is string|num|bool|none
+// [..., A:string, B:int] => [..., any]
+// [..., A:array, B:int] => [..., any]
+// - If B is negative, it is treated as an offset from the end of A.
+// - Aborts if B is not a valid index into A.
+//
+// [..., A:dict, B:key] => [..., any]
+// - key is string|num|bool|none
+// - Pushes None if A is not a key of B.
 void vm_get_index(void)
 {
     vm_b = pop_val();
@@ -1263,16 +1306,17 @@ void vm_get_index(void)
     }
 }
 
-// Pops an array or dict Value, an index Value, and a Value of any
-// type, and sets the item at the given index to the new value.
+// Updates an element in collection A at index B with the value C.
 //
-// [..., A:array, B:int, C:any] => [...] ; A[B] <= C
-// [..., A:dict, B:key, C:any] => [...] ; A[B] <= C
-// [..., A:dict, B:key, None] => [...] ; delete A[B]
-// where key is string|num|bool|none
+// [..., A:array, B:int, C:any] => [...]
+// - a negative index is treated as an offset from the end of A
+// - aborts if B is not a valid index
+//
+// [..., A:dict, B:key, C:any] => [...]
+// - key is string|num|bool|none
+// - if C is None, the entry is removed
 void vm_set_index(void)
 {
-    // stack is (tos) value | index | container
     Value vm_c = pop_val();
     vm_b = pop_val();
     vm_a = pop_val();
@@ -1309,11 +1353,13 @@ void vm_set_index(void)
     }
 }
 
-// Pushes a new object Value instantiated with its class Value popped from the
-// stack followed by <n> prop/value pairs.
+// Replaces a class Value K and <n> property/value pairs P_i, V_i with
+// a newly instantiated object Value of class K, its properties initialised
+// from the corresponding P/V pairs; any properties not provided are
+// initialised from their default value defined on K.
 //
 // <opcode> <n:byte>
-// [..., K:class, P_0:string, V_0:any, ..., P_n-1, V_n-1] => [..., O:object]
+// [..., K:class, P_0:string,V_0:any, ..., P_n-1,V_n-1] => [..., object]
 void vm_lit_object(void)
 {
     u8 nargs = fetch_byte();
@@ -1340,7 +1386,12 @@ void vm_lit_object(void)
     push_val(kind_object, to_p16(object));
 }
 
-// TODO - doc
+// Pushes a bom Value that binds the method described by <func> to the current
+// frame's self object. It is assumed that the class of the method and object
+// are compatible.
+//
+// <opcode> <func:Func*>
+// [..., |frame|] => [..., |frame|, bom]
 void vm_lit_method(void)
 {
     Func* func = (Func*) fetch_ptr();
@@ -1352,21 +1403,24 @@ void vm_lit_method(void)
     push_val(kind_bom, to_p16(bom));
 }
 
-// Pops a class or object Value; if <name> refers to a property, pushes its
-// value; if it refers to a method, when looked up on a class pushes the
-// method's func Value, or when looked up on an object pushes a bom Value
-// binding the object reference and func Value.
-// - Aborts if <name> does not refer to a property or method.
+// Replaces a class or object Value by a property Value or callable.
+//
+// - Aborts if <name> does not refer to a property or method of A.
 //
 // <opcode> <name:String*>
 //
-// Prop lookup:
-// [..., A:class] => [..., V:any]
-// [..., A:object] => [..., V:any]
+// [..., A:class] => [..., any]
+// [..., A:object] => [..., any]
+// - if <name> refers to a property, pushes its value found on the object
+//   or class A.
 //
-// Method lookup:
-// [..., A:class] => [..., V:func]
-// [..., A:object] => [..., V:bom]
+// [..., A:class] => [..., func]
+// - if <name> refers to a method, pushes the method's func Value defined
+//   on the object A.
+//
+// [..., A:object] => [..., bom]
+// - if <name> refers to a method, pushes a bom Value that binds the object A
+//   with the method's func Value defined on A's class.
 void vm_get_prop(void)
 {
     String* prop = (String*) fetch_ptr();
@@ -1407,9 +1461,9 @@ void vm_get_prop(void)
     }
 }
 
-// Pops an object Value and a Value of any type, and sets the value of
-// the object's property named by <prop> to the new value.
-// - Aborts if <prop> does not name a property.
+// Sets the property on object A named by <prop> to the Value B.
+//
+// - Aborts if <prop> does not name a property on A.
 //
 // <opcode> <prop:String*>
 // [..., A:object, B:any] => [...]
@@ -1433,12 +1487,13 @@ void vm_set_prop(void)
     }
 }
 
-// Enters the named method of the object Value with <n> argument Values,
-// and records the necessary return info on the stack.
+// Creates a new stack frame and initiates execution of the method named
+// <method> defined on the object obj with <n> parameters P_i, and an extra
+// <m> locals L_j as specified by the method's func descriptor.
 //
 // <opcode> <method:String*> <n:byte>
-// [..., Obj, Arg_0, ..., Arg_n-1] =>
-// [..., Obj, Arg_0, ..., Arg_n-1, Local_0, Local_m-1, old_fp, old_sp, ret_pc]
+// [..., obj:object, P_0..n_1:any] =>
+// [..., |obj, P_0..n-1, L_0..m-1, old_fp, old_sp, ret_pc|]
 void vm_call_method(void)
 {
     String* prop = (String*) fetch_ptr();
@@ -1479,8 +1534,12 @@ void vm_call_method(void)
 }
 
 
-// TODO doc
-// [..., coll] => [..., coll, it]
+// Initiates iteration of the collection coll, and leaves the iterator state
+// on top of stack.
+//
+// [..., coll] => [..., coll, iter]
+// - coll is an array or dict
+// - iter describes the initial iteration state
 void vm_iter_init(void)
 {
     Value collval = pop_val();
@@ -1504,9 +1563,16 @@ void vm_iter_init(void)
 
 }
 
-// TODO doc
-// [..., coll, it] => [..., coll, next_it, item, <true>] - item found
-// [..., coll, it] => [..., coll, 0, <false>]      - no more items
+// Produces the next item from the collection coll as indicated by the
+// iterator iter, or indicates iteration has finished.
+//
+// [..., coll, iter] => [..., coll, next_iter, item, True]
+// - if iter identifies an in-bounds item within coll, it is advanced
+//   to next_iter, and the item and True are left on the stack.
+//
+// [..., coll, iter] => [..., coll, invalid, False]
+// - if iter has exhausted coll, iter becomes invalid, and False is
+//   left on the stack (but no item)
 void vm_iter_item(void)
 {
     Value itval = pop_val();
@@ -1550,9 +1616,16 @@ void vm_iter_item(void)
     }
 }
    
-// TODO doc
-// [..., coll, it] => [..., coll, next_it, key, value, <true>] - item found
-// [..., coll, it] => [..., coll, 0, <false>]                  - no more items
+// Produces the next key-value pair from the collection coll as indicated
+// by the iterator iter, or indicates iteration has finished.
+//
+// [..., coll, iter] => [..., coll, next_iter, key, value, True]
+// - if iter identifies an in-bounds key-value pair within coll, it is
+//   advanced to next_iter, and the pair and True are left on the stack.
+//
+// [..., coll, iter] => [..., coll, invalid, False]
+// - if iter has exhausted coll, iter becomes invalid, and False is
+//   left on the stack (but no key-value pair)
 void vm_iter_kv(void)
 {
     Value itval = pop_val();
@@ -1568,7 +1641,6 @@ void vm_iter_kv(void)
                 push_bool(0);
             }
             else {
-                // TODO move into array api
                 Value item = array_get(array, index);
                 push_int(index+1);
                 push_int(index);
@@ -1600,8 +1672,13 @@ void vm_iter_kv(void)
 
 }
 
-// TODO doc
-// [..., <index>,<end>] => [..., <index>,<end>,<index> <= <end>]
+// Checks the validity of an index enumerating a range with final value end.
+//
+// [..., index:int, end:int] => [..., index, end, True]
+// - index is <= end, and still valid.
+//
+// [..., index:int, end:int] => [..., index, end, False]
+// - index is > end, and not valid.
 void vm_range_check(void)
 {
     Value endval = pop_int();
@@ -1611,8 +1688,10 @@ void vm_range_check(void)
     push_bool(indexval.i <= endval.i);
 }
 
-// TODO doc
-// [..., <index>,<end>] => [..., <index+1>,<end>,<index>]
+// Produces the current index in the enumeration of a range with final
+// value end, and advances to the next index.
+//
+// [..., index:int, end:int] => [..., next_index, end, index]
 void vm_range_next(void)
 {
     Value endval = pop_int();
@@ -1622,22 +1701,35 @@ void vm_range_next(void)
     push_int(indexval.i);
 }
 
-// TODO doc
-extern void slice_adjust(i16 *start, i16 *end, i16 *len)
+// TODO move this to another file
+// Adjusts start and indexes to point within the bounds of a len-element
+// collection, and returns the length of the adjusted slice interval.
+//
+// On entry len is the length of some collection, and start and end should
+// point to the start and end indexes of the desired slice. Negative indexes
+// are treated as offsets from the end of the collection.
+//
+extern i16 slice_adjust(i16 len, i16 *start, i16 *end)
 {
-    if (*start < 0) *start += *len;
-    if (*end < 0) *end += *len;
+    if (*start < 0) *start += len;
+    if (*end < 0) *end += len;
 
     if (*start < 0) *start = 0;
-    else if (*start >= *len) *start = *len;
+    else if (*start >= len) *start = len;
 
     if (*end < *start) *end = *start;
-    if (*end >= *len) *end = *len;
+    if (*end >= len) *end = len;
 
-    *len = *end - *start;
+    return *end - *start;
 }
 
-// TODO doc
+// Extracts elements in the range start<=index<end from coll.
+// Negative indexes are counted from the end of coll.
+// Where coll is either string or array.
+//
+// [..., coll, start?, end?] => [..., slice]
+// - start is present if has_start is true,
+// - end is present if has_end is true.
 void vm_get_slice(u8 has_start, u8 has_end)
 {
     i16 start = 0;
@@ -1670,7 +1762,14 @@ void vm_get_slice(u8 has_start, u8 has_end)
     }
 }
 
-// TODO doc
+// Elements of dst in the range start<=index<end are replaced with
+// all elements from src.
+// Negative indexes are counted from the end of coll.
+//
+// [..., dst, start?, end?, src]
+// - dst and src are both strings or both arrays,
+// - start is present if has_start is true,
+// - end is present if has_end is true.
 void vm_set_slice(u8 has_start, u8 has_end)
 {
     // for expr, dst[start:end] = src
@@ -1699,7 +1798,17 @@ void vm_set_slice(u8 has_start, u8 has_end)
 // Call + return handlers
 //
 
-// TODO doc
+// Prepares a new stack frame and initiates execution of <callable>'s
+// bytecode with <n> parameters P_i and space for <m> locals L_j as
+// specified by the callable's func descriptor.
+//
+// Aborts if the wrong argument count is supplied for the callable.
+// Aborts if a method is called without a compatible self argument.
+//
+// <opcode> <n:byte>
+// [..., callable, P_0..n_1] =>
+// [..., |P_0..n-1, L_0..m-1, old_fp, old_sp, ret_pc|]
+// - callable is a func, method, or bom
 void vm_call(void)
 {
     // number of args to supply to the callable
@@ -1708,17 +1817,17 @@ void vm_call(void)
     // func is buried under args...
     u8 op_nargs = call_nargs+1;
 
-    u8* pcallee = from_p16(vm_sp - op_nargs * sizeof_Value);
-    Value callee = get_value(pcallee);
+    u8* callable = from_p16(vm_sp - op_nargs * sizeof_Value);
+    Value callableval = get_value(callable);
     Func* func;
-    switch (callee.k) {
+    switch (callableval.k) {
         case kind_func: {
-            func = (Func*) from_p16(callee.u);
+            func = (Func*) from_p16(callableval.u);
             if (func->klass != 0) {
                 if (call_nargs == 0) {
                     vm_die("missing 'self' argument");
                 }
-                Value selfval = get_value(pcallee+3);
+                Value selfval = get_value(callable+3);
                 if (selfval.k != kind_object) {
                     vm_die("'self' argument is not an object");
                 }
@@ -1731,10 +1840,10 @@ void vm_call(void)
         }
         case kind_bom: {
             // extract self, and bump arg count
-            BoundObjectMethod* bom = (BoundObjectMethod*) from_p16(callee.u);
+            BoundObjectMethod* bom = (BoundObjectMethod*) from_p16(callableval.u);
             func = bom->func;
             Value objectval = {.k=kind_object, .u=to_p16(bom->object)};
-            set_value(pcallee, objectval);
+            set_value(callable, objectval);
             call_nargs += 1;
             break;
         }
@@ -1761,7 +1870,13 @@ void vm_call(void)
     vm_pc = func->vm_addr;
 }
 
-// TODO doc
+// Restores the caller's state and leaves value as the result.
+//
+// [..., |slots..., old_fp, old_sp, ret_pc|, value:any] =>
+// [..., value]
+// - fp is restored to old_fp,
+// - sp is restored to old_sp,
+// - execution continues at ret_pc.
 void vm_return(void)
 {
     vm_a = pop_val();
@@ -1776,7 +1891,13 @@ void vm_return(void)
     vm_pc = old_pc;
 }
 
-// TODO doc
+// Restores the caller's state, and leaves None as the result value.
+//
+// [..., |slots..., old_fp, old_sp, ret_pc|, None] =>
+// [..., value]
+// - fp is restored to old_fp,
+// - sp is restored to old_sp,
+// - execution continues at ret_pc.
 void vm_return_none(void)
 {
     u16 old_pc = pop_word();
@@ -1793,7 +1914,7 @@ void vm_return_none(void)
 // Entry point
 //
 
-// TODO doc
+// Execute the compiled byte code starting at vm_pc_start.
 u16 vm_run(const u8 *vm_pc_start)
 {
     if (opt_trace_vm) {

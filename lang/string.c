@@ -152,10 +152,7 @@ bool string_eq(String* s1, String* s2)
 // - if start < 0:  start' = max(0, min(start+len, len))
 String* string_get_slice(String* string, i16 start, i16 end)
 {
-    i16 len = string->len;
-
-    slice_adjust(&start, &end, &len);
-
+    i16 len = slice_adjust(string->len, &start, &end);
     return string_from_data(string->data + start, len);
 }
 

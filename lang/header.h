@@ -296,6 +296,6 @@ float f16_to_float(f16 f);
 const char* debug_op_name(u8 op);
 Value get_value(const u8* p);
 void set_value(u8* p, Value v);
-void slice_adjust(i16 *start, i16 *end, i16 *len);
+i16 slice_adjust(i16 len, i16 *start, i16 *end);
 
 #endif
