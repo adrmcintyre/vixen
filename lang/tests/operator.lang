@@ -49,11 +49,13 @@ print 13.5 / 3      #!4.5
 print 19.25 / 3.5   #!5.5
 print 14 / 3.5      #!4
 
-## arith remainder
-print 7 % 3         #!1
-print 7 % -3        #!1
-print -7 % 3        #!-1
-print -7 % -3       #!-1
+## integer modulus (sign of result follows sign of second arg)
+print 0 % 5         #!0
+print 0 % -5        #!0
+print 12 % 5        #!2
+print -12 % 5       #!3
+print 12 % -5       #!-3
+print -12 % -5      #!-2
 
 ## arith relations
 print 1<2, 1<1   #!True False

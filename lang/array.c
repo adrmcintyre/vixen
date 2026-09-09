@@ -131,8 +131,7 @@ bool array_set(Array* array, i16 index, Value v)
 // range start <= index < end.
 Array* array_get_slice(Array* src, i16 start, i16 end)
 {
-    i16 len = (i16) src->len;
-    slice_adjust(&start, &end, &len);
+    i16 len = slice_adjust(src->len, &start, &end);
 
     Array* dst = array_new_presized(len, 0);
 
@@ -146,8 +145,8 @@ Array* array_get_slice(Array* src, i16 start, i16 end)
 // match the size of the destination range.
 void array_set_slice(Array* dst, i16 start, i16 end, Array* src)
 {
-    i16 slicelen = (i16) dst->len; // num elems to replace
-    slice_adjust(&start, &end, &slicelen);
+    // num elems to replace
+    i16 slicelen = slice_adjust(dst->len, &start, &end);
 
     u8* srcdata = src->dataptr;
     u8* olddata = dst->dataptr;

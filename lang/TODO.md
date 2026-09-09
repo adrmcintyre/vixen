@@ -10,6 +10,12 @@ Ref counting of strings, arrays, dicts?
 
 Link discarded allocations for reuse.
 
+## Arithmetic
+
+Check for integer overflow on unary-, +, -, *, abs, int?
+Add explicit // integer division operator?
+Abort on integer /0, %0?
+
 ## Tests
 
 Add tests compile time and run time errors.
