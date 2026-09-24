@@ -42,7 +42,6 @@ print o.y  #!100
 print o.z  #!30
 
 ## Method call
-# TODO - c prints as "local" instead of "arg3"
 o.F("arg1", "arg2", "arg3")
 #!F called
 #!g global

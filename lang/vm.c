@@ -1492,8 +1492,11 @@ void vm_set_prop(void)
 // <m> locals L_j as specified by the method's func descriptor.
 //
 // <opcode> <method:String*> <n:byte>
-// [..., obj:object, P_0..n_1:any] =>
-// [..., |obj, P_0..n-1, L_0..m-1, old_fp, old_sp, ret_pc|]
+// [..., |old_frame|, obj:object, P_0..n_1:any] =>
+// [..., |old_frame|, |obj, P_0..n-1, L_0..m-1, old_fp, old_sp, ret_pc|]
+//       ^            ^                             |     |
+//       +------------|-----------------------------+     |
+//                    +-----------------------------------+
 void vm_call_method(void)
 {
     String* prop = (String*) fetch_ptr();

@@ -59,7 +59,7 @@ u16 hash_mem(const u8* p, u16 len)
 }
 
 // Default source file to load.
-static const char default_program[] = "test.lang";
+static const char default_program[] = "default.lang";
 
 // Print program usage.
 void usage(const char* prog)

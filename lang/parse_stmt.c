@@ -206,7 +206,8 @@ void emit_assign_at_func_scope(String* name)
     Value nameval = {.k=kind_string, .u=to_p16(name)};
     Value slotval = dict_get_item(active_func->slots, nameval);
     if (slotval.k == kind_fail) {
-        u16 slot = dict_length(active_func->slots);
+        u16 slot = active_func->nslots;
+        active_func->nslots += 1;
         slotval = (Value){.k=kind_int, .u=slot};
         dict_set_item(active_func->slots, nameval, slotval);
     }
@@ -263,7 +264,8 @@ void emit_assign_at_method_scope(String* name)
             emit_op(op_set_object_slot);
         }
         else {
-            u16 slot = dict_length(active_func->slots);
+            u16 slot = active_func->nslots;
+            active_func->nslots += 1;
             slotval = (Value){.k=kind_int, .u=slot};
             dict_set_item(active_func->slots, nameval, slotval);
             emit_op(op_set_func_slot);
@@ -418,6 +420,7 @@ void parse_func(void)
             if (!lex_char(',')) parser_die("missing ','");
         }
     }
+
     func->klass = active_class;
     func->nargs = nslots;
     func->nslots = nslots;

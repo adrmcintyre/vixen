@@ -1,0 +1,14 @@
+class Greeter
+    greeting = "Hello"
+    separator = ", "
+    terminator = "!"
+    func message(who)
+        return greeting + separator + who + terminator
+    end
+end
+
+g = Greeter{greeting: "What's up", terminator: "?"}
+m = g.message
+print m("world")
+
+stop

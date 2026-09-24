@@ -1,18 +1,20 @@
-v1 = "global1"
-v2 = "global2"
-v3 = "global3"
+g1 = "global1"
+g2 = "global2"
+g3 = "global3"
 
-print "[global] v1 =", v1       #![global] v1 = global1
-print "[global] v2 =", v2       #![global] v2 = global2
-print "[global] v3 =", v3       #![global] v3 = global3
+print "[global] g1 =", g1       #![global] g1 = global1
+print "[global] g2 =", g2       #![global] g2 = global2
+print "[global] g3 =", g3       #![global] g3 = global3
 
-func f(v1)
-    print "[arg] v1 =", v1      #![arg] v1 = arg
-    v2 = "local"
-    print "[local] v2 =", v2    #![local] v2 = local
-    print "[global] v3 =", v3   #![global] v3 = global3
+func f(a, b, c)
+    l = "local"
+    print "g1", g1  #!g1 global1
+    print "l", l  #!l local
+    print "a", a  #!a arg1
+    print "b", b  #!b arg2
+    print "c", c  #!c arg3
 end
 
-f("arg")
+f("arg1", "arg2", "arg3")
 
 stop
