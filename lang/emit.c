@@ -1,4 +1,5 @@
 #include "header.h"
+#include "string.h"
 
 #include <stdio.h>
 

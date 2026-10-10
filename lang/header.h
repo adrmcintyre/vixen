@@ -12,6 +12,7 @@ typedef signed short i16;
 
 typedef struct Dict Dict;
 typedef struct Class Class;
+typedef struct String String;
 
 // Converts a host pointer to a 16-bit vm pointer.
 #define to_p16(p) ((u16) ((u8*) (p)-mem_base))
@@ -176,30 +177,6 @@ typedef struct {
     const u8* ptr;
 } Token;
 
-// Describes a function or method.
-typedef struct {
-    Dict* slots;    // string -> int: maps each arg or local to its slot number
-    u8 nslots;      // number of slots (args + locals)
-    u8 nargs;       // number of args
-    Class* klass;   // 0 for funcs, otherwise points to the associated class
-    u16 vm_addr;    // address of compiled vm code
-} Func;
-
-// Represents a string.
-typedef struct {
-    u16 hash;   // hash of the string
-    i16 len;    // length of the string in characters
-    u8 data[];  // the bytes of the string
-} String;
-
-// Represents a dynamically sized array.
-typedef struct {
-    i16 len;        // current length of the array in elements
-    i16 cap;        // total allocated capacity in elements
-    i16 min_cap;    // don't shrink cap below this
-    u8* dataptr;    // points to the allocated elements
-} Array;
-
 // Gross memory map
 static const size_t mem_size = 65536;
 static const u16 heap_max = 0x1000;
@@ -221,71 +198,12 @@ __attribute__((noreturn)) void die(const char* msg);
 __attribute__((noreturn)) void unreachable(void);
 u16 hash_mem(const u8* p, u16 len);
 
-// Keywords
-OpData lookup_keyword(const u8* word, u16 word_len);
-OpData opdata_from_value(Value value);
-Value opdata_to_value(OpData opdata);
-
 // Operators
 extern const u8 binops[];
 extern const u8 unops[];
 
-// Heap
-void heap_init(void);
-u8* heap_alloc(u16 n);
-
 // Identifiers
 bool token_string_eq(Token* token, String* string);
-
-// Strings
-extern String* interned_char_strings[];
-extern String* interned_string_empty;
-extern String* interned_string_none;
-extern String* interned_string_true;
-extern String* interned_string_false;
-extern String* interned_string_nan;
-extern String* interned_string_neg_inf;
-extern String* interned_string_pos_inf;
-extern String* interned_string_array;
-extern String* interned_string_dict;
-extern String* interned_string_func;
-extern String* interned_string_class;
-extern String* interned_string_object;
-extern String* interned_string_bom;
-extern String* interned_string_unknown;
-void strings_init(void);
-String* string_intern_token(void);
-String* string_from_char(u8 ch);
-String* string_from_data(const u8* data, i16 len);
-String* string_new_uninited(i16 len);
-void string_rehash(String* string);
-bool string_eq(String* s1, String* s2);
-String* string_get_slice(String* string, i16 start, i16 end);
-String* string_concat(String* str1, String* str2);
-
-// Lexer
-extern const u8* input_ptr;
-extern const u8* token_ptr;
-extern i16 token_len;
-bool lex_char(u8 ch);
-Value lex_word(void);
-String* must_lex_ident(void);
-void unlex_word(void);
-bool lex_peek_stmt_end(void);
-Value lex_number(void);
-String* lex_string(void);
-bool lex_comment(void);
-bool lex_end_of_stream(void);
-
-// Code generation
-extern bool opt_trace_emit;
-extern u8* code_base;
-extern u8* code_ptr;
-extern u8* last_op_ptr;
-void emit_op(Op op);
-void emit_byte(u8 b);
-void emit_word(u16 w);
-void emit_string(const String* s);
 
 // Virtual machine
 extern bool opt_trace_vm;
@@ -295,7 +213,9 @@ f16 f16_from_float(float f);
 float f16_to_float(f16 f);
 const char* debug_op_name(u8 op);
 Value get_value(const u8* p);
+Value get_value_indexed(const u8* p, i16 i);
 void set_value(u8* p, Value v);
+void set_value_indexed(u8* p, i16 i, Value v);
 i16 slice_adjust(i16 len, i16 *start, i16 *end);
 
 #endif

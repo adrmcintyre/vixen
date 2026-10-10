@@ -1,14 +1,11 @@
 #include "dict.h"
 #include "header.h"
+#include "heap.h"
+#include "string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-//TODO
-void heap_free(__attribute__((unused)) void* p)
-{
-}
 
 static const u16 sizeof_DictEntry = sizeof(DictEntry);
 
@@ -96,12 +93,12 @@ static u8 estimate_keysize(u16 n)
 // TODO - triple? really?!
 #define GROWTH_RATE(d) ((d)->used*3)
 
-static DictKeys* dictkeys_new(u16 size)
+static DictKeys* dictkeys_new(const char* label, u16 size)
 {
     u16 usable = USABLE_FRACTION(size);
     u16 index_bytes = size <= 128 ? size : size*2;
 
-    DictKeys* keys = (DictKeys*) heap_alloc(sizeof_DictKeys
+    DictKeys* keys = (DictKeys*) heap_alloc(label, kind_none, sizeof_DictKeys
                         + index_bytes
                         + usable * sizeof_DictEntry);
     keys->mask = size-1;
@@ -113,25 +110,17 @@ static DictKeys* dictkeys_new(u16 size)
     return keys;
 }
 
-static void dictkeys_free(DictKeys* keys)
+static Dict* dict_internal_new(const char* label, DictKeys *keys, u16 used)
 {
-    //TODO add to a free list?
-    heap_free(keys);
-    // do not free the entries themselves, as we've
-    // just been called from dict_resize which will
-    // not be holding onto them instead.
-}
-
-static Dict* dict_internal_new(DictKeys *keys, u16 used)
-{
-    Dict *dict = (Dict*) heap_alloc(sizeof_Dict);
+    Dict *dict = (Dict*) heap_alloc(label, kind_dict, sizeof_Dict);
     dict->keys = keys;
     dict->used = used;
     return dict;
 }
 
-Dict* dict_new(void) {
-    return dict_internal_new(EMPTY_DICT_KEYS, 0);
+Dict* dict_new(const char* label)
+{
+    return dict_internal_new(label, EMPTY_DICT_KEYS, 0);
 }
 
 // Search index of hash table from offset of entry table
@@ -246,6 +235,8 @@ static i16 dictkeys_lookup(DictKeys* keys, Value key, u16 hash)
 // All arithmetic on hash should ignore overflow.
 // 
 // When the key isn't found a IX_EMPTY is returned.
+//
+// Does not alter ref count of returned value.
 static i16 dict_lookup(Dict *dict, Value key, u16 hash, Value *value_addr)
 {
     DictKeys* keys = dict->keys;
@@ -303,12 +294,12 @@ static void dictkeys_build_indices(DictKeys *keys, DictEntry *entry, u16 n)
 // Restructure the table by allocating a new table and reinserting
 // all items again.  When entries have been deleted, the new table
 // may actually be smaller than the old one.
-static void dict_resize(Dict *dict, u16 newsize)
+static void dict_resize(const char* label, Dict *dict, u16 newsize)
 {
     DictKeys *oldkeys = dict->keys;
 
     // Allocate a new table.
-    dict->keys = dictkeys_new(newsize);
+    dict->keys = dictkeys_new(label, newsize);
 
     u16 numentries = dict->used;
 
@@ -328,16 +319,16 @@ static void dict_resize(Dict *dict, u16 newsize)
     dictkeys_build_indices(dict->keys, newentries, numentries);
 
     if (oldkeys != EMPTY_DICT_KEYS) {
-        dictkeys_free(oldkeys);
+        heap_release(oldkeys);
     }
 
     dict->keys->usable -= numentries;
     dict->keys->nentries = numentries;
 }
 
-static void dict_insert_resize(Dict *dict)
+static void dict_insert_resize(const char* label, Dict *dict)
 {
-    dict_resize(dict, calculate_keysize(GROWTH_RATE(dict)));
+    dict_resize(label, dict, calculate_keysize(GROWTH_RATE(dict)));
 }
 
 // Internal routine to insert a new item into the table.
@@ -351,7 +342,7 @@ static void dict_insert(Dict *dict, Value key, u16 hash, Value value)
         // Insert into new slot.
         if (dict->keys->usable <= 0) {
             // Need to resize.
-            dict_insert_resize(dict);
+            dict_insert_resize("dict_insert", dict);
         }
 
         u16 hashpos = dictkeys_find_empty_slot(dict->keys, hash);
@@ -360,29 +351,35 @@ static void dict_insert(Dict *dict, Value key, u16 hash, Value value)
         DictEntry* entry = &DK_ENTRIES(dict->keys)[dict->keys->nentries];
         entry->key = key;
         entry->value = value;
+        rc_inc(key);
+        rc_inc(value);
         
         dict->used++;
         dict->keys->usable--;
         dict->keys->nentries++;
     }
     else if (! (old_value.k == value.k && old_value.u == value.u)) {
-        // TODO
-        // dec_ref(old_value);
         DK_ENTRIES(dict->keys)[ix].value = value;
+        rc_inc(value);
+        rc_dec(old_value);
     }
 }
 
 // Same as dict_insert, but specialized for keys = EMPTY_KEYS.
-static void dict_insert_empty(Dict *dict, Value key, u16 hash, Value value)
+static void dict_insert_empty(const char* label, Dict *dict, Value key, u16 hash, Value value)
 {
-    DictKeys *newkeys = dictkeys_new(MINSIZE);
+    DictKeys *newkeys = dictkeys_new(label, MINSIZE);
     dict->keys = newkeys;
 
     u16 hashpos = hash & (MINSIZE-1);
     dictkeys_set_index(dict->keys, hashpos, 0);
+
     DictEntry *entry = DK_ENTRIES(dict->keys);
     entry->key = key;
     entry->value = value;
+    rc_inc(key);
+    rc_inc(value);
+
     dict->used++;
     dict->keys->usable--;
     dict->keys->nentries++;
@@ -395,6 +392,7 @@ Value dict_get_item(Dict *dict, Value key)
     i16 ix = dict_lookup(dict, key, hash, &value);
     (void)ix;
 
+    rc_inc(value);
     return value;
 }
 
@@ -402,19 +400,19 @@ void dict_set_item(Dict* dict, Value key, Value value)
 {
     u16 hash = key_hash(key);
     if (dict->keys == EMPTY_DICT_KEYS) {
-        dict_insert_empty(dict, key, hash, value);
+        dict_insert_empty("dict_set_item", dict, key, hash, value);
     } else {
         // dict_insert() handles any resizing that might be necessary
         dict_insert(dict, key, hash, value);
     }
 }
 
-Dict* dict_new_presized(u16 min_used)
+Dict* dict_new_presized(const char* label, u16 min_used)
 {
     u16 newsize;
 
     if (min_used <= USABLE_FRACTION(MINSIZE)) {
-        return dict_new();
+        return dict_new(label);
     }
     // There is no strict guarantee that returned dict can contain min_used
     // items without resize.  So we create medium size dict instead of very
@@ -426,23 +424,40 @@ Dict* dict_new_presized(u16 min_used)
         newsize = estimate_keysize(min_used);
     }
 
-    DictKeys* new_keys = dictkeys_new(newsize);
-    return dict_internal_new(new_keys, 0);
+    DictKeys* new_keys = dictkeys_new(label, newsize);
+    return dict_internal_new(label, new_keys, 0);
+}
+
+void dict_release(Dict* dict)
+{
+    DictKeys* keys = dict->keys;
+    if (keys != EMPTY_DICT_KEYS) {
+        heap_release(keys);
+
+        for (u16 i=0; i<keys->nentries; i++) {
+            DictEntry* entry = DK_ENTRIES(keys) + i;
+            // skip deleted entries
+            if (entry->value.k != kind_fail) {
+                rc_dec(entry->key);
+                rc_dec(entry->value);
+            }
+        }
+    }
 }
 
 static void dict_delete_common(
     Dict *dict,
     u16 hash,
-    i16 ix,
-    __attribute__((unused)) Value old_value)
+    i16 ix)
 {
     u16 hashpos = dictkeys_look_index(dict->keys, hash, ix);
 
     dict->used--;
     dictkeys_set_index(dict->keys, hashpos, IX_DELETED);
+
     DictEntry *entry = &DK_ENTRIES(dict->keys)[ix];
-    // TODO
-    // dec_ref(entry->value);
+    rc_dec(entry->key);
+    rc_dec(entry->value);
     entry->key.k = kind_fail;
     entry->value.k = kind_fail;
 }
@@ -457,7 +472,7 @@ int dict_delete(Dict* dict, Value key)
         return 0;
     }
 
-    dict_delete_common(dict, hash, ix, old_value);
+    dict_delete_common(dict, hash, ix);
     return 1;
 }
 
@@ -471,8 +486,12 @@ u16 dict_iter_init(__attribute__((unused)) Dict* dict)
     return 0;
 }
 
+// NOTE - it is the caller's responsibility to modify the ref
+// counts of the returned key+value.
 u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value)
 {
+    // TODO maybe it should be up to the caller
+    // to update refcounts of returned key+value?
     DictKeys *keys = dict->keys;
     while (1) {
         if (iter >= keys->nentries) {

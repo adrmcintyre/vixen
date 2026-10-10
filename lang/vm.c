@@ -1,7 +1,9 @@
 #include "header.h"
 #include "array.h"
 #include "dict.h"
+#include "heap.h"
 #include "object.h"
+#include "string.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -42,9 +44,22 @@ extern Value get_value(const u8* p)
     return (Value){.k = *p, .u = *(u16*)(p+1)};
 }
 
+extern Value get_value_indexed(const u8* p, i16 i)
+{
+    p += i * sizeof_Value;
+    return (Value){.k = *p, .u = *(u16*)(p+1)};
+}
+
 // Stores the value v at p.
 extern void set_value(u8* p, Value v)
 {
+    *p = v.k;
+    *(u16*)(p+1) = v.u;
+}
+
+extern void set_value_indexed(u8* p, i16 i, Value v)
+{
+    p += i * sizeof_Value;
     *p = v.k;
     *(u16*)(p+1) = v.u;
 }
@@ -197,6 +212,7 @@ Value pop_val(void)
 Value pop_bool(void)
 {
     Value v = pop_val();
+    rc_dec(v);
     // convert None, False to False, everything else to True
     if (v.k != kind_bool) {
         v.u = v.k != kind_none;
@@ -221,14 +237,6 @@ Value pop_float(void)
     Value v = pop_val();
     if (v.k == kind_float) return v;
     vm_die("expected float");
-}
-
-// Pops two Values of any type from the stack, setting vm_b to the top value
-// and vm_a to the 2nd from top value, coercing both to bool.
-void pop_bools(void)
-{
-    vm_b = pop_bool();
-    vm_a = pop_bool();
 }
 
 // Pops two integer Values from the stack, setting vm_b to the top item and
@@ -450,7 +458,6 @@ void vm_add(void)
         case kind_string: {
             String* str1 = (String*) from_p16(vm_a.u);
             String* str2 = (String*) from_p16(vm_b.u);
-
             String* res = string_concat(str1, str2);
             push_val(kind_string, to_p16(res));
             return;
@@ -465,6 +472,8 @@ void vm_add(void)
         default:
             vm_die("expected numbers or strings or arrays");
     }
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 //------------------------------------------------------------------------------
@@ -505,30 +514,27 @@ void vm_relop(u8 op)
             break;
         }
 
-        case kind_string:
-            if (vm_a.u == vm_b.u) {
-                cmp = 0;
-            }
-            else {
-                String* str1 = (String*) from_p16(vm_a.u);
-                String* str2 = (String*) from_p16(vm_b.u);
-                i16 len1 = str1->len;
-                i16 len2 = str2->len;
-                i16 prefix_len = len1;
-                if (prefix_len > len2) {
-                    prefix_len = len2;
-                }
-                cmp = memcmp(str1->data, str2->data, prefix_len);
-                if (cmp == 0 && len1 != len2) {
-                    cmp = (len1 < len2) ? -1 : 1;
-                }
-            }
+        case kind_string: {
+            String* str1 = (String*) from_p16(vm_a.u);
+            String* str2 = (String*) from_p16(vm_b.u);
+            cmp = string_compare(str1, str2);
             break;
+        }
 
         default:
             vm_die("non-comparable");
     }
 
+    rc_dec(vm_a);
+    rc_dec(vm_b);
+
+    // TODO - encode comparisons as bit patterns instead, e.g.:
+    // b2 = a < b
+    // b1 = a == b
+    // b0 = a > b
+    //
+    // then operators can be implemented as le = (bbb & 0b110)!=0, ne = (bbb & 0b101)!=0, etc.
+    // The operators themselves can directly encode their bit masks.
     u16 b;
     switch(op) {
         case op_le: b = cmp <= 0; break;
@@ -631,7 +637,7 @@ void fn_int(void)
 
         case kind_string: {
             const String* str = (String*) from_p16(vm_a.u);
-            u16 len = str->len;
+            i16 len = str->len;
             // number of digits in "-32768"
             if (len > 0 && len <= 6) {
                 char buf[8];
@@ -650,8 +656,11 @@ void fn_int(void)
             vm_die("not a valid integer");
         }
 
-        default: vm_die("expected number or string");
+        default:
+            vm_die("expected number or string");
     }
+
+    rc_dec(vm_a);
 }
 
 // Replaces Value A with its equivalent as a float Value.
@@ -683,7 +692,7 @@ void fn_float(void)
 
         case kind_string: {
             String* str = (String*) from_p16(vm_a.u);
-            u16 len = str->len;
+            i16 len = str->len;
             // reasonable upper bound for max digits
             if (len > 0 && len < 32) {
                 char buf[32];
@@ -700,8 +709,11 @@ void fn_float(void)
             vm_die("not a valid number");
         }
 
-        default: vm_die("expected number or string");
+        default:
+            vm_die("expected number or string");
     }
+
+    rc_dec(vm_a);
 }
 
 //------------------------------------------------------------------------------
@@ -722,6 +734,7 @@ void fn_asc(void)
     String* str = (String*) from_p16(vm_a.u);
     if (str->len == 0) push_int(0);
     else push_int(str->data[0]);
+    rc_dec(vm_a);
 }
 
 // Replaces integer Value A with a string Value whose only character is
@@ -759,6 +772,7 @@ void fn_str(void)
             break;
 
         case kind_int: {
+            // TODO might be worth interning strings for small ints
             u8 buf[16];
             u16 len = sprintf((char*) buf, "%d", vm_a.i);
             push_val(kind_string, to_p16(string_from_data(buf, len)));
@@ -780,6 +794,7 @@ void fn_str(void)
         }
 
         case kind_string:
+            rc_inc_ptr(from_p16(vm_a.u));
             push_val(vm_a.k, vm_a.u);
             break;
 
@@ -812,6 +827,7 @@ void fn_str(void)
             push_val(kind_string, to_p16(interned_string_unknown));
             break;
     }
+    rc_dec(vm_a);
 }
 
 // Replaces A with integer Value of how many elements it contains.
@@ -843,6 +859,7 @@ void fn_len(void)
             vm_die("expected string or array or dict");
     }
     push_int(n);
+    rc_dec(vm_a);
 }
 
 // Updates array A by appending the element B.
@@ -857,6 +874,8 @@ void vm_append(void)
     vm_a = pop_array();
     Array* arr = (Array*) from_p16(vm_a.u);
     array_append(arr, vm_b);
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 // Updates array A by append the elements of B.
@@ -872,6 +891,8 @@ void vm_extend(void)
     Array* dst = (Array*) from_p16(vm_a.u);
     Array* src = (Array*) from_p16(vm_b.u);
     array_set_slice(dst, dst->len, -1, src);
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 // Removes the last element of array A, and pushes it to the stack in its place.
@@ -887,6 +908,7 @@ void vm_pop(void)
     Value v = array_pop(arr);
     if (v.k == kind_fail) vm_die("array empty");
     push_val(v.k, v.u);
+    rc_dec(vm_a);
 }
 
 //------------------------------------------------------------------------------
@@ -894,7 +916,7 @@ void vm_pop(void)
 //
 
 // Prints a representation of the Value val.
-void vm_print(Value val)
+void value_print(Value val)
 {
     switch(val.k) {
         case kind_none:
@@ -935,7 +957,7 @@ void vm_print(Value val)
             u8* elt = array->dataptr;
             putchar('[');
             while(len--) {
-                vm_print(get_value(elt));
+                value_print(get_value(elt));
                 elt += sizeof_Value;
                 if (len) putchar(',');
             }
@@ -951,14 +973,14 @@ void vm_print(Value val)
             u16 iter = dict_iter_init(dict);
             iter = dict_iter_item(dict, iter, &key, &value);
             if (iter) {
-                vm_print(key);
+                value_print(key);
                 putchar(':');
-                vm_print(value);
+                value_print(value);
                 while (0 != (iter = dict_iter_item(dict, iter, &key, &value))) {
                     putchar(',');
-                    vm_print(key);
+                    value_print(key);
                     putchar(':');
-                    vm_print(value);
+                    value_print(value);
                 }
             }
             putchar('}');
@@ -996,13 +1018,15 @@ void vm_print(Value val)
 //
 // <opcode> <n:byte>
 // [..., A_0..A_n-1:any] => [...]
-void proc_print(void)
+void vm_print(void)
 {
     u8 n = fetch_byte();
     vm_sp -= n * sizeof_Value;
     u8* item = from_p16(vm_sp);
-    while(n--) {
-        vm_print(get_value(item));
+    while (n--) {
+        Value v = get_value(item);
+        value_print(v);
+        rc_dec(v);
         item += sizeof_Value;
         if (n) printf(" ");
     }
@@ -1023,6 +1047,7 @@ void vm_set_global_prop(void)
 
     Value propval = {.k=kind_string, .u=fetch_word()};
     dict_set_item(vm_globals, propval, vm_a);
+    rc_dec(vm_a);
 }
 
 // Pushes the Value in the global variable <prop> to the stack.
@@ -1048,6 +1073,7 @@ void vm_set_func_slot(void)
     u16 slot = fetch_word();
     vm_a = pop_val();
     u8* pslot = from_p16(vm_fp + slot * sizeof_Value);
+    rc_dec(get_value(pslot));
     set_value(pslot, vm_a);
 }
 
@@ -1061,7 +1087,7 @@ void vm_get_func_slot(void)
 
     u16 slot = fetch_word();
     u8* frame = from_p16(vm_fp + slot * sizeof_Value);
-    Value item = get_value(frame);
+    Value item = rc_inc(get_value(frame));
     push_val(item.k, item.u);
 }
 
@@ -1069,6 +1095,7 @@ void vm_get_func_slot(void)
 //
 // - Assumes the current frame is due to a method call.
 // - The stack is not affected.
+// - Ref count is not changed.
 Object* get_self(void)
 {
     u8* frame = from_p16(vm_fp + 0 * sizeof_Value);
@@ -1090,6 +1117,7 @@ void vm_set_class_prop(void)
     // TODO - shouldn't we check the prop is actually valid first?
     // NOTE - currently only called at compile time
     dict_set_item(klass->props, propval, vm_a);
+    rc_dec(vm_a);
 }
 
 void vm_get_class_prop(void)
@@ -1109,6 +1137,7 @@ void vm_set_class_method(void)
     vm_a = pop_val();
 
     dict_set_item(klass->methods, methodval, vm_a);
+    rc_dec(vm_a);
 }
 
 // Sets the current object's <n>th slot to the Value A.
@@ -1123,6 +1152,7 @@ void vm_set_object_slot(void)
     u16 slot = fetch_word();
     Object* self = get_self();
     u8* pslot = self->data + slot * sizeof_Value;
+    rc_dec(get_value(pslot));
     set_value(pslot, vm_a);
 }
 
@@ -1139,7 +1169,7 @@ void vm_get_object_slot(void)
     u16 slot = fetch_word();
     Object* self = get_self();
     u8* pslot = self->data + slot * sizeof_Value;
-    Value val = get_value(pslot);
+    Value val = rc_inc(get_value(pslot));
     push_val(val.k, val.u);
 }
 
@@ -1155,7 +1185,7 @@ void vm_get_object_slot(void)
 void vm_lit_array(void)
 {
     u8 nargs = fetch_byte();
-    Array* array = array_new_presized(nargs, 0);
+    Array* array = array_new_presized("vm_lit_array", nargs, 0);
     u8* elt = array->dataptr + nargs * sizeof_Value;
 
     while(nargs--) {
@@ -1177,7 +1207,7 @@ void vm_lit_dict(void)
 {
     u16 nargs = fetch_word();
 
-    Dict *dict = dict_new_presized(nargs);
+    Dict *dict = dict_new_presized("vm_lit_dict", nargs);
     vm_sp -= nargs * 2 * sizeof_Value;
     u8 *item = from_p16(vm_sp);
 
@@ -1198,6 +1228,8 @@ void vm_lit_dict(void)
         item += sizeof_Value;
      
         dict_set_item(dict, key, value);
+        rc_dec(key);
+        rc_dec(value);
     }
 
     push_dict(dict);
@@ -1237,6 +1269,8 @@ void vm_in(void)
         default:
             vm_die("expected array or dict");
     }
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 // Replaces container Value A and index Value B with B's element at index A.
@@ -1304,6 +1338,8 @@ void vm_get_index(void)
         default:
             vm_die("expected string or array or dict");
     }
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 // Updates an element in collection A at index B with the value C.
@@ -1351,6 +1387,9 @@ void vm_set_index(void)
         }
         default: vm_die("expected array or dict");
     }
+    rc_dec(vm_a);
+    rc_dec(vm_b);
+    rc_dec(vm_c);
 }
 
 // Replaces a class Value K and <n> property/value pairs P_i, V_i with
@@ -1380,9 +1419,11 @@ void vm_lit_object(void)
         if (!object_set_prop_by_name(object, vm_a, vm_b)) {
             vm_die("property does not exist");
         }
+        rc_dec(vm_a);
+        rc_dec(vm_b);
     }
     // discard the buried class
-    vm_a = pop_val();
+    rc_dec(pop_val());
     push_val(kind_object, to_p16(object));
 }
 
@@ -1395,10 +1436,13 @@ void vm_lit_object(void)
 void vm_lit_method(void)
 {
     Func* func = (Func*) fetch_ptr();
+    Object* self = get_self();
 
-    BoundObjectMethod* bom = (BoundObjectMethod*) heap_alloc(sizeof(BoundObjectMethod));
-    bom->object = get_self();
+    BoundObjectMethod* bom = (BoundObjectMethod*) heap_alloc("vm_lit_method", kind_bom, sizeof(BoundObjectMethod));
+    bom->object = self;
     bom->func = func;
+    rc_inc_ptr(self);
+    rc_inc_ptr(func);
 
     push_val(kind_bom, to_p16(bom));
 }
@@ -1459,6 +1503,7 @@ void vm_get_prop(void)
             vm_die("expected class or object");
         }
     }
+    rc_dec(vm_a);
 }
 
 // Sets the property on object A named by <prop> to the Value B.
@@ -1485,6 +1530,9 @@ void vm_set_prop(void)
     if (!object_set_prop_by_name(object, key, vm_b)) {
         vm_die("property does not exist");
     }
+
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 // Creates a new stack frame and initiates execution of the method named
@@ -1563,7 +1611,6 @@ void vm_iter_init(void)
             vm_die("expected array or dict");
             break;
     }
-
 }
 
 // Produces the next item from the collection coll as indicated by the
@@ -1608,6 +1655,7 @@ void vm_iter_item(void)
                 push_bool(0);
             }
             else {
+                rc_inc(item);
                 push_int(next_it);
                 push_val(item.k, item.u);
                 push_bool(1);
@@ -1662,6 +1710,8 @@ void vm_iter_kv(void)
                 push_bool(0);
             }
             else {
+                rc_inc(key);
+                rc_inc(value);
                 push_int(next_it);
                 push_val(key.k, key.u);
                 push_val(value.k, value.u);
@@ -1738,12 +1788,10 @@ void vm_get_slice(u8 has_start, u8 has_end)
     i16 start = 0;
     i16 end = 32767;
     if (has_end) {
-        vm_a = pop_int();
-        end = vm_a.i;
+        end = pop_int().i;
     }
     if (has_start) {
-        vm_a = pop_int();
-        start = vm_a.i;
+        start = pop_int().i;
     }
     vm_a = pop_val();
 
@@ -1763,6 +1811,7 @@ void vm_get_slice(u8 has_start, u8 has_end)
         default:
             vm_die("expected string or array");
     }
+    rc_dec(vm_a);
 }
 
 // Elements of dst in the range start<=index<end are replaced with
@@ -1778,23 +1827,24 @@ void vm_set_slice(u8 has_start, u8 has_end)
     // for expr, dst[start:end] = src
     // stack is: (tos) src | end | start | dst
     vm_a = pop_array();
-    Array* src = (Array*) from_p16(vm_a.u);
 
     i16 start = 0;
     i16 end = 32767;
     if (has_end) {
-        vm_a = pop_int();
-        end = vm_a.i;
+        end = pop_int().i;
     }
     if (has_start) {
-        vm_a = pop_int();
-        start = vm_a.i;
+        start = pop_int().i;
     }
 
-    vm_a = pop_array();
-    Array* dst = (Array*) from_p16(vm_a.u);
+    vm_b = pop_array();
+
+    Array* src = (Array*) from_p16(vm_a.u);
+    Array* dst = (Array*) from_p16(vm_b.u);
 
     array_set_slice(dst, start, end, src);
+    rc_dec(vm_a);
+    rc_dec(vm_b);
 }
 
 //------------------------------------------------------------------------------
@@ -1820,8 +1870,9 @@ void vm_call(void)
     // func is buried under args...
     u8 op_nargs = call_nargs+1;
 
-    u8* callable = from_p16(vm_sp - op_nargs * sizeof_Value);
-    Value callableval = get_value(callable);
+    u8* callableptr = from_p16(vm_sp - op_nargs * sizeof_Value);
+    Value callableval = get_value(callableptr);
+
     Func* func;
     switch (callableval.k) {
         case kind_func: {
@@ -1830,7 +1881,7 @@ void vm_call(void)
                 if (call_nargs == 0) {
                     vm_die("missing 'self' argument");
                 }
-                Value selfval = get_value(callable+3);
+                Value selfval = get_value(callableptr+3);
                 if (selfval.k != kind_object) {
                     vm_die("'self' argument is not an object");
                 }
@@ -1846,7 +1897,9 @@ void vm_call(void)
             BoundObjectMethod* bom = (BoundObjectMethod*) from_p16(callableval.u);
             func = bom->func;
             Value objectval = {.k=kind_object, .u=to_p16(bom->object)};
-            set_value(callable, objectval);
+            set_value(callableptr, objectval);
+            rc_inc_ptr(bom->object);
+            rc_dec(callableval);
             call_nargs += 1;
             break;
         }
@@ -1888,6 +1941,8 @@ void vm_return(void)
     u16 old_sp = pop_word();
     u16 old_fp = pop_word();
 
+    rc_dec_many(from_p16(old_sp), (vm_sp-old_sp)/sizeof_Value);
+
     vm_fp = old_fp;
     vm_sp = old_sp;
     push_val(vm_a.k, vm_a.u);
@@ -1906,6 +1961,8 @@ void vm_return_none(void)
     u16 old_pc = pop_word();
     u16 old_sp = pop_word();
     u16 old_fp = pop_word();
+
+    rc_dec_many(from_p16(old_sp), (vm_sp-old_sp)/sizeof_Value);
 
     vm_fp = old_fp;
     vm_sp = old_sp;
@@ -1928,7 +1985,7 @@ u16 vm_run(const u8 *vm_pc_start)
     vm_sp_max = vm_sp + vm_stack_max;
     vm_fp = vm_sp;
     vm_pc = to_p16(vm_pc_start);
-    vm_globals = dict_new();
+    vm_globals = dict_new("!vm_globals");
 
     while(1) {
         if (opt_trace_vm) {
@@ -1999,9 +2056,11 @@ u16 vm_run(const u8 *vm_pc_start)
                 vm_a = pop_val();
                 if (vm_a.k == kind_none || (vm_a.k == kind_bool && !vm_a.u)) {
                     push_val(vm_a.k, vm_a.u); 
+                    rc_dec(vm_b);
                 }
                 else {
                     push_val(vm_b.k, vm_b.u); 
+                    rc_dec(vm_a);
                 }
                 break;
 
@@ -2010,9 +2069,11 @@ u16 vm_run(const u8 *vm_pc_start)
                 vm_a = pop_val();
                 if (vm_a.k == kind_none || (vm_a.k == kind_bool && !vm_a.u)) {
                     push_val(vm_b.k, vm_b.u); 
+                    rc_dec(vm_a);
                 }
                 else {
                     push_val(vm_a.k, vm_a.u); 
+                    rc_dec(vm_b);
                 }
                 break;
 
@@ -2043,7 +2104,7 @@ u16 vm_run(const u8 *vm_pc_start)
             case op_extend: vm_extend(); break;
 
             // built-in procedures
-            case op_print:  proc_print(); break;
+            case op_print:  vm_print(); break;
             case op_input:  vm_die("input: unimplemented"); break;
             case op_stop:   return 1;
 
@@ -2060,12 +2121,27 @@ u16 vm_run(const u8 *vm_pc_start)
 
             case op_lit_int:    push_val_checked(kind_int, fetch_word()); break;
             case op_lit_float:  push_val_checked(kind_float, fetch_word()); break;
-            case op_lit_string: push_val_checked(kind_string, fetch_word()); break;
+            case op_lit_string: {
+                u16 w = fetch_word();
+                rc_inc_ptr(from_p16(w));
+                push_val_checked(kind_string, w);
+                break;
+            }
+            case op_lit_class: {
+                u16 w = fetch_word();
+                rc_inc_ptr(from_p16(w));
+                push_val_checked(kind_class, w);
+                break;
+            }
+            case op_lit_func: {
+                u16 w = fetch_word();
+                rc_inc_ptr(from_p16(w));
+                push_val_checked(kind_func, w);
+                break;
+            }
             case op_lit_array:  vm_lit_array(); break;
             case op_lit_dict:   vm_lit_dict(); break;
             case op_lit_object: vm_lit_object(); break;
-            case op_lit_class:  push_val_checked(kind_class, fetch_word()); break;
-            case op_lit_func:   push_val_checked(kind_func, fetch_word()); break;
             case op_lit_method: vm_lit_method(); break;
 
             case op_get_index:          vm_get_index(); break;

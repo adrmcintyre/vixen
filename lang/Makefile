@@ -17,7 +17,7 @@ CFLAGS+=-g
 all: lang
 
 lang: *.c *.h
-	gcc $(CFLAGS) -o $@ *.c -I.
+	gcc $(CFLAGS) -o $@ *.c
 
 .PHONY: clean
 clean:

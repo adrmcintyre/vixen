@@ -1,5 +1,8 @@
+#include "lex.h"
 #include "header.h"
+#include "keyword.h"
 #include "parse.h"
+#include "string.h"
 
 #include <stdlib.h>
 
@@ -195,7 +198,7 @@ Value lex_word(void)
         return opdata_to_value(opdata);
     }
 
-    String* name = string_intern_token();
+    String* name = string_intern_token(token_ptr, token_len);
     return (Value){.k=kind_string, .u=to_p16(name)};
 }
 

@@ -1,4 +1,6 @@
 #include "header.h"
+#include "emit.h"
+#include "lex.h"
 #include "parse.h"
 
 #include <math.h>
@@ -146,6 +148,12 @@ int main(int argc, char *argv[])
     }
     parse_finish();
 
+    void heap_debug_dump(void);
+
+    heap_debug_dump();
+
     // execute compiled bytecode
     vm_run(code_base);
+
+    heap_debug_dump();
 }

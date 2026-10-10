@@ -1,12 +1,17 @@
+#include "string.h"
 #include "header.h"
 #include "dict.h"
+#include "heap.h"
 
 #include <string.h>
 
+//DEBUG
+#include <stdio.h>
+
 static Dict* interned_strings;      // string -> string : a dictionary of interned strings
 String* interned_char_strings[256]; // interned strings for single character strings (on-demand)
-static Token* last_token;
 
+static Token* last_token; // only ever used for lookups, never stored
 
 // Interned strings for well known values.
 String* interned_string_empty; // the empty string
@@ -26,45 +31,50 @@ String* interned_string_object;
 String* interned_string_bom;
 String* interned_string_unknown;
 
+// forward declarations
+static String* immortal_string(const u8* data, i16 len);
+
 // Initialises the strings module.
 void strings_init(void)
 {
-    interned_strings = dict_new();
-    last_token = (Token*) heap_alloc(sizeof(Token));
+    interned_strings = dict_new("!interned_strings");
+    last_token = (Token*) heap_alloc("!last_token", kind_token, sizeof(Token));
 
     interned_string_empty = string_new_uninited(0);
     string_rehash(interned_string_empty);
 
-    interned_string_none    = string_from_data((const u8*) "None", 4);
-    interned_string_true    = string_from_data((const u8*) "True", 4);
-    interned_string_false   = string_from_data((const u8*) "False", 5);
-    interned_string_nan     = string_from_data((const u8*) "NaN", 3);
-    interned_string_pos_inf = string_from_data((const u8*) "Inf", 3);
-    interned_string_neg_inf = string_from_data((const u8*) "-Inf", 4);
+    heap_immortalise(interned_string_empty);
 
-    interned_string_array   = string_from_data((const u8*) "<array>", 7);
-    interned_string_dict    = string_from_data((const u8*) "<dict>", 6);
-    interned_string_func    = string_from_data((const u8*) "<func>", 6);
-    interned_string_class   = string_from_data((const u8*) "<class>", 7);
-    interned_string_object  = string_from_data((const u8*) "<object>", 8);
-    interned_string_bom     = string_from_data((const u8*) "<bound-method>", 8);
-    interned_string_unknown = string_from_data((const u8*) "<unknown>", 9);
+    interned_string_none    = immortal_string((const u8*) "None", 4);
+    interned_string_true    = immortal_string((const u8*) "True", 4);
+    interned_string_false   = immortal_string((const u8*) "False", 5);
+    interned_string_nan     = immortal_string((const u8*) "NaN", 3);
+    interned_string_pos_inf = immortal_string((const u8*) "Inf", 3);
+    interned_string_neg_inf = immortal_string((const u8*) "-Inf", 4);
+
+    interned_string_array   = immortal_string((const u8*) "<array>", 7);
+    interned_string_dict    = immortal_string((const u8*) "<dict>", 6);
+    interned_string_func    = immortal_string((const u8*) "<func>", 6);
+    interned_string_class   = immortal_string((const u8*) "<class>", 7);
+    interned_string_object  = immortal_string((const u8*) "<object>", 8);
+    interned_string_bom     = immortal_string((const u8*) "<bound-method>", 14);
+    interned_string_unknown = immortal_string((const u8*) "<unknown>", 9);
 
     for(int i=0; i<256; i++) interned_char_strings[i] = 0;
 }
 
-// TODO convert to take token args
-// Returns an interned string from the last lexed token.
-String* string_intern_token(void)
+// Returns an interned string from a token of program text.
+String* string_intern_token(const u8* ptr, i16 len)
 {
-    if (token_len == 1) {
-        return string_from_char(*token_ptr);
+    printf("string_intern_token %.*s\n", len, ptr);
+    if (len == 1) {
+        return string_from_char(*ptr);
     }
 
     // see if already interned without allocating yet
-    last_token->hash = hash_mem(token_ptr, token_len);
-    last_token->len = token_len;
-    last_token->ptr = token_ptr;
+    last_token->hash = hash_mem(ptr, len);
+    last_token->len = len;
+    last_token->ptr = ptr;
 
     Value key;
     key.k = kind_token;
@@ -72,10 +82,11 @@ String* string_intern_token(void)
 
     Value strval = dict_get_item(interned_strings, key);
     if (strval.k != kind_fail) {
+        rc_dec(strval);
         return (String*) from_p16(strval.u);
     }
 
-    String* string = string_from_data(token_ptr, token_len);
+    String* string = string_from_data(ptr, len);
     strval.k = kind_string;
     strval.u = to_p16(string);
     dict_set_item(interned_strings, strval, strval);
@@ -88,7 +99,7 @@ String* string_from_char(u8 ch)
 {
     String* str = interned_char_strings[ch];
     if (str == 0) {
-        str = (String*) heap_alloc(sizeof(String) + 1);
+        str = (String*) heap_alloc("string_from_char", kind_string, sizeof(String) + 1);
         str->len = 1;
         str->data[0] = ch;
         string_rehash(str);
@@ -110,11 +121,20 @@ String* string_from_data(const u8* data, i16 len)
     return str;
 }
 
+static String* immortal_string(const u8* data, i16 len)
+{
+    String* str = string_new_uninited(len);
+    heap_immortalise(str);
+    memcpy(str->data, data, len);
+    string_rehash(str);
+    return str;
+}
+
 // Returns a newly allocated string with space for len bytes of data.
 // It is the caller's responsibility to initialise the data and hash value.
 String* string_new_uninited(i16 len)
 {
-    String* str = (String*) heap_alloc(sizeof(String) + len);
+    String* str = (String*) heap_alloc("string_new_uninited", kind_string, sizeof(String) + len);
     str->len = len;
     return str;
 }
@@ -132,8 +152,8 @@ void string_rehash(String* string)
 // TODO - unused
 const char* string_data(u16 s)
 {
-    String* string = (String*)from_p16(s);
-    return (const char*)string->data;
+    String* string = (String*) from_p16(s);
+    return (const char*) string->data;
 }
 
 // Returns true if the contents of both strings are identical.
@@ -160,15 +180,15 @@ String* string_get_slice(String* string, i16 start, i16 end)
 String* string_concat(String* str1, String* str2)
 {
     if (str2->len == 0) {
-        return str1;
+        return rc_inc_ptr(str1);
     }
 
     if (str1->len == 0) {
-        return str2;
+        return rc_inc_ptr(str2);
     }
 
     i16 len = str1->len + str2->len;
-    String* str = (String*) heap_alloc(sizeof(String) + len);
+    String* str = (String*) heap_alloc("string_concat", kind_string, sizeof(String) + len);
     str->len = len;
 
     u8* ptr = str->data;
@@ -178,4 +198,37 @@ String* string_concat(String* str1, String* str2)
     string_rehash(str);
 
     return str;
+}
+
+i16 string_compare(String* str1, String* str2)
+{
+    if (str1 == str2) {
+        return 0;
+    }
+
+    i16 len1 = str1->len;
+    i16 len2 = str2->len;
+    i16 prefix_len = len1;
+    if (prefix_len > len2) {
+        prefix_len = len2;
+    }
+    int cmp = memcmp(str1->data, str2->data, prefix_len);
+    if (cmp == 0) {
+        return 0;
+    }
+    if (cmp < 0) {
+        return -1;
+    }
+    if (cmp > 0) {
+        return 1;
+    }
+    if (len1 == len2) {
+        return 0;
+    }
+    if (len1 < len2) {
+        return -1;
+    }
+    else {
+        return 1;
+    }
 }

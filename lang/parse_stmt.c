@@ -2,7 +2,13 @@
 #include "header.h"
 #include "array.h"
 #include "dict.h"
+#include "emit.h"
+#include "func.h"
+#include "heap.h"
+#include "keyword.h"
+#include "lex.h"
 #include "object.h"
+#include "string.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -27,19 +33,19 @@ void stmt_init(void)
 {
     // TODO move to separate init func?
     if (control_stack == 0) {
-        control_stack = array_new_presized(0, 16);
+        control_stack = array_new_presized("!control_stack", 0, 16);
     }
     if (begin_loop_stack == 0) {
-        begin_loop_stack = array_new_presized(0, 16);
+        begin_loop_stack = array_new_presized("!begin_loop_stack", 0, 16);
     }
     if (end_loop_stack == 0) {
-        end_loop_stack = array_new_presized(0, 16);
+        end_loop_stack = array_new_presized("!end_loop_stack", 0, 16);
     }
     if (forward_jump_stack == 0) {
-        forward_jump_stack = array_new_presized(0, 16);
+        forward_jump_stack = array_new_presized("!forward_jump_stack", 0, 16);
     }
     if (unresolved_method_refs == 0) {
-        unresolved_method_refs = array_new_presized(0, 16);
+        unresolved_method_refs = array_new_presized("!unresolved_method_refs", 0, 16);
     }
 
     array_reset(control_stack);
@@ -189,6 +195,26 @@ void resolve_potential_method_refs(void)
 // `(<ident> = <expr>)`
 void emit_assign_at_global_scope(String* name)
 {
+    // TODO - resolve globals by index
+    // slot = to_global_slot(name);
+    // emit_op(op_set_global_prop);
+    // emit_word(slot);
+    // Where:
+    // i16 to_global_slot(String *name) {
+    //    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    //    Value slotval = dict_get_item(global_idents, nameval);
+    //    if (slotval.k != kind_fail) return slotval.u;
+    //    i16 slot = dict_length(global_idents);
+    //    slotval = (Value){.k=kind_int, .u=slot};
+    //    dict_set_item(global_idents, nameval, slotval);
+    //    return slot;
+    // }
+    //
+    // The idea is to have entirely separate compile time
+    // and runtime heaps. The compile team heap will descend
+    // from the top of memory, while the runtime heap will
+    // ascend from end of bytecode. Strings, func, and class
+    // descriptors should be embedded inside the bytecode.
     emit_op(op_set_global_prop);
     emit_string(name);
 }
@@ -277,6 +303,7 @@ void emit_assign_at_method_scope(String* name)
 // Emits the code to perform an assignment at the current scope.
 void emit_assign(String* name)
 {
+    // TODO deal with ref counts
     if (active_class == 0) {
         if (active_func == 0) {
             emit_assign_at_global_scope(name);
@@ -352,7 +379,7 @@ void parse_class(void)
 
     String* name = must_lex_ident();
 
-    Class* klass = class_new();
+    Class* klass = class_new(strndup((const char*)name->data, name->len));
 
     emit_op(op_lit_class);
     emit_word(to_p16(klass));
@@ -362,19 +389,6 @@ void parse_class(void)
 
     active_class = klass;
     array_reset(unresolved_method_refs);
-}
-
-// Returns a newly allocated function descriptor.
-Func* func_new(void)
-{
-    // TODO could include name field (String)
-    Func* func = (Func*) heap_alloc(sizeof(Func));
-    func->klass = 0;
-    func->nargs = 0;
-    func->nslots = 0;
-    func->slots = dict_new();
-    func->vm_addr = 0;
-    return func;
 }
 
 // Parses the function (or method) name and prototype after `func` has been
@@ -392,7 +406,7 @@ void parse_func(void)
     String* name = must_lex_ident();
     Value nameval = {.k=kind_string, .u=to_p16(name)};
 
-    Func* func = func_new();
+    Func* func = func_new(strndup((const char*)name->data, name->len));
     Dict* func_slots = func->slots;
 
     // parse arglist

@@ -2,13 +2,9 @@
 #define GUARD_OBJECT_H
 
 #include "header.h"
+#include "class.h"
 #include "dict.h"
-
-typedef struct Class {
-    Dict* methods; // String -> Func  - maps method names to func descriptors
-    Dict* slots;   // String -> Int   - maps prop names to object slot offsets
-    Dict* props;   // String -> Value - maps prop names to runtime values
-} Class;
+#include "func.h"
 
 typedef struct Object {
     Class* klass;
@@ -20,14 +16,13 @@ typedef struct {
     Func* func;
 } BoundObjectMethod;
 
-Class* class_new(void);
-Value class_get_prop_by_name(Class* klass, Value name);
-Value class_get_method_by_name(Class* klass, Value name);
-
 Object* object_new_uninited(Class* klass);
+void object_release(Object* object);
 Value object_get_prop_by_name(Object* object, Value name);
 bool object_set_prop_by_name(Object* object, Value name, Value value);
-Value object_bind_method_by_name(Object* object, Value name);
 Func* object_get_method(Object* object, Value name);
+
+Value object_bind_method_by_name(Object* object, Value name);
+extern void bom_release(BoundObjectMethod* bom);
 
 #endif

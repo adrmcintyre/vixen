@@ -2,6 +2,10 @@
 #include "header.h"
 #include "array.h"
 #include "dict.h"
+#include "emit.h"
+#include "heap.h"
+#include "keyword.h"
+#include "lex.h"
 #include "object.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -26,7 +30,7 @@ void expr_init(void)
 {
     // TODO need separate init for this
     if (pending_ops == 0) {
-        pending_ops = array_new_presized(0, default_pending_ops_cap);
+        pending_ops = array_new_presized("!pending_ops", 0, default_pending_ops_cap);
     }
     else {
         array_reset(pending_ops);
@@ -389,6 +393,7 @@ void emit_ident_at_method_scope(String* name)
 // Emits code to look up the named identifier according to the current scope.
 void emit_ident(String* name)
 {
+    // TODO - ref count the emitted ident
     if (active_class == 0) {
         if (active_func == 0) {
             emit_ident_at_global_scope(name);
@@ -438,6 +443,8 @@ void parse_terminal_unindexed(void)
             break;
         case kind_string:
             emit_ident((String*) from_p16(wordval.u));
+            // TODO could use a string-specific rc_dec
+            //rc_dec(wordval);
             break;
         default:
             unreachable();

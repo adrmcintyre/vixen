@@ -1,5 +1,6 @@
 #include "array.h"
 #include "header.h"
+#include "heap.h"
 
 #include <string.h>
 
@@ -7,15 +8,15 @@
 
 // Returns a newly allocated array with specified length and capacity.
 // The actual capacity allocated will be at least max(len, cap).
-Array* array_new_presized(i16 len, i16 cap)
+Array* array_new_presized(const char* label, i16 len, i16 cap)
 {
     if (len > cap) {
         cap = len;
     }
 
-    Array* array = (Array*) heap_alloc(sizeof(Array));
+    Array* array = (Array*) heap_alloc(label, kind_array, sizeof(Array));
     u8* data = 0;
-    if (cap != 0) data = (u8*) heap_alloc(cap * sizeof_Value);
+    if (cap != 0) data = (u8*) heap_alloc(label, kind_none, cap * sizeof_Value);
     
     array->len = len;
     array->cap = cap;
@@ -23,6 +24,14 @@ Array* array_new_presized(i16 len, i16 cap)
     array->dataptr = data;
     return array;
 }
+
+void array_release(Array* array)
+{
+    u8* p = array->dataptr;
+    heap_release(p);
+    rc_dec_many(p, array->len);
+}
+
 
 // Reallocates array's data to ensure it has the appropriate capacity for len elements.
 // The array's cap and len are updated. No elements are copied.
@@ -46,8 +55,9 @@ static int array_resize(Array* array, i16 len)
     }
 
     u8* newdata = 0;
-    if (newcap > 0) newdata = heap_alloc(newcap * sizeof_Value);
+    if (newcap > 0) newdata = heap_alloc("resize", kind_none, newcap * sizeof_Value);
 
+    heap_release(array->dataptr);
     array->dataptr = newdata;
     array->cap = newcap;
 
@@ -65,7 +75,8 @@ void array_append(Array* array, Value v)
         memcpy(array->dataptr, olddata, len * sizeof_Value);
     }
 
-    set_value(array->dataptr + len * sizeof_Value, v);
+    set_value_indexed(array->dataptr, len, v);
+    rc_inc(v);
 }
 
 // Removes and returns the last value from array.
@@ -78,7 +89,8 @@ Value array_pop(Array* array)
     }
     u8* olddata = array->dataptr;
     i16 newlen = len - 1;
-    Value v = get_value(olddata + newlen * sizeof_Value);
+    Value v = get_value_indexed(olddata, newlen);
+    // ownership transferred to caller, no rc adjustment needed
 
     if (array_resize(array, newlen)) {
         memcpy(array->dataptr, olddata, newlen * sizeof_Value);
@@ -89,14 +101,15 @@ Value array_pop(Array* array)
 // Removes all elements from array.
 void array_reset(Array* array)
 {
+    rc_dec_many(array->dataptr, array->len);
     array_resize(array, 0);
 }
 
 // Returns a newly allocated array from the concatenation of src1 and src2.
 Array* array_concat(Array* src1, Array* src2)
 {
-    u16 len = src1->len + src2->len;
-    Array* dst = array_new_presized(len, len);
+    i16 len = src1->len + src2->len;
+    Array* dst = array_new_presized("concat", len, len);
 
     memcpy(dst->dataptr, src1->dataptr, src1->len * sizeof_Value);
     memcpy(
@@ -104,6 +117,7 @@ Array* array_concat(Array* src1, Array* src2)
         src2->dataptr,
         src2->len * sizeof_Value);
 
+    rc_inc_many(dst->dataptr, len);
     return dst;
 }
 
@@ -114,8 +128,7 @@ Value array_get(Array* array, i16 index)
 {
     if (index < 0) index += array->len;
     if (index < 0 || index >= array->len) return (Value){.k=kind_fail};
-    u8* p = array->dataptr + index * sizeof_Value;
-    return get_value(p);
+    return rc_inc(get_value_indexed(array->dataptr, index));
 }
 
 bool array_set(Array* array, i16 index, Value v)
@@ -123,7 +136,10 @@ bool array_set(Array* array, i16 index, Value v)
     if (index < 0) index += array->len;
     if (index < 0 || index >= array->len) return false;
     u8* p = array->dataptr + index * sizeof_Value;
+    Value oldv = get_value(p);
     set_value(p, v);
+    rc_inc(v);
+    rc_dec(oldv);
     return true;
 }
 
@@ -132,11 +148,10 @@ bool array_set(Array* array, i16 index, Value v)
 Array* array_get_slice(Array* src, i16 start, i16 end)
 {
     i16 len = slice_adjust(src->len, &start, &end);
-
-    Array* dst = array_new_presized(len, 0);
+    Array* dst = array_new_presized("slice", len, 0);
 
     memcpy(dst->dataptr, src->dataptr + start*sizeof_Value, len * sizeof_Value);
-
+    rc_inc_many(dst->dataptr, len);
     return dst;
 }
 
@@ -156,6 +171,9 @@ void array_set_slice(Array* dst, i16 start, i16 end, Array* src)
     i16 oldlen = dst->len;
     i16 srclen = src->len;
     i16 newlen = oldlen - slicelen + srclen;
+
+    rc_inc_many(srcdata, srclen);
+    rc_dec_many(olddata + start * sizeof_Value, (end-start) * sizeof_Value);
 
     if (array_resize(dst, newlen)) {
         u8* newdata = dst->dataptr;

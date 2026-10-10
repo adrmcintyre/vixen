@@ -3,7 +3,16 @@
 
 #include "header.h"
 
-Array* array_new_presized(i16 len, i16 cap);
+// Represents a dynamically sized array.
+typedef struct {
+    i16 len;        // current length of the array in elements
+    i16 cap;        // total allocated capacity in elements
+    i16 min_cap;    // don't shrink cap below this
+    u8* dataptr;    // points to the allocated elements
+} Array;
+
+Array* array_new_presized(const char* label, i16 len, i16 cap);
+void array_release(Array* array);
 void array_append(Array* array, Value v);
 Value array_pop(Array* array);
 void array_reset(Array *array);
