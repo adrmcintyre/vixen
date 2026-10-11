@@ -5,6 +5,8 @@
 #include "dict.h"
 #include "object.h"
 
+u16 to_global_slot(String* name);
+
 // Statement parser
 Kind func_kind;
 u8 control_sp;

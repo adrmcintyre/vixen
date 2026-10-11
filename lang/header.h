@@ -208,7 +208,7 @@ bool token_string_eq(Token* token, String* string);
 // Virtual machine
 extern bool opt_trace_vm;
 __attribute__((noreturn)) void vm_die(const char* msg);
-u16 vm_run(const u8* vm_pc_base);
+u16 vm_run(const u8* vm_pc_base, u16 globals_count);
 f16 f16_from_float(float f);
 float f16_to_float(f16 f);
 const char* debug_op_name(u8 op);

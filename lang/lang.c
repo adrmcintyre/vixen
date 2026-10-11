@@ -1,5 +1,7 @@
 #include "header.h"
+#include "dict.h"
 #include "emit.h"
+#include "heap.h"
 #include "lex.h"
 #include "parse.h"
 
@@ -96,6 +98,9 @@ int main(int argc, char *argv[])
         else if (0 == strcmp(arg, "--trace-vm")) {
             opt_trace_vm = true;
         }
+        else if (0 == strcmp(arg, "--trace-heap")) {
+            opt_trace_heap = true;
+        }
         else if (0 == strcmp(arg, "--")) {
             argi++;
             break;
@@ -153,7 +158,7 @@ int main(int argc, char *argv[])
     heap_debug_dump();
 
     // execute compiled bytecode
-    vm_run(code_base);
+    vm_run(code_base, dict_length(global_idents));
 
     heap_debug_dump();
 }

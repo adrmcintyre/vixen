@@ -66,7 +66,6 @@ void strings_init(void)
 // Returns an interned string from a token of program text.
 String* string_intern_token(const u8* ptr, i16 len)
 {
-    printf("string_intern_token %.*s\n", len, ptr);
     if (len == 1) {
         return string_from_char(*ptr);
     }
@@ -213,9 +212,6 @@ i16 string_compare(String* str1, String* str2)
         prefix_len = len2;
     }
     int cmp = memcmp(str1->data, str2->data, prefix_len);
-    if (cmp == 0) {
-        return 0;
-    }
     if (cmp < 0) {
         return -1;
     }

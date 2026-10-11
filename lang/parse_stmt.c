@@ -47,6 +47,9 @@ void stmt_init(void)
     if (unresolved_method_refs == 0) {
         unresolved_method_refs = array_new_presized("!unresolved_method_refs", 0, 16);
     }
+    if (global_idents == 0) {
+        global_idents = dict_new_presized("!global_idents", 16);
+    }
 
     array_reset(control_stack);
     array_reset(begin_loop_stack);
@@ -164,7 +167,21 @@ void emit_potential_method_ref(String* name)
 {
     array_append(unresolved_method_refs, (Value){.k=kind_int, .u=to_p16(code_ptr)});
     emit_op(op_get_global_prop);
+    // will be replaced by a slot index
     emit_string(name);
+}
+
+// Returns a slot index into the runtime array for globals.
+u16 to_global_slot(String* name)
+{
+    Value nameval = {.k=kind_string, .u=to_p16(name)};
+    Value slotval = dict_get_item(global_idents, nameval);
+    if (slotval.k == kind_fail) {
+        u16 slot = dict_length(global_idents);
+        slotval = (Value){.k=kind_int, .u=slot};
+        dict_set_item(global_idents, nameval, slotval);
+    }
+    return slotval.u;
 }
 
 // Resolves any ambiguous identifier references inside the active
@@ -181,8 +198,13 @@ void resolve_potential_method_refs(void)
         String* name = (String*) from_p16(*(u16*)(code_ptr+1));
         Value nameval = {.k=kind_string, .u=to_p16(name)};
         Value slotval = dict_get_item(active_class->methods, nameval);
-        if (slotval.k != kind_fail) {
-            // TODO emit correct code
+        if (slotval.k == kind_fail) {
+            u16 slot = to_global_slot(name);
+            emit_op(op_get_global_prop);
+            emit_word(slot);
+        }
+        else {
+            // TODO check this is correct
             emit_op(op_lit_method);
             emit_word(slotval.u);
         }
@@ -195,28 +217,9 @@ void resolve_potential_method_refs(void)
 // `(<ident> = <expr>)`
 void emit_assign_at_global_scope(String* name)
 {
-    // TODO - resolve globals by index
-    // slot = to_global_slot(name);
-    // emit_op(op_set_global_prop);
-    // emit_word(slot);
-    // Where:
-    // i16 to_global_slot(String *name) {
-    //    Value nameval = {.k=kind_string, .u=to_p16(name)};
-    //    Value slotval = dict_get_item(global_idents, nameval);
-    //    if (slotval.k != kind_fail) return slotval.u;
-    //    i16 slot = dict_length(global_idents);
-    //    slotval = (Value){.k=kind_int, .u=slot};
-    //    dict_set_item(global_idents, nameval, slotval);
-    //    return slot;
-    // }
-    //
-    // The idea is to have entirely separate compile time
-    // and runtime heaps. The compile team heap will descend
-    // from the top of memory, while the runtime heap will
-    // ascend from end of bytecode. Strings, func, and class
-    // descriptors should be embedded inside the bytecode.
+    u16 slot = to_global_slot(name);
     emit_op(op_set_global_prop);
-    emit_string(name);
+    emit_word(slot);
 }
 
 // Emits code to set the local variable or function argument specified by name,
@@ -303,7 +306,6 @@ void emit_assign_at_method_scope(String* name)
 // Emits the code to perform an assignment at the current scope.
 void emit_assign(String* name)
 {
-    // TODO deal with ref counts
     if (active_class == 0) {
         if (active_func == 0) {
             emit_assign_at_global_scope(name);
@@ -383,9 +385,7 @@ void parse_class(void)
 
     emit_op(op_lit_class);
     emit_word(to_p16(klass));
-
-    emit_op(op_set_global_prop);
-    emit_string(name);
+    emit_assign_at_global_scope(name);
 
     active_class = klass;
     array_reset(unresolved_method_refs);
@@ -443,9 +443,7 @@ void parse_func(void)
     if (active_class == 0) {
         emit_op(op_lit_func);
         emit_word(to_p16(func));
-
-        emit_op(op_set_global_prop);
-        emit_string(name);
+        emit_assign_at_global_scope(name);
     }
     else {
         // TODO perhaps registration should be at runtime instead?

@@ -490,8 +490,6 @@ u16 dict_iter_init(__attribute__((unused)) Dict* dict)
 // counts of the returned key+value.
 u16 dict_iter_item(Dict* dict, u16 iter, Value* key, Value* value)
 {
-    // TODO maybe it should be up to the caller
-    // to update refcounts of returned key+value?
     DictKeys *keys = dict->keys;
     while (1) {
         if (iter >= keys->nentries) {

@@ -322,8 +322,9 @@ void parse_keyword_args(OpData kw)
 // i.e. as a global identifier.
 void emit_ident_at_global_scope(String* name)
 {
+    u16 slot = to_global_slot(name);
     emit_op(op_get_global_prop);
-    emit_string(name);
+    emit_word(slot);
 }
 
 // Emits code to look up the named identifier at function scope,
@@ -393,7 +394,6 @@ void emit_ident_at_method_scope(String* name)
 // Emits code to look up the named identifier according to the current scope.
 void emit_ident(String* name)
 {
-    // TODO - ref count the emitted ident
     if (active_class == 0) {
         if (active_func == 0) {
             emit_ident_at_global_scope(name);
@@ -443,8 +443,6 @@ void parse_terminal_unindexed(void)
             break;
         case kind_string:
             emit_ident((String*) from_p16(wordval.u));
-            // TODO could use a string-specific rc_dec
-            //rc_dec(wordval);
             break;
         default:
             unreachable();

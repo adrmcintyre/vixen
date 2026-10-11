@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 
+bool opt_trace_heap = false;
+
 typedef struct HeapObj HeapObj;
 
 // A linked list of blocks allocated from the heap.
@@ -58,7 +60,9 @@ void* heap_alloc(const char* label, Kind k, u16 bytes)
     obj->debug_kind = k;
     heap_top = new_heap_top;
 
-    printf("[alloc] %04hx alloc %s %hd bytes\n", to_p16(obj), label, bytes);
+    if (opt_trace_heap) {
+        printf("[alloc] %04hx alloc %s %hd bytes\n", to_p16(obj), label, bytes);
+    }
 
     debug_objs[debug_count++] = obj;
 
@@ -68,7 +72,10 @@ void* heap_alloc(const char* label, Kind k, u16 bytes)
 void value_print(Value);
 void heap_debug_obj(HeapObj* h)
 {
-    printf("%04x %-24s ", to_p16(h), h->debug_label);
+    if (opt_trace_heap) {
+        printf("%04x %-24s ", to_p16(h), h->debug_label);
+    }
+
     const char* ks;
     switch (h->debug_kind) {
         case kind_array: ks = "array"; break;
@@ -82,30 +89,35 @@ void heap_debug_obj(HeapObj* h)
         case kind_none: ks = "bytes"; break;
         default: ks = "other"; break;
     }
-    if (h->rc == RC_IMMORTAL) {
-        printf("IMMORTAL value=%s:", ks);
-    } else if (h->rc == 0) {
-        printf("DEAD value=%s:", ks);
-    } else {
-        printf("rc=%d value=%s:", h->rc, ks);
+
+    if (opt_trace_heap) {
+        if (h->rc == RC_IMMORTAL) {
+            printf("IMMORTAL value=%s:", ks);
+        } else if (h->rc == 0) {
+            printf("DEAD value=%s:", ks);
+        } else {
+            printf("rc=%d value=%s:", h->rc, ks);
+        }
+        if (h->debug_kind != kind_none) {
+            value_print((Value){.k=h->debug_kind, .u=to_p16(&h->data[0])});
+        } else {
+            printf("...");
+        }
+        printf(" len=%d", h->bytes);
     }
-    if (h->debug_kind != kind_none) {
-        value_print((Value){.k=h->debug_kind, .u=to_p16(&h->data[0])});
-    } else {
-        printf("...");
-    }
-    printf(" len=%d", h->bytes);
 }
 
 void heap_debug_dump(void)
 {
-    printf("HEAP\n");
-    for (u16 i = 0; i < debug_count; i++) {
-        HeapObj* h = debug_objs[i];
-        if (h->debug_kind == kind_none) continue;
-        printf("  [%d] ", i);
-        heap_debug_obj(h);
-        printf("\n");
+    if (opt_trace_heap) {
+        printf("HEAP\n");
+        for (u16 i = 0; i < debug_count; i++) {
+            HeapObj* h = debug_objs[i];
+            if (h->debug_kind == kind_none) continue;
+            printf("  [%d] ", i);
+            heap_debug_obj(h);
+            printf("\n");
+        }
     }
 }
 
@@ -122,7 +134,9 @@ void heap_release(void* p)
 // Internal function to return a raw HeapObj to the heap.
 static void heapobj_release(HeapObj* h)
 {
-    printf("[heap] %04hx release\n", to_p16(h)+(u16)sizeof_HeapObj);
+    if (opt_trace_heap) {
+        printf("[heap] %04hx release\n", to_p16(h)+(u16)sizeof_HeapObj);
+    }
     // TODO - stick the returned object on a free list.
     (void) h;
 }
@@ -134,7 +148,11 @@ void* rc_inc_ptr(void *p)
     if (h->rc != RC_IMMORTAL) {
         h->rc++;
     }
-    printf("[rcinc] "); heap_debug_obj(h); printf("\n");
+    if (opt_trace_heap) {
+        printf("[rcinc] ");
+        heap_debug_obj(h);
+        printf("\n");
+    }
     return p;
 }
 
@@ -181,7 +199,11 @@ void rc_dec(Value v)
             void *p = from_p16(v.u);
             HeapObj* h = (HeapObj*)(((char*) p) - sizeof_HeapObj);
             bool alive = h->rc == RC_IMMORTAL || --h->rc;
-            printf("[rcdec] "); heap_debug_obj(h); printf("\n");
+            if (opt_trace_heap) {
+                printf("[rcdec] ");
+                heap_debug_obj(h);
+                printf("\n");
+            }
             if (!alive) {
                 // NOTE - cpython cleverly adds deallocated object
                 // to a queue (linked list) when stack space gets low.

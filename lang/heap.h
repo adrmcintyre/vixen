@@ -3,6 +3,8 @@
 
 #include "header.h"
 
+extern bool opt_trace_heap;
+
 void heap_init(void);
 void* heap_alloc(const char* label, Kind k, u16 n);
 void heap_immortalise(void* p);

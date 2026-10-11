@@ -22,7 +22,7 @@ u16 vm_sp;
 u16 vm_fp;
 u16 vm_pc;
 
-Dict* vm_globals;
+u8* vm_globals;
 
 u16 vm_sp_max; // not a register
 
@@ -772,7 +772,6 @@ void fn_str(void)
             break;
 
         case kind_int: {
-            // TODO might be worth interning strings for small ints
             u8 buf[16];
             u16 len = sprintf((char*) buf, "%d", vm_a.i);
             push_val(kind_string, to_p16(string_from_data(buf, len)));
@@ -1045,9 +1044,10 @@ void vm_set_global_prop(void)
 {
     vm_a = pop_val();
 
-    Value propval = {.k=kind_string, .u=fetch_word()};
-    dict_set_item(vm_globals, propval, vm_a);
-    rc_dec(vm_a);
+    u16 slot = fetch_word();
+    Value old = get_value_indexed(vm_globals, slot);
+    set_value_indexed(vm_globals, slot, vm_a);
+    rc_dec(old);
 }
 
 // Pushes the Value in the global variable <prop> to the stack.
@@ -1058,8 +1058,9 @@ void vm_get_global_prop(void)
 {
     vm_check_stack(sizeof_Value);
 
-    Value propval = {.k=kind_string, .u=fetch_word()};
-    Value val = dict_get_item(vm_globals, propval);
+    u16 slot = fetch_word();
+    Value val = get_value_indexed(vm_globals, slot);
+    rc_inc(val);
     // TODO fail check?
     push_val(val.k, val.u);
 }
@@ -1975,7 +1976,7 @@ void vm_return_none(void)
 //
 
 // Execute the compiled byte code starting at vm_pc_start.
-u16 vm_run(const u8 *vm_pc_start)
+u16 vm_run(const u8 *vm_pc_start, u16 globals_count)
 {
     if (opt_trace_vm) {
         fprintf(stderr, "\nRUNNING\n");
@@ -1985,7 +1986,7 @@ u16 vm_run(const u8 *vm_pc_start)
     vm_sp_max = vm_sp + vm_stack_max;
     vm_fp = vm_sp;
     vm_pc = to_p16(vm_pc_start);
-    vm_globals = dict_new("!vm_globals");
+    vm_globals = heap_alloc("!vm_globals", kind_none, globals_count * sizeof_Value);
 
     while(1) {
         if (opt_trace_vm) {
