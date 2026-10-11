@@ -6,9 +6,14 @@ Implement min_cap and/or no_shrink on arrays.
 
 Escape strings in composite objects during printing.
 
-Ref counting of strings, arrays, dicts?
-
 Link discarded allocations for reuse.
+
+Separate compile time and runtime heaps.
+The compile team heap will descend from the top of memory, while the runtime
+heap will ascend from end of bytecode. Strings, func, and class descriptors
+should be embedded inside the bytecode.
+
+Intern all literal strings.
 
 ## Arithmetic
 
