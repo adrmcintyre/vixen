@@ -39,26 +39,58 @@ static void heapobj_release(HeapObj* h);
 static HeapObj* debug_objs[65536];
 static u16 debug_count = 0;
 
+static u16 heap_free_list[128];
+
 // Initialises the heap.
 void heap_init(void)
 {
     heap_top = heap_base;
-    heap_end = heap_base + 0x1000;
+    heap_end = heap_base + 0x2000; // TODO pass in as arg; should be most of memory
 }
+
+//static u16 block_sizes[] = {
+//        8,     12,
+//       16,     24,
+//       32,     48,
+//       64,     96,
+//      128,    192,
+//      256,    384,
+//      512,    768,
+//     1024,   1536,
+//     2048,   3072,
+//     4096,   6144,
+//     8192,  12288,
+//    16384,  24576,
+//    32768,  49152,
+//}
 
 // Allocates a `bytes` sized object from the heap.
 // The ref count of the returned object is 1.
 void* heap_alloc(const char* label, Kind k, u16 bytes)
 {
-    u8* new_heap_top = heap_top + sizeof_HeapObj + bytes; // DEBUG
-    if (new_heap_top > heap_end) die("heap full");
+    // TODO - define a sensible range of sizes, and pick the smallest
+    // possible one. When out of heap space, consider other free lists.
 
-    HeapObj* obj = (HeapObj*) heap_top;
+    bytes = (bytes+7)&~7;
+    u16 entry = bytes>>3;
+    if (entry > 127) die("large objects not implemented");
+    HeapObj* obj;
+    u16 h = heap_free_list[entry];
+    if (h == 0) {
+        u8* new_heap_top = heap_top + sizeof_HeapObj + bytes;
+        if (new_heap_top > heap_end) die("heap full");
+        obj = (HeapObj*) heap_top;
+        heap_top = new_heap_top;
+    }
+    else {
+        obj = (HeapObj*) from_p16(h);
+        heap_free_list[entry] = obj->rc;
+    }
+
     obj->bytes = bytes;
     obj->rc = 1;
     obj->debug_label = strdup(label);
     obj->debug_kind = k;
-    heap_top = new_heap_top;
 
     if (opt_trace_heap) {
         printf("[alloc] %04hx alloc %s %hd bytes\n", to_p16(obj), label, bytes);
@@ -135,10 +167,14 @@ void heap_release(void* p)
 static void heapobj_release(HeapObj* h)
 {
     if (opt_trace_heap) {
-        printf("[heap] %04hx release\n", to_p16(h)+(u16)sizeof_HeapObj);
+        printf("[heap] %04hx release\n", to_p16(h));
     }
-    // TODO - stick the returned object on a free list.
-    (void) h;
+
+    u16 entry = h->bytes >> 3;
+    if (entry > 127) die("large objects not implemented");
+    u16 old_free = heap_free_list[entry];
+    heap_free_list[entry] = to_p16(h);
+    h->rc = old_free;
 }
 
 void* rc_inc_ptr(void *p)

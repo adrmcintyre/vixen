@@ -28,8 +28,10 @@ Array* array_new_presized(const char* label, i16 len, i16 cap)
 void array_release(Array* array)
 {
     u8* p = array->dataptr;
-    heap_release(p);
-    rc_dec_many(p, array->len);
+    if (p) {
+        heap_release(p);
+        rc_dec_many(p, array->len);
+    }
 }
 
 
