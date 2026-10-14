@@ -14,11 +14,8 @@ bool opt_trace_heap = false;
 
 typedef struct HeapObj HeapObj;
 
-// A linked list of blocks allocated from the heap.
 // TODO is this the best way to handle the heap?
 // Should we have a header at the start of each heap object type instead?
-// Block length?
-// Link by type?
 typedef struct HeapObj {
     u16 bytes;
     u16 rc;     // reference count, or RC_IMMORTAL if immortal
@@ -48,21 +45,35 @@ void heap_init(void)
     heap_end = heap_base + 0x2000; // TODO pass in as arg; should be most of memory
 }
 
-//static u16 block_sizes[] = {
-//        8,     12,
-//       16,     24,
-//       32,     48,
-//       64,     96,
-//      128,    192,
-//      256,    384,
-//      512,    768,
-//     1024,   1536,
-//     2048,   3072,
-//     4096,   6144,
-//     8192,  12288,
-//    16384,  24576,
-//    32768,  49152,
-//}
+static const u16 block_size_count = 26;
+
+static u16 block_sizes[block_size_count] = {
+        8,     12,
+       16,     24,
+       32,     48,
+       64,     96,
+      128,    192,
+      256,    384,
+      512,    768,
+     1024,   1536,
+     2048,   3072,
+     4096,   6144,
+     8192,  12288,
+    16384,  24576,
+    32768,  49152,
+};
+
+static i16 bytes_to_block_index(u16 bytes)
+{
+    // TODO unroll first few block sizes, and/or use clz
+    for (u16 i=0; i < block_size_count; i++) {
+        u16 block = block_sizes[i];
+        if (block >= bytes) {
+            return i;
+        }
+    }
+    return block_size_count;
+}
 
 // Allocates a `bytes` sized object from the heap.
 // The ref count of the returned object is 1.
@@ -71,34 +82,41 @@ void* heap_alloc(const char* label, Kind k, u16 bytes)
     // TODO - define a sensible range of sizes, and pick the smallest
     // possible one. When out of heap space, consider other free lists.
 
-    bytes = (bytes+7)&~7;
-    u16 entry = bytes>>3;
-    if (entry > 127) die("large objects not implemented");
-    HeapObj* obj;
-    u16 h = heap_free_list[entry];
-    if (h == 0) {
-        u8* new_heap_top = heap_top + sizeof_HeapObj + bytes;
-        if (new_heap_top > heap_end) die("heap full");
-        obj = (HeapObj*) heap_top;
-        heap_top = new_heap_top;
+    for (i16 entry = bytes_to_block_index(bytes); entry < block_size_count; entry++) {
+        bytes = block_sizes[entry];
+
+        HeapObj* obj;
+        u16 h = heap_free_list[entry];
+        if (h == 0) {
+            u8* new_heap_top = heap_top + sizeof_HeapObj + bytes;
+            if (new_heap_top > heap_end) {
+                if (opt_trace_heap) {
+                    printf("[alloc] heap full, trying next block size\n");
+                }
+                continue;
+            }
+            obj = (HeapObj*) heap_top;
+            heap_top = new_heap_top;
+        }
+        else {
+            obj = (HeapObj*) from_p16(h);
+            heap_free_list[entry] = obj->rc;
+        }
+
+        obj->bytes = bytes;
+        obj->rc = 1;
+        obj->debug_label = strdup(label);
+        obj->debug_kind = k;
+
+        if (opt_trace_heap) {
+            printf("[alloc] %04hx alloc %s %hd bytes\n", to_p16(obj), label, bytes);
+        }
+
+        debug_objs[debug_count++] = obj;
+
+        return &obj->data[0];
     }
-    else {
-        obj = (HeapObj*) from_p16(h);
-        heap_free_list[entry] = obj->rc;
-    }
-
-    obj->bytes = bytes;
-    obj->rc = 1;
-    obj->debug_label = strdup(label);
-    obj->debug_kind = k;
-
-    if (opt_trace_heap) {
-        printf("[alloc] %04hx alloc %s %hd bytes\n", to_p16(obj), label, bytes);
-    }
-
-    debug_objs[debug_count++] = obj;
-
-    return &obj->data[0];
+    die("heap full");
 }
 
 void value_print(Value);
@@ -170,8 +188,7 @@ static void heapobj_release(HeapObj* h)
         printf("[heap] %04hx release\n", to_p16(h));
     }
 
-    u16 entry = h->bytes >> 3;
-    if (entry > 127) die("large objects not implemented");
+    u16 entry = bytes_to_block_index(h->bytes);
     u16 old_free = heap_free_list[entry];
     heap_free_list[entry] = to_p16(h);
     h->rc = old_free;
